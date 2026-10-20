@@ -12,6 +12,7 @@ const bcrypt = require("bcryptjs");
 const helmet = require("helmet");
 const { applyEligibleDenseRanks } = require("./ranking");
 const { scoreWeek } = require("./scoring");
+const { safeMongoDiagnostic } = require("./diagnostics");
 
 const PAGES = ["overview", "daily", "concepts", "members", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
@@ -41,10 +42,10 @@ function safeDiagnosticCode(error) {
 
 function logInitializationFailure(stage, error) {
   // Only fixed stage labels and sanitized error identifiers go to runtime logs.
-  console.error("[dashboard-init] initialization failed", {
-    stage,
-    code: safeDiagnosticCode(error)
-  });
+  const fields = stage === "mongodb-connection"
+    ? (error?.mongoDiagnostic || safeMongoDiagnostic(error))
+    : { ...safeMongoDiagnostic(error), category: "initialization-error" };
+  console.error("[dashboard-init] initialization failed", { stage, ...fields });
 }
 
 function createSessionSecret() {
@@ -70,7 +71,7 @@ function connectMongo() {
     mongoConnectPromise = mongo.connect().catch(error => {
       mongoConnectPromise = undefined;
       const failure = new Error("Could not connect to MongoDB. Check MONGODB_URI and database network access.");
-      failure.diagnosticCode = safeDiagnosticCode(error);
+      failure.mongoDiagnostic = safeMongoDiagnostic(error);
       throw failure;
     });
   }
