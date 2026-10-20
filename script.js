@@ -24,11 +24,224 @@ const PAGE_INFO = {
 let state = { members: [], weeks: {}, currentWeek: 1 };
 let currentWeek = 1;
 let toastTimer = null;
+let observedPodium = null;
+let podiumVisibilityObserver = null;
+const celebratedAchievementKeys = new Set();
 
 /* -------------------- HELPERS -------------------- */
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function iconMarkup(name) {
+  const paths = {
+    members: '<circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1.5a6 6 0 0 1 12 0V20M16 5a3.5 3.5 0 0 1 0 6.8M18 14a5 5 0 0 1 3 4.5V20"/>',
+    daily: '<path d="m5 12 4 4L19 6"/>',
+    concepts: '<path d="M5 4.5h14v15H5zM8 8h8M8 12h8M8 16h5"/>',
+    progress: '<path d="M4 20V12h4v8M10 20V5h4v15M16 20V9h4v11"/>',
+    edit: '<path d="m14 5 5 5M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z"/>',
+    remove: '<path d="M5 5l14 14M19 5 5 19"/>'
+  };
+  return `<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24">${paths[name] || paths.progress}</svg>`;
+}
+
+function renderAchievementCards(kind, total, description) {
+  const particles = Array.from({ length: 10 }, (_, index) => `
+    <i class="achievement-particle" style="--particle-x:${(index * 37 + 9) % 100}%;--particle-delay:${(index % 5) * -0.8}s;--particle-duration:${4 + (index % 4)}s;--particle-size:${4 + (index % 3) * 2}px;--particle-drift:${(index % 2 ? 1 : -1) * (14 + index * 2)}px"></i>`).join("");
+  return state.members.filter(member => {
+    const values = kind === "daily" ? getDaily(member.id) : getConcepts(member.id);
+    return countDone(values) === total;
+  }).map(member => {
+    const key = `${kind}:${currentWeek}:${member.id}`;
+    return `
+      <article class="achievement-card" data-achievement-key="${escapeHTML(key)}">
+        <span class="achievement-particles" aria-hidden="true">${particles}</span>
+        <span class="achievement-mark">${iconMarkup(kind === "daily" ? "daily" : "concepts")}</span>
+        <span class="achievement-copy">
+          <span class="achievement-kicker">WEEKLY ACHIEVEMENT</span>
+          <strong>${escapeHTML(member.name)}</strong>
+          <span>${description}</span>
+        </span>
+        <span class="achievement-score">${total}/${total}</span>
+      </article>`;
+  }).join("");
+}
+
+function burstConfetti(container, pieceCount = 22) {
+  if (!container || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const burst = document.createElement("span");
+  burst.className = "confetti-burst";
+  burst.setAttribute("aria-hidden", "true");
+  const colors = ["#f2c14e", "#36a889", "#62a4df", "#f27b68", "#b48bd6"];
+  let remaining = pieceCount;
+  for (let index = 0; index < pieceCount; index += 1) {
+    const piece = document.createElement("i");
+    const direction = index % 2 ? 1 : -1;
+    piece.className = "confetti-piece";
+    piece.style.setProperty("--burst-x", `${Math.round((22 + Math.random() * 58) * direction)}px`);
+    piece.style.setProperty("--burst-y", `${Math.round(-32 - Math.random() * 50)}px`);
+    piece.style.setProperty("--drift-x", `${Math.round((40 + Math.random() * 90) * direction)}px`);
+    piece.style.setProperty("--drift-y", `${Math.round(24 + Math.random() * 62)}px`);
+    piece.style.setProperty("--spin", `${Math.round(250 + Math.random() * 600)}deg`);
+    piece.style.setProperty("--piece-size", `${4 + Math.round(Math.random() * 4)}px`);
+    piece.style.setProperty("--piece-color", colors[index % colors.length]);
+    piece.style.setProperty("--piece-delay", `${Math.round(Math.random() * 100)}ms`);
+    piece.addEventListener("animationend", () => {
+      remaining -= 1;
+      if (remaining === 0) burst.remove();
+    }, { once: true });
+    burst.append(piece);
+  }
+  container.append(burst);
+}
+
+function medalMarkup(rank) {
+  const ribbons = { 1: ["#315bba", "#d34d57"], 2: ["#416db8", "#e0a63d"], 3: ["#2d7791", "#b85e45"] }[rank] || ["#496b9d", "#c98e37"];
+  const metal = { 1: ["#fff2a5", "#d59a20"], 2: ["#f7fafc", "#99a8b6"], 3: ["#ffd3a7", "#ae6240"] }[rank] || ["#edf2f7", "#8897a8"];
+  return `<svg class="custom-medal" viewBox="0 0 56 72" aria-hidden="true"><path d="M13 2h12l7 27-12 7z" fill="${ribbons[0]}"/><path d="M31 2h12L35 36l-12-7z" fill="${ribbons[1]}"/><circle cx="28" cy="43" r="17" fill="${metal[1]}"/><circle cx="28" cy="41" r="14" fill="${metal[0]}"/><circle cx="28" cy="41" r="10.5" fill="none" stroke="#fff" stroke-opacity=".55"/><text x="28" y="47" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" font-weight="900" fill="#26344a">${rank}</text></svg>`;
+}
+
+function rankBadgeMarkup(rank) {
+  return rank >= 1 && rank <= 3
+    ? `<span class="rank-medal rank-medal-${rank}" role="img" aria-label="Rank ${rank}">${medalMarkup(rank)}</span>`
+    : `<span class="leaderboard-rank">#${rank}</span>`;
+}
+
+function consistencyPresentation(percent) {
+  if (typeof percent !== "number" || !Number.isFinite(percent)) {
+    return { available: false, text: "N/A", progress: 0, tone: "unavailable" };
+  }
+  const progress = Math.max(0, Math.min(100, percent));
+  const tone = progress === 100 ? "perfect" : progress >= 75 ? "strong" : progress >= 50 ? "building" : "low";
+  return { available: true, text: `${Number.isInteger(percent) ? percent : Math.round(percent)}%`, progress, tone };
+}
+
+function perfectBadgeMarkup(value) {
+  return value.available && value.progress === 100
+    ? '<span class="perfect-badge">PERFECT</span>' : "";
+}
+
+function consistencyMeterMarkup(percent, label = "Consistency") {
+  const value = consistencyPresentation(percent);
+  const accessibleValue = value.available
+    ? `role="progressbar" aria-label="${escapeHTML(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value.progress}"`
+    : `role="progressbar" aria-label="${escapeHTML(label)} unavailable" aria-valuetext="Unavailable" aria-valuemin="0" aria-valuemax="100"`;
+  return `<div class="consistency-meter ${value.tone}" ${accessibleValue}><span style="width:${value.progress}%"></span></div>`;
+}
+
+function championFigure(rank, style = "default") {
+  const characterStyle = ["default", "boy", "girl"].includes(style) ? style : "default";
+  const hairstyles = {
+    default: { back: '<path class="character-back-hair" d="M37 31c-9-15-1-28 11-27 6-8 23-7 29 2 13 2 17 20 6 30l-5 17H42z"/>', front: '<path class="character-hair" d="M39 23C38 8 48 2 59 5c8-8 22-1 24 8 9 9 3 20-5 24l-2-14-8 4-4-9-8 7-8-6-8 11z"/>' },
+    boy: { back: '<path class="character-back-hair" d="M39 32c-7-13-1-27 10-29 11-8 25-1 29 6 10 3 11 18 4 26l-4 13H43z"/>', front: '<path class="character-hair" d="M39 22c-2-11 6-20 16-19 9-8 24-1 26 10l-8 1-4 7-7-6-7 7-7-4-8 10z"/>' },
+    girl: { back: '<path class="character-back-hair" d="M38 31C30 11 44-2 61 3c18-4 29 12 21 32l-2 36-12-2-8-20-9 24-13-3 4-35z"/>', front: '<path class="character-hair" d="M39 22c-1-14 9-21 22-17 12-4 23 6 21 19-6-8-11-11-16-12-7 8-16 12-27 13z"/><path class="character-hair-tie" d="M81 20c12 0 14 8 9 13-4 3-9 0-9-4z"/>' }
+  };
+  const arms = rank === 1
+    ? '<g class="character-arm character-arm-left victory-arm"><path class="character-skin-stroke" d="M43 51c-8-10-13-20-18-29"/><circle class="character-skin" cx="24" cy="19" r="5"/></g><g class="character-arm character-arm-right victory-arm"><path class="character-skin-stroke" d="M77 51c8-10 13-20 18-29"/><circle class="character-skin" cx="96" cy="19" r="5"/></g>'
+    : '<g class="character-arm character-arm-left"><path class="character-skin-stroke" d="M43 51c-7 9-10 17-11 27"/><circle class="character-skin" cx="32" cy="80" r="5"/></g><g class="character-arm character-arm-right"><path class="character-skin-stroke" d="M77 51c7 9 10 17 11 27"/><circle class="character-skin" cx="88" cy="80" r="5"/></g>';
+  const legs = '<g class="character-leg character-leg-left"><path class="character-pants-stroke" d="M49 91c-2 15-3 29-4 43"/><path class="character-shoe" d="M45 131c-4 4-8 7-13 8-5 1-7 7-2 9h20l2-15z"/><path class="character-shoe-detail" d="M34 143h13"/></g><g class="character-leg character-leg-right"><path class="character-pants-stroke" d="M71 91c2 15 3 29 4 43"/><path class="character-shoe" d="M75 131c4 4 8 7 13 8 5 1 7 7 2 9H70l-2-15z"/><path class="character-shoe-detail" d="M73 143h13"/></g>';
+  const torso = '<path class="character-shirt" d="M44 40c4-4 10-6 16-6s12 2 16 6l10 11-7 11-6-5-1 35H48l-1-35-6 5-7-11z"/><path class="character-shirt-detail" d="M52 38c2 5 5 7 8 7s6-2 8-7M60 48v17"/>';
+  return `<div class="champion-character champion-character--${characterStyle} champion-character-rank-${rank}" aria-hidden="true">
+    <svg class="champion-avatar" viewBox="0 0 120 155" role="presentation">
+      ${hairstyles[characterStyle].back}
+      ${legs}
+      ${torso}
+      ${arms}
+      <g class="character-head"><path class="character-neck" d="M52 31h16v12H52z"/><path class="character-face" d="M43 18c0-12 7-17 17-17s17 5 17 17v9c0 12-7 20-17 20s-17-8-17-20z"/><ellipse class="character-eye-white" cx="53" cy="25" rx="4.1" ry="5.2"/><ellipse class="character-eye-white" cx="67" cy="25" rx="4.1" ry="5.2"/><circle class="character-eye" cx="54" cy="26" r="2.1"/><circle class="character-eye" cx="66" cy="26" r="2.1"/><path class="character-smile" d="M54 34c3 4 9 4 12 0"/><path class="character-blush" d="M46 32h3M71 32h3"/></g>
+      ${hairstyles[characterStyle].front}
+      <path class="character-shorts" d="M48 88h24l4 12-12 5-4-9-4 9-12-5z"/>
+    </svg>
+  </div>`;
+}
+
+function selectChampionStyle(member) {
+  const profileGender = String(member?.gender || "").trim().toLowerCase();
+  if (profileGender === "male" || profileGender === "female") return profileGender === "female" ? "girl" : "boy";
+  // Member records lack a reliable gender field; map only the two known names.
+  const normalizeName = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z\s]/g, " ").trim().replace(/\s+/g, " ");
+  const parts = normalizeName(member?.name).split(" ");
+  const first = parts[0];
+  const surname = parts.at(-1);
+  const girlNames = new Map([
+    ["avantika", new Set(["yadav"])], ["avanthika", new Set(["yadav"])], ["avantikaa", new Set(["yadav"])],
+    ["kanika", new Set(["dwivedi"])], ["khanika", new Set(["dwivedi"])], ["kanikaa", new Set(["dwivedi"])]
+  ]);
+  if (girlNames.get(first)?.has(surname)) return "girl";
+  return "default";
+}
+
+function podiumCard(member, rank, score) {
+  const percent = consistencyPresentation(member.percent);
+  const podiumHeight = rank === 1 ? 116 : rank === 2 ? 94 : 78;
+  const safeName = escapeHTML(member.name);
+  const dailyDone = member.dailyDone;
+  const conceptsDone = member.conceptsDone;
+  return `<article class="winner-card winner-rank-${rank}" style="--pedestal-height:${podiumHeight}px">
+    <div class="champion-tower">
+      <div class="champion-pedestal">
+        <span class="podium-place">${rank === 1 ? "CHAMPION" : rank === 2 ? "RUNNER UP" : "THIRD PLACE"}</span>
+        <h4>${safeName}</h4>
+        <strong class="winner-score">${score}/8 <small>points</small></strong>
+        <div class="winner-progress ${percent.tone}"><span style="--progress:${percent.progress}%"></span></div>
+        ${perfectBadgeMarkup(percent)}
+        <div class="winner-details"><span>${dailyDone}/6 daily</span><span>${conceptsDone}/2 concepts</span></div>
+      </div>
+      <span class="character-shadow" aria-hidden="true"></span>
+      ${championFigure(rank, selectChampionStyle(member))}
+      <span class="medal-ribbon">${medalMarkup(rank)}</span>
+    </div>
+  </article>`;
+}
+
+function renderArenaAchievements(source = null) {
+  const container = $("arenaAchievements");
+  if (!container) return;
+  if (!(source || state.members).length) {
+    container.innerHTML = '<p class="arena-achievement-empty">No member data is available for this week yet.</p>';
+    return;
+  }
+  const members = source || state.members.map(member => ({ member, stats: memberStats(member.id), daily: getDaily(member.id) }));
+  const maxPercent = Math.max(...members.map(item => item.stats.percent));
+  const champions = members.filter(item => item.stats.percent === maxPercent);
+  const longestStreak = members.map(item => {
+    let run = 0, best = 0;
+    (item.daily || []).forEach(status => {
+      run = status === "done" ? run + 1 : 0;
+      best = Math.max(best, run);
+    });
+    return { ...item, streak: best };
+  });
+  const maxStreak = Math.max(...longestStreak.map(item => item.streak));
+  const categories = [
+    { title: "Perfect Week", detail: "8/8 tracked tasks · 100%", icon: "✦", winners: members.filter(item => item.stats.percent === 100).map(item => `${escapeHTML(item.member.name)} · 8/8 (100%)`), empty: "No 100% completions recorded." },
+    { title: "Consistency Champion", detail: "Highest verified completion", icon: "◎", winners: champions.map(item => `${escapeHTML(item.member.name)} · ${item.stats.percent}% (${item.stats.overallDone}/8)`), empty: "Completion data is unavailable." },
+    { title: "Daily Champion", detail: "6/6 daily submissions", icon: "⌁", winners: members.filter(item => item.stats.dailyDone === 6).map(item => `${escapeHTML(item.member.name)} · 6/6 daily`), empty: "No complete daily sets yet." },
+    { title: "Concept Master", detail: "2/2 concept proofs", icon: "⌘", winners: members.filter(item => item.stats.conceptsDone === 2).map(item => `${escapeHTML(item.member.name)} · 2/2 concepts`), empty: "No complete concept sets yet." },
+    { title: "Streak Keeper", detail: "Consecutive completed weekdays", icon: "↗", winners: maxStreak >= 2 ? longestStreak.filter(item => item.streak === maxStreak).map(item => `${escapeHTML(item.member.name)} · ${item.streak} days in a row`) : [], empty: "No consecutive completed days recorded." }
+  ];
+  container.innerHTML = categories.map((award, index) => `<article class="arena-award arena-award-${index + 1}"><span class="arena-award-icon" aria-hidden="true">${award.icon}</span><div class="arena-award-copy"><strong>${award.title}</strong><small>${award.detail}</small><div class="arena-award-winners">${award.winners.length ? award.winners.map(name => `<span>${name}</span>`).join("") : `<span class="arena-award-empty">${award.empty}</span>`}</div></div></article>`).join("");
+}
+
+function animatePageAchievements(pageName) {
+  const containerId = pageName === "daily" ? "dailyAchievements" :
+    pageName === "concepts" ? "conceptAchievements" : null;
+  if (containerId) {
+    document.querySelectorAll(`#${containerId} [data-achievement-key]`).forEach(card => {
+      card.classList.add("is-celebrating");
+    });
+  }
+
+  if (pageName === "leaderboard") {
+    const podium = $("leaderboardPodium");
+    const key = podium?.dataset.podiumKey;
+    if (key && !celebratedAchievementKeys.has(key)) {
+      celebratedAchievementKeys.add(key);
+      const champion = podium.querySelector(".winner-card.winner-rank-1") || podium;
+      burstConfetti(champion, 34);
+      champion.classList.add("is-celebrating");
+    }
+  }
 }
 
 function escapeHTML(value) {
@@ -214,7 +427,7 @@ function totalPossible() {
 }
 
 function percentage(done, possible) {
-  return possible ? Math.round((done / possible) * 100) : 0;
+  return possible ? Math.round((done / possible) * 100) : null;
 }
 
 function memberStats(memberId) {
@@ -271,6 +484,18 @@ function showToast(message, type = "success") {
 
 /* -------------------- NAVIGATION -------------------- */
 
+function observePodiumVisibility() {
+  const podium = $("leaderboardPodium");
+  if (!podium || !("IntersectionObserver" in window) || observedPodium === podium) return;
+  if (podiumVisibilityObserver) podiumVisibilityObserver.disconnect();
+  observedPodium = podium;
+  podiumVisibilityObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => entry.target.classList.toggle("is-in-view", entry.isIntersecting));
+  }, { threshold: 0.08 });
+  podium.classList.add("tracks-visibility");
+  podiumVisibilityObserver.observe(podium);
+}
+
 function showPage(pageName) {
   const info = PAGE_INFO[pageName];
   if (!info) return;
@@ -294,7 +519,13 @@ function showPage(pageName) {
     renderReport();
   }
 
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  animatePageAchievements(pageName);
+  if (pageName === "leaderboard") observePodiumVisibility();
+
+  // A newly activated page must be visible immediately. Smooth scrolling can
+  // leave the new (shorter) page below the viewport while the old scroll
+  // position is being animated away.
+  window.scrollTo(0, 0);
 }
 
 document.querySelectorAll(".nav-link").forEach(button => {
@@ -347,7 +578,7 @@ function statusDetails(status) {
   if (status === "done") {
     return {
       label: "Done",
-      symbol: "✓",
+      symbol: "\u2713",
       className: "done"
     };
   }
@@ -355,14 +586,14 @@ function statusDetails(status) {
   if (status === "absent") {
     return {
       label: "Not submitted",
-      symbol: "×",
+      symbol: "\u2715",
       className: "absent"
     };
   }
 
   return {
     label: "Not marked",
-    symbol: "·",
+    symbol: "\u2013",
     className: "blank"
   };
 }
@@ -438,9 +669,10 @@ function renderDailyTable() {
 
   for (const member of state.members) {
     const daily = getDaily(member.id);
+    const isComplete = countDone(daily) === DAYS.length;
 
     html += `
-      <tr>
+      <tr class="${isComplete ? "daily-complete-row" : ""}">
         <td>
           <div class="member-cell">
             <span class="member-avatar">${escapeHTML(getInitials(member.name))}</span>
@@ -465,7 +697,7 @@ function renderDailyTable() {
     });
 
     html += `
-        <td><span class="status-badge done">${countDone(daily)}/6</span></td>
+        <td><span class="status-badge ${isComplete ? "done" : "partial"}">${countDone(daily)}/6${isComplete ? " complete" : ""}</span></td>
       </tr>
     `;
   }
@@ -474,6 +706,7 @@ function renderDailyTable() {
   table.innerHTML = html;
 
   bindStatusButtons(table);
+  $("dailyAchievements").innerHTML = renderAchievementCards("daily", DAYS.length, "Every daily submission is complete.");
 
   const allDaily = state.members.flatMap(member => getDaily(member.id));
   $("dailyCount").textContent =
@@ -503,9 +736,10 @@ function renderConceptTable() {
 
   for (const member of state.members) {
     const concepts = getConcepts(member.id);
+    const isComplete = countDone(concepts) === 2;
 
     html += `
-      <tr>
+      <tr class="${isComplete ? "concept-complete-row" : ""}">
         <td>
           <div class="member-cell">
             <span class="member-avatar">${escapeHTML(getInitials(member.name))}</span>
@@ -530,7 +764,7 @@ function renderConceptTable() {
     });
 
     html += `
-        <td><span class="status-badge done">${countDone(concepts)}/2</span></td>
+        <td><span class="status-badge ${isComplete ? "done" : "partial"}">${countDone(concepts)}/2${isComplete ? " complete" : ""}</span></td>
       </tr>
     `;
   }
@@ -539,6 +773,7 @@ function renderConceptTable() {
   table.innerHTML = html;
 
   bindStatusButtons(table);
+  $("conceptAchievements").innerHTML = renderAchievementCards("concepts", 2, "Both weekly concepts are complete.");
 
   const allConcepts = state.members.flatMap(member => getConcepts(member.id));
   $("conceptCount").textContent =
@@ -568,28 +803,28 @@ function renderStats() {
       label: "Group members",
       value: totalMembers,
       description: "Registered members",
-      icon: "♙",
+      icon: "members",
       color: "blue"
     },
     {
       label: "Daily submissions",
       value: `${dailyDone}/${totalMembers * DAYS.length}`,
       description: "Completed this week",
-      icon: "✓",
+      icon: "daily",
       color: "green"
     },
     {
       label: "Concept proofs",
       value: `${conceptsDone}/${totalMembers * 2}`,
       description: "Completed this week",
-      icon: "▤",
+      icon: "concepts",
       color: "purple"
     },
     {
       label: "Overall completion",
-      value: `${percentage(done, possible)}%`,
+      value: possible ? `${percentage(done, possible)}%` : "N/A",
       description: `${marked} statuses marked`,
-      icon: "↗",
+      icon: "progress",
       color: "orange"
     }
   ];
@@ -597,7 +832,7 @@ function renderStats() {
   $("statsGrid").innerHTML = cards.map(card => `
     <article class="stat-card ${card.color}">
       <div class="stat-label">${card.label}</div>
-      <div class="stat-icon">${card.icon}</div>
+      <div class="stat-icon">${iconMarkup(card.icon)}</div>
       <div class="stat-value">${card.value}</div>
       <div class="stat-description">${card.description}</div>
     </article>
@@ -623,20 +858,13 @@ function renderMemberSummary() {
 
   container.innerHTML = state.members.map(member => {
     const stats = memberStats(member.id);
-    let fillClass = "";
-
-    if (stats.percent >= 75) fillClass = "good";
-    else if (stats.percent < 35) fillClass = "low";
+    const value = consistencyPresentation(stats.percent);
 
     return `
-      <div class="member-summary-row">
-        <span class="member-summary-name" title="${escapeHTML(member.name)}">
-          ${escapeHTML(member.name)}
-        </span>
-        <div class="progress-track" aria-label="${stats.percent}% complete">
-          <div class="progress-fill ${fillClass}" style="width:${stats.percent}%"></div>
-        </div>
-        <span class="member-summary-percent">${stats.percent}%</span>
+      <div class="member-summary-row ${value.tone}">
+        <span class="member-summary-name" title="${escapeHTML(member.name)}">${escapeHTML(member.name)}</span>
+        <div class="member-summary-track">${consistencyMeterMarkup(stats.percent, `${member.name} weekly consistency`)}</div>
+        <span class="member-summary-percent ${value.tone}">${value.text}${perfectBadgeMarkup(value)}</span>
       </div>
     `;
   }).join("");
@@ -661,7 +889,7 @@ function renderPreview() {
         <td>${escapeHTML(member.name)}</td>
         <td>${stats.dailyDone}/6</td>
         <td>${stats.conceptsDone}/2</td>
-        <td>${stats.overallDone}/8 (${stats.percent}%)</td>
+        <td>${stats.overallDone}/8 (${stats.percent}%) ${perfectBadgeMarkup(consistencyPresentation(stats.percent))}</td>
         <td><span class="status-badge ${label.className}">${label.text}</span></td>
       </tr>
     `;
@@ -684,23 +912,33 @@ function renderMembers() {
     return;
   }
 
-  container.innerHTML = state.members.map((member, index) => `
-    <article class="managed-member">
-      <span class="member-avatar">${escapeHTML(getInitials(member.name))}</span>
-      <div class="member-info">
-        <strong>${escapeHTML(member.name)}</strong>
-        <small>${escapeHTML(member.role || `Member ${index + 1}`)}</small>
-      </div>
-      <div class="member-actions">
-        <button class="icon-btn" type="button"
-          data-member-action="rename" data-member-id="${member.id}"
-          aria-label="Rename ${escapeHTML(member.name)}" title="Rename">✎</button>
-        <button class="icon-btn danger" type="button"
-          data-member-action="remove" data-member-id="${member.id}"
-          aria-label="Remove ${escapeHTML(member.name)}" title="Remove">×</button>
-      </div>
-    </article>
-  `).join("");
+  container.innerHTML = state.members.map((member, index) => {
+    const stats = isAdmin ? memberStats(member.id) : null;
+    const consistency = stats ? consistencyPresentation(stats.percent) : null;
+    const progressMarkup = stats ? `
+      <div class="member-progress ${consistency.tone}" role="progressbar" aria-label="${stats.overallDone} of 8 weekly tasks complete" aria-valuemin="0" aria-valuemax="8" aria-valuenow="${stats.overallDone}">
+        <span>${stats.overallDone}/8</span>
+        <div class="member-progress-track ${consistency.tone}"><i style="width:${consistency.progress}%"></i></div>
+        ${perfectBadgeMarkup(consistency)}
+      </div>` : "";
+    return `
+      <article class="managed-member">
+        <span class="member-avatar">${escapeHTML(getInitials(member.name))}</span>
+        <div class="member-info">
+          <strong>${escapeHTML(member.name)}</strong>
+          <small>${escapeHTML(member.role || `Member ${index + 1}`)}</small>
+        </div>
+        ${progressMarkup}
+        <div class="member-actions">
+          <button class="icon-btn" type="button"
+            data-member-action="rename" data-member-id="${member.id}"
+            aria-label="Rename ${escapeHTML(member.name)}" title="Rename">${iconMarkup("edit")}</button>
+          <button class="icon-btn danger" type="button"
+            data-member-action="remove" data-member-id="${member.id}"
+            aria-label="Remove ${escapeHTML(member.name)}" title="Remove">${iconMarkup("remove")}</button>
+        </div>
+      </article>`;
+  }).join("");
 
   container.querySelectorAll("[data-member-action]").forEach(button => {
     button.addEventListener("click", () => {
@@ -971,26 +1209,20 @@ $("restoreFile").addEventListener("change", async event => {
 /* -------------------- LEADERBOARD -------------------- */
 
 function renderViewerLeaderboard(data) {
-  const medals = { 1: "\u{1F947}", 2: "\u{1F948}", 3: "\u{1F949}" };
   $("leaderboardWeek").textContent = `WEEK ${data.week}`;
   $("leaderboardSummary").innerHTML = `
     <div class="leaderboard-stat"><span>PARTICIPANTS</span><strong>${data.participants}</strong></div>
     <div class="leaderboard-stat"><span>HIGHEST SCORE</span><strong>${data.highest}/8</strong></div>
     <div class="leaderboard-stat"><span>QUALIFIED</span><strong>${data.qualified}</strong></div>`;
   const qualified = data.members.filter(member => member.qualified && member.rank <= 3);
-  $("leaderboardPodium").innerHTML = qualified.map(member => `
-    <article class="winner-card winner-rank-${member.rank}">
-      <div class="winner-medal">${medals[member.rank]} <span>RANK ${member.rank}</span></div>
-      <h4>${escapeHTML(member.name)}</h4><strong class="winner-score">${member.score}/8 <small>points</small></strong>
-      <div class="winner-progress"><span style="--progress:${member.percent}%"></span></div>
-      <div class="winner-details"><span>${member.dailyDone}/6 daily</span><span>${member.conceptsDone}/2 concepts</span></div>
-      <span class="winner-percent">${member.percent}% complete</span>
-    </article>`).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 6 of 8 tasks to appear on the podium.</div>`;
+  const podium = $("leaderboardPodium");
+  podium.dataset.podiumKey = qualified.length ? `leaderboard:${data.week}:${qualified.map(member => `${member.rank}:${member.name}:${member.score}`).join("|")}` : "";
+  podium.innerHTML = qualified.map(member => podiumCard(member, member.rank, member.score)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 6 of 8 tasks to appear on the podium.</div>`;
   $("leaderboardRows").innerHTML = data.members.map(member => {
-    const medal = member.rank && medals[member.rank] ? medals[member.rank] + " " : "";
-    const rankCell = member.qualified ? `<span class="leaderboard-rank">${medal}${member.rank}</span>` : `<span class="leaderboard-unqualified">Keep Going</span>`;
+    const rankCell = member.qualified ? rankBadgeMarkup(member.rank) : `<span class="leaderboard-unqualified">Keep Going</span>`;
     const className = member.qualified && member.rank <= 3 ? `leaderboard-rank-${member.rank}` : "";
-    return `<tr class="${className}"><td>${rankCell}</td><td><strong>${escapeHTML(member.name)}</strong></td><td>${member.dailyDone}/6</td><td>${member.conceptsDone}/2</td><td><strong>${member.score}/8</strong></td><td><div class="table-progress"><span style="--progress:${member.percent}%"></span></div><small>${member.percent}%</small></td></tr>`;
+    const value = consistencyPresentation(member.percent);
+    return `<tr class="${className}"><td>${rankCell}</td><td><strong>${escapeHTML(member.name)}</strong></td><td>${member.dailyDone}/6</td><td>${member.conceptsDone}/2</td><td><strong>${member.score}/8</strong></td><td>${consistencyMeterMarkup(member.percent, `${member.name} completion`)}<small class="${value.tone}">${value.text} ${perfectBadgeMarkup(value)}</small></td></tr>`;
   }).join("") || `<tr><td colspan="6">No members yet.</td></tr>`;
 }
 
@@ -1020,7 +1252,6 @@ function renderLeaderboard() {
     member.rank = denseRank;
   });
 
-  const medals = { 1: "\u{1F947}", 2: "\u{1F948}", 3: "\u{1F949}" };
   const participants = state.members.length;
   const highest = rankings.length ? Math.max(...rankings.map(member => member.overallDone)) : 0;
   $("leaderboardSummary").innerHTML = `
@@ -1035,30 +1266,24 @@ function renderLeaderboard() {
     return;
   }
 
-  podium.innerHTML = eligible.filter(member => member.rank <= 3).map(member => `
-    <article class="winner-card winner-rank-${member.rank}">
-      <div class="winner-medal">${medals[member.rank]} <span>RANK ${member.rank}</span></div>
-      <h4>${escapeHTML(member.name)}</h4>
-      <strong class="winner-score">${member.overallDone}/8 <small>points</small></strong>
-      <div class="winner-progress"><span style="--progress:${member.percent}%"></span></div>
-      <div class="winner-details"><span>${member.dailyDone}/6 daily</span><span>${member.conceptsDone}/2 concepts</span></div>
-      <span class="winner-percent">${member.percent}% complete</span>
-    </article>
-  `).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 6 of 8 tasks to appear on the podium.</div>`;
+  const podiumMembers = eligible.filter(member => member.rank <= 3);
+  podium.dataset.podiumKey = podiumMembers.length ? `leaderboard:${currentWeek}:${podiumMembers.map(member => `${member.rank}:${member.name}:${member.overallDone}`).join("|")}` : "";
+  podium.innerHTML = podiumMembers.map(member => podiumCard(member, member.rank, member.overallDone)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 6 of 8 tasks to appear on the podium.</div>`;
 
   tbody.innerHTML = rankings.map(member => {
     const isEligible = member.overallDone >= eligibleMinimum;
     const rank = isEligible ? member.rank : null;
-    const medal = rank && medals[rank] ? `${medals[rank]} ` : "";
     const placeClass = rank && rank <= 3 ? ` leaderboard-rank-${rank}` : "";
+    const value = consistencyPresentation(member.percent);
+    const rankCell = rank ? rankBadgeMarkup(rank) : `<span class="leaderboard-unqualified">Keep Going</span>`;
     return `
       <tr class="${placeClass.trim()}">
-        <td>${rank ? `<span class="leaderboard-rank">${medal}${rank}</span>` : `<span class="leaderboard-unqualified">Keep Going</span>`}</td>
+        <td>${rankCell}</td>
         <td><strong>${escapeHTML(member.name)}</strong></td>
         <td>${member.dailyDone}/6</td>
         <td>${member.conceptsDone}/2</td>
         <td><strong>${member.overallDone}/8</strong></td>
-        <td><div class="table-progress"><span style="--progress:${member.percent}%"></span></div><small>${member.percent}%</small></td>
+        <td>${consistencyMeterMarkup(member.percent, `${member.name} completion`)}<small class="${value.tone}">${value.text} ${perfectBadgeMarkup(value)}</small></td>
       </tr>
     `;
   }).join("");
@@ -1079,14 +1304,15 @@ function renderReport() {
   const reportRows = state.members.map(member => {
     const stats = memberStats(member.id);
     const label = overallLabel(stats);
+    const consistency = consistencyPresentation(stats.percent);
 
     return `
-      <tr>
+      <tr class="${stats.overallDone === stats.possible ? "report-perfect-row" : ""}">
         <td>${escapeHTML(member.name)}</td>
         <td>${stats.dailyDone}/6</td>
         <td>${stats.conceptsDone}/2</td>
         <td>${stats.overallDone}/8</td>
-        <td>${stats.percent}%</td>
+        <td><div class="report-progress ${consistency.tone}" role="progressbar" aria-label="${escapeHTML(member.name)} completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${consistency.progress}"><span style="width:${consistency.progress}%"></span></div><strong class="${consistency.tone}">${consistency.text} ${perfectBadgeMarkup(consistency)}</strong></td>
         <td><span class="status-badge ${label.className}">${label.text}</span></td>
       </tr>
     `;
@@ -1133,7 +1359,7 @@ function renderReport() {
       </div>
       <div class="report-stat">
         <span>Overall Completion</span>
-        <strong>${percentage(done, possible)}%</strong>
+        <strong>${possible ? `${percentage(done, possible)}%` : "N/A"}</strong>
       </div>
     </div>
 
@@ -1215,6 +1441,7 @@ $("reportPrintBtn").addEventListener("click", printReport);
 function renderAll() {
   renderStats();
   renderMemberSummary();
+  renderArenaAchievements();
   renderPreview();
   renderDailyTable();
   renderConceptTable();
@@ -1222,6 +1449,7 @@ function renderAll() {
   renderLeaderboard();
   renderReport();
   setRoleUI();
+  animatePageAchievements(activePage);
 }
 
 /* -------------------- INITIALIZE APP -------------------- */
@@ -1312,7 +1540,7 @@ async function loadSharedData() {
 function clearViewerData() {
   state = { members: [], weeks: {}, currentWeek };
   viewerPageData = null;
-  ["statsGrid", "memberSummary", "previewRows", "dailyTable", "conceptTable", "memberManager", "leaderboardRows", "leaderboardPodium", "leaderboardSummary", "printReport"].forEach(id => { if ($(id)) $(id).innerHTML = ""; });
+  ["statsGrid", "memberSummary", "previewRows", "dailyTable", "conceptTable", "dailyAchievements", "conceptAchievements", "memberManager", "leaderboardRows", "leaderboardPodium", "leaderboardSummary", "printReport"].forEach(id => { if ($(id)) $(id).innerHTML = ""; });
   ["memberCountTag", "dailyCount", "conceptCount"].forEach(id => { if ($(id)) $(id).textContent = ""; });
 }
 
@@ -1326,12 +1554,16 @@ function renderViewerOverview(data) {
     ["Group members", members, "Registered members", "blue"],
     ["Daily submissions", `${data.dailyDone}/${dailyPossible}`, "Completed this week", "green"],
     ["Concept proofs", `${data.conceptsDone}/${conceptsPossible}`, "Completed this week", "purple"],
-    ["Overall completion", `${overallPossible ? Math.round(completed / overallPossible * 100) : 0}%`, "This week's progress", "orange"]
+    ["Overall completion", `${overallPossible ? Math.round(completed / overallPossible * 100) : "N/A"}${overallPossible ? "%" : ""}`, "This week's progress", "orange"]
   ];
   $("statsGrid").innerHTML = stats.map(([label, value, description, color]) => `<article class="stat-card ${color}"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-description">${description}</div></article>`).join("");
   $("weekChip").textContent = `WEEK ${data.week}`;
-  $("memberSummary").innerHTML = data.summary.map(member => `<div class="member-summary-row"><span class="member-summary-name">${escapeHTML(member.name)}</span><div class="progress-track"><div class="progress-fill" style="width:${member.percent}%"></div></div><span class="member-summary-percent">${member.percent}%</span></div>`).join("") || `<div class="empty-state">No members yet.</div>`;
-  $("previewRows").innerHTML = data.summary.map(member => `<tr><td>${escapeHTML(member.name)}</td><td>${member.dailyDone}/6</td><td>${member.conceptsDone}/2</td><td>${member.overallDone}/8 (${member.percent}%)</td><td>${member.overallDone === 8 ? "Complete" : member.overallDone ? "In progress" : "Not marked"}</td></tr>`).join("") || `<tr><td colspan="5">No members yet.</td></tr>`;
+  $("memberSummary").innerHTML = data.summary.map(member => {
+    const value = consistencyPresentation(member.percent);
+    return `<div class="member-summary-row ${value.tone}"><span class="member-summary-name">${escapeHTML(member.name)}</span><div class="member-summary-track">${consistencyMeterMarkup(member.percent, `${member.name} weekly consistency`)}</div><span class="member-summary-percent ${value.tone}">${value.text} ${perfectBadgeMarkup(value)}</span></div>`;
+  }).join("") || `<div class="empty-state">No members yet.</div>`;
+  $("previewRows").innerHTML = data.summary.map(member => `<tr><td>${escapeHTML(member.name)}</td><td>${member.dailyDone}/6</td><td>${member.conceptsDone}/2</td><td>${member.overallDone}/8 (${member.percent}%) ${perfectBadgeMarkup(consistencyPresentation(member.percent))}</td><td>${member.overallDone === 8 ? "Complete" : member.overallDone ? "In progress" : "Not marked"}</td></tr>`).join("") || `<tr><td colspan="5">No members yet.</td></tr>`;
+  renderArenaAchievements(data.summary.map(member => ({ member, stats: member, daily: [] })));
 }
 
 async function navigatePage(page) {
@@ -1418,6 +1650,9 @@ function initializeSecurityControls() {
 }
 
 async function initializeApp() {
+  // Do not inherit a restored scroll offset when the dashboard first opens.
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  window.scrollTo(0, 0);
   initializeWeekSelector();
   initializeSecurityControls();
   try {
