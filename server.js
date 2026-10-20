@@ -31,19 +31,47 @@ function requireEnv(name) {
   return process.env[name];
 }
 
+function safeDiagnosticCode(error) {
+  const candidate = error?.diagnosticCode ?? error?.code;
+  if (typeof candidate === "string" && /^[A-Z][A-Z0-9_-]{0,39}$/.test(candidate)) return candidate;
+  if (Number.isInteger(candidate)) return `MONGO_${candidate}`;
+  if (typeof error?.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(error.name)) return error.name;
+  return "UNKNOWN";
+}
+
+function logInitializationFailure(stage, error) {
+  // Only fixed stage labels and sanitized error identifiers go to runtime logs.
+  console.error("[dashboard-init] initialization failed", {
+    stage,
+    code: safeDiagnosticCode(error)
+  });
+}
+
+function createSessionSecret() {
+  try {
+    return requireEnv("SESSION_SECRET");
+  } catch (error) {
+    logInitializationFailure("configuration-validation", error);
+    throw new Error("SESSION_SECRET is required.");
+  }
+}
+
 function createMongoClient() {
   try {
     return new MongoClient(requireEnv("MONGODB_URI"), { maxPoolSize: 10, serverSelectionTimeoutMS: 10000 });
-  } catch {
+  } catch (error) {
+    logInitializationFailure("configuration-validation", error);
     throw new Error("MONGODB_URI is missing or invalid.");
   }
 }
 
 function connectMongo() {
   if (!mongoConnectPromise) {
-    mongoConnectPromise = mongo.connect().catch(() => {
+    mongoConnectPromise = mongo.connect().catch(error => {
       mongoConnectPromise = undefined;
-      throw new Error("Could not connect to MongoDB. Check MONGODB_URI and database network access.");
+      const failure = new Error("Could not connect to MongoDB. Check MONGODB_URI and database network access.");
+      failure.diagnosticCode = safeDiagnosticCode(error);
+      throw failure;
     });
   }
   return mongoConnectPromise;
@@ -51,6 +79,7 @@ function connectMongo() {
 
 function initializeRuntime() {
   if (!runtimeInitializationPromise) {
+    let stage = "configuration-validation";
     runtimeInitializationPromise = (async () => {
       const password = requireEnv("ADMIN_PASSWORD");
       if (password.length < 14 || Buffer.byteLength(password, "utf8") > 72) throw new Error("ADMIN_PASSWORD must be 14–72 bytes.");
@@ -58,10 +87,13 @@ function initializeRuntime() {
       if (sessionSecret.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters.");
       if (/replace-with/i.test(password) || /replace-with/i.test(sessionSecret)) throw new Error("Replace the example credentials with private values before starting the server.");
 
+      stage = "admin-password-hashing";
       adminPasswordHash = await bcrypt.hash(password, 12);
       adminCredentialVersion = crypto.createHash("sha256").update(password).digest("hex");
+      stage = "mongodb-connection";
       await connectMongo();
       db = mongo.db();
+      stage = "mongodb-index-creation";
       await Promise.all([
         db.collection("sessions").createIndex({ expires: 1 }, { expireAfterSeconds: 0 }),
         db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
@@ -69,6 +101,7 @@ function initializeRuntime() {
       ]);
     })().catch(error => {
       runtimeInitializationPromise = undefined;
+      logInitializationFailure(stage, error);
       throw error;
     });
   }
@@ -158,7 +191,7 @@ app.use("/api", (req, res, next) => { res.setHeader("Cache-Control", "no-store")
 app.use(requireRuntime);
 app.use(session({
   name: "dsa.sid",
-  secret: requireEnv("SESSION_SECRET"),
+  secret: createSessionSecret(),
   store: MongoStore.create({ client: mongo, collectionName: "sessions", ttl: 60 * 60 * 8, autoRemove: "disabled" }),
   resave: false,
   saveUninitialized: false,
