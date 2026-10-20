@@ -19,14 +19,66 @@ const PORT = Number(process.env.PORT) || 3000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const production = process.env.NODE_ENV === "production";
 const app = express();
-let mongo;
+const mongo = createMongoClient();
 let db;
 let adminPasswordHash;
 let adminCredentialVersion;
+let mongoConnectPromise;
+let runtimeInitializationPromise;
 
 function requireEnv(name) {
   if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`);
   return process.env[name];
+}
+
+function createMongoClient() {
+  try {
+    return new MongoClient(requireEnv("MONGODB_URI"), { maxPoolSize: 10, serverSelectionTimeoutMS: 10000 });
+  } catch {
+    throw new Error("MONGODB_URI is missing or invalid.");
+  }
+}
+
+function connectMongo() {
+  if (!mongoConnectPromise) {
+    mongoConnectPromise = mongo.connect().catch(() => {
+      mongoConnectPromise = undefined;
+      throw new Error("Could not connect to MongoDB. Check MONGODB_URI and database network access.");
+    });
+  }
+  return mongoConnectPromise;
+}
+
+function initializeRuntime() {
+  if (!runtimeInitializationPromise) {
+    runtimeInitializationPromise = (async () => {
+      const password = requireEnv("ADMIN_PASSWORD");
+      if (password.length < 14 || Buffer.byteLength(password, "utf8") > 72) throw new Error("ADMIN_PASSWORD must be 14–72 bytes.");
+      const sessionSecret = requireEnv("SESSION_SECRET");
+      if (sessionSecret.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters.");
+      if (/replace-with/i.test(password) || /replace-with/i.test(sessionSecret)) throw new Error("Replace the example credentials with private values before starting the server.");
+
+      adminPasswordHash = await bcrypt.hash(password, 12);
+      adminCredentialVersion = crypto.createHash("sha256").update(password).digest("hex");
+      await connectMongo();
+      db = mongo.db();
+      await Promise.all([
+        db.collection("sessions").createIndex({ expires: 1 }, { expireAfterSeconds: 0 }),
+        db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 })
+      ]);
+    })().catch(error => {
+      runtimeInitializationPromise = undefined;
+      throw error;
+    });
+  }
+  return runtimeInitializationPromise;
+}
+
+function requireRuntime(req, res, next) {
+  initializeRuntime().then(() => next()).catch(() => {
+    if (!res.headersSent) res.status(503).json({ error: "Dashboard services are temporarily unavailable. Check server configuration and database connectivity." });
+  });
 }
 
 
@@ -103,10 +155,11 @@ app.set("trust proxy", production ? 1 : false);
 app.use(helmet({ contentSecurityPolicy: { directives: { "default-src": ["'self'"], "script-src": ["'self'"], "style-src": ["'self'", "'unsafe-inline'"], "img-src": ["'self'", "data:"], "connect-src": ["'self'"], "object-src": ["'none'"], "frame-ancestors": ["'none'"] } } }));
 app.use(express.json({ limit: "1mb", strict: true }));
 app.use("/api", (req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
+app.use(requireRuntime);
 app.use(session({
   name: "dsa.sid",
   secret: requireEnv("SESSION_SECRET"),
-  store: MongoStore.create({ mongoUrl: requireEnv("MONGODB_URI"), collectionName: "sessions", ttl: 60 * 60 * 8 }),
+  store: MongoStore.create({ client: mongo, collectionName: "sessions", ttl: 60 * 60 * 8, autoRemove: "disabled" }),
   resave: false,
   saveUninitialized: false,
   rolling: true,
@@ -215,21 +268,17 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ error: error.status === 413 ? "Request too large." : "Request could not be completed." });
 });
 
-async function start() {
-  const password = requireEnv("ADMIN_PASSWORD");
-  if (password.length < 14 || Buffer.byteLength(password, "utf8") > 72) throw new Error("ADMIN_PASSWORD must be 14–72 bytes.");
-  const sessionSecret = requireEnv("SESSION_SECRET");
-  if (sessionSecret.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters.");
-  if (/replace-with/i.test(password) || /replace-with/i.test(sessionSecret)) throw new Error("Replace the example credentials with private values before starting the server.");
-  adminPasswordHash = await bcrypt.hash(password, 12);
-  adminCredentialVersion = crypto.createHash("sha256").update(password).digest("hex");
-  mongo = new MongoClient(requireEnv("MONGODB_URI"));
-  try { await mongo.connect(); }
-  catch { throw new Error("Could not connect to MongoDB. Check MONGODB_URI and database network access."); }
-  db = mongo.db();
-  await db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-  await db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
-  app.listen(PORT, () => console.log(`DSA dashboard listening on port ${PORT}`));
+async function startLocalServer() {
+  try {
+    await initializeRuntime();
+    app.listen(PORT, () => console.log(`DSA dashboard listening on port ${PORT}`));
+  } catch {
+    console.error("Could not start the dashboard. Check required environment variables and MongoDB network access.");
+    await mongo.close().catch(() => {});
+    process.exitCode = 1;
+  }
 }
 
-start().catch(error => { console.error(error.message); process.exit(1); });
+if (require.main === module) startLocalServer();
+
+module.exports = app;

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "DSA dashboard with server-side admin authorization",
-  "scripts": { "start": "node server.js", "dev": "node --watch server.js", "test": "node --test" },
+  "scripts": { "start": "node server.js", "dev": "node --watch server.js", "vercel-build": "node scripts/prepare-vercel-assets.js", "test": "node --test" },
   "engines": { "node": ">=20" },
   "dependencies": {
     "bcryptjs": "^2.4.3",

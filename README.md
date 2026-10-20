@@ -4,7 +4,7 @@ The dashboard now uses a same-origin Node.js API and MongoDB for shared state. O
 
 ## Architecture and security
 
-- `server.js` serves only `index.html`, `style.css`, and `script.js`, plus the API.
+- `server.js` serves the API and local frontend. The Vercel build copies the root frontend files to `public/`, where Vercel serves them as CDN assets.
 - MongoDB stores the shared dashboard, server sessions, rate-limit counters, and a small audit trail.
 - Krish signs in with the server-side `ADMIN_PASSWORD` secret. The server hashes it at startup and never sends credentials or hashes to the browser.
 - Session cookies are HttpOnly and SameSite Strict. Production cookies are Secure and require HTTPS.
@@ -44,7 +44,21 @@ Sessions expire after eight hours of inactivity; use **Log out** to end the curr
 
 Create a MongoDB database (for example, a MongoDB Atlas cluster), restrict its network access to the application host where possible, and use a database user with access only to this app's database. Backups should be configured in MongoDB and separately for exported dashboard JSON as appropriate.
 
-Deploy this as a long-running Node.js web service with persistent outbound MongoDB access, such as a container or Node service on a host that supports persistent processes. Configure the start command as `npm start`, provide the environment variables through the host's secret manager, and enable HTTPS. The server sets Secure cookies when `NODE_ENV=production` and trusts one reverse proxy hop. Login attempt limits use short-lived MongoDB counters keyed by a keyed hash of the client address. A static-only deployment is not sufficient. This project has no Vercel serverless adapter; use a compatible long-running service or build and verify a dedicated serverless adaptation before deployment.
+### Vercel
+
+Vercel detects the root `server.js` Express app as one serverless function. It serves static files from `public/` through its CDN and does not use `express.static()` for this. The deployment includes synced copies of the maintained root `index.html`, `style.css`, and `script.js` in `public/`; run `npm run vercel-build` after frontend edits to refresh them. A test checks that these files stay in sync. `vercel.json` configures security headers. The app exports the Express instance for Vercel and only opens a port when started directly, so local `npm.cmd start` remains available.
+
+MongoDB connection and index setup is lazy and guarded by shared promises per function instance. Concurrent cold requests share one initialization, the same Mongo client backs the dashboard and `connect-mongo` sessions, and initialization can retry after a failed connection. Vercel instances can still cold start or scale independently; MongoDB Atlas remains the durable source of data and sessions.
+
+Next steps:
+
+1. Push this project to a Git provider, or install the Vercel CLI and run `vercel link` from this folder.
+2. Before committing later frontend changes, run `npm run vercel-build` and commit the updated `public/` copies along with the root source files.
+3. In Vercel Project Settings → Environment Variables, add `MONGODB_URI`, `SESSION_SECRET`, and `ADMIN_PASSWORD` for Production (and Preview if you will use preview deployments). Use the existing private values through the Vercel UI/secret input; do not add `.env` to Git. Set `NODE_ENV` to `production` if it is not supplied automatically. `PORT` is optional on Vercel.
+4. Allow the Vercel deployment to connect to MongoDB Atlas using an appropriate Atlas network access configuration. Prefer Vercel Static IPs/Secure Compute where available; avoid broad public access rules when possible.
+5. Deploy a preview with `vercel`, then verify static assets, all six public pages, admin login/logout, rejected anonymous writes, and persistence. Deploy production only after preview verification with `vercel --prod` (or use Vercel’s Git integration).
+
+The project has not been deployed or tested in Vercel. Local `npm.cmd start` uses the same app and security middleware, but only a deployed preview can verify Vercel routing, static delivery, production cookies, and runtime limits.
 
 Do not commit `.env`, production secrets, backups, or database credentials. `.gitignore` excludes local environment files and `node_modules`.
 
@@ -54,4 +68,4 @@ Daily and concept tracking, member management, dense leaderboard ranking, the 75
 
 ## Verification status
 
-Run `npm.cmd install` and `npm.cmd start` after supplying MongoDB and secret settings. Run `npm.cmd test` for the scoring and ranking unit tests. Authentication, MongoDB persistence, rate limits, HTTPS cookies, browser UI behavior, and cross-browser consistency require a configured MongoDB instance and must be exercised in a running browser/server session.
+Run `npm.cmd install` and `npm.cmd start` after supplying MongoDB and secret settings. Run `npm.cmd test` for the scoring/ranking tests and Vercel asset-copy check. Authentication, MongoDB persistence, rate limits, HTTPS cookies, browser UI behavior, cross-browser consistency, and Vercel's routing/runtime behavior require a configured MongoDB instance and must be exercised against the running app or a Vercel preview.
