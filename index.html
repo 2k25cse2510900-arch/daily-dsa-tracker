@@ -1,0 +1,309 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#102a43">
+  <meta name="description" content="DSA group daily submissions and weekly concept tracker">
+  <title>DSA Admin Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">DS</div>
+        <div>
+          <strong>DSA TRACKER</strong>
+          <span>ADMIN WORKSPACE</span>
+        </div>
+      </div>
+
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav class="navigation" aria-label="Main navigation">
+        <button class="nav-link active" data-target="overview"><span>▦</span> Overview</button>
+        <button class="nav-link" data-target="daily"><span>✓</span> Daily submissions</button>
+        <button class="nav-link" data-target="concepts"><span>▤</span> Weekly concepts</button>
+        <button class="nav-link" data-target="members"><span>♙</span> Members</button>
+        <button class="nav-link" data-target="leaderboard"><span>★</span> Leaderboard</button>
+        <button class="nav-link" data-target="report"><span>▧</span> Weekly report</button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="save-indicator">
+          <i></i>
+          <span id="saveState">Saved in this browser</span>
+        </div>
+        <p>One Question.<br>One Concept. One Day at a Time.</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">DSA COMMUNITY / ADMIN</div>
+          <h1 id="pageTitle">Overview</h1>
+        </div>
+
+        <div class="top-actions">
+          <label class="week-picker">
+            <span>WEEK</span>
+            <select id="weekSelect" aria-label="Choose week"></select>
+          </label>
+          <button class="btn btn-light" id="loginBtn" type="button">Admin login</button>
+          <span id="adminModeIndicator" class="admin-mode-indicator" hidden>Admin Mode</span>
+          <button class="btn btn-light" id="logoutBtn" type="button" hidden>Log out</button>
+          <button class="btn btn-light admin-only" id="backupBtn" type="button" hidden>↓ Backup</button>
+          <button class="btn btn-primary" id="exportBtn" type="button">Export PDF ↗</button>
+        </div>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section id="overviewPage" class="page active-page">
+        <div class="welcome-row">
+          <div>
+            <h2>Your consistency, at a glance.</h2>
+            <p>Track daily problem-solving and weekly concept proofs in one place.</p>
+          </div>
+          <div class="week-chip" id="weekChip">WEEK 1</div>
+        </div>
+
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <div class="bulk-actions admin-only" hidden>
+          <div class="bulk-copy">
+            <strong>Quick status actions</strong>
+            <span>Applies to all members for the selected week, including daily and concept statuses.</span>
+          </div>
+          <div class="bulk-buttons">
+            <button class="btn btn-success admin-only" id="markAllDoneBtn" type="button" hidden>✓ Mark everything done</button>
+            <button class="btn btn-light admin-only" id="markAllBlankBtn" type="button" hidden>□ Make everything blank</button>
+          </div>
+        </div>
+
+        <div class="overview-grid">
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <h3>Member consistency</h3>
+                <p>Daily submissions + concept proofs</p>
+              </div>
+              <span class="tiny-tag">THIS WEEK</span>
+            </div>
+            <div id="memberSummary" class="member-summary"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <h3>Quick actions</h3>
+                <p>Manage your weekly tracker</p>
+              </div>
+            </div>
+            <div class="quick-actions">
+              <button class="quick-action" data-go="daily" type="button">
+                <span class="quick-icon">✓</span>
+                <span><b>Update daily tracker</b><small>Mark completed or missed days</small></span>
+                <span class="arrow">→</span>
+              </button>
+              <button class="quick-action" data-go="concepts" type="button">
+                <span class="quick-icon purple">▤</span>
+                <span><b>Check concept proofs</b><small>Review both weekly concepts</small></span>
+                <span class="arrow">→</span>
+              </button>
+              <button class="quick-action" data-go="report" type="button">
+                <span class="quick-icon orange">▧</span>
+                <span><b>Generate weekly report</b><small>Print or save as PDF</small></span>
+                <span class="arrow">→</span>
+              </button>
+              <button class="quick-action admin-only" id="restoreAction" type="button" hidden>
+                <span class="quick-icon blue">↑</span>
+                <span><b>Restore a backup</b><small>Load a previously saved JSON file</small></span>
+                <span class="arrow">→</span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel recent-panel">
+          <div class="panel-heading">
+            <div>
+              <h3>Weekly report preview</h3>
+              <p>Automatically calculated from your tracker</p>
+            </div>
+            <button class="text-btn" data-go="report" type="button">Full report →</button>
+          </div>
+          <div class="table-wrap">
+            <table class="summary-table">
+              <thead>
+                <tr>
+                  <th>MEMBER</th>
+                  <th>DAILY</th>
+                  <th>CONCEPTS</th>
+                  <th>OVERALL</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody id="previewRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- DAILY TRACKER -->
+      <section id="dailyPage" class="page">
+        <div class="section-intro">
+          <div>
+            <h2>Daily submission tracker</h2>
+            <p>Click any status box to cycle through Done → Not submitted → Not marked.</p>
+          </div>
+          <div class="legend">
+            <span><i class="status-dot done-dot">✓</i> Done</span>
+            <span><i class="status-dot absent-dot">×</i> Not submitted</span>
+            <span><i class="status-dot blank-dot"></i> Not marked</span>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h3>Weekly DSA progress</h3>
+              <p>Monday–Saturday · Select a box to update a status</p>
+            </div>
+            <button class="btn btn-light admin-only" id="clearDailyBtn" type="button" hidden>Reset week</button>
+          </div>
+          <div class="table-wrap tracker-wrap">
+            <table class="tracker-table" id="dailyTable"></table>
+          </div>
+          <div class="table-foot">
+            <span id="dailyCount"></span>
+            <span>Blank means the status has not been marked yet.</span>
+          </div>
+        </section>
+      </section>
+
+      <!-- CONCEPTS TRACKER -->
+      <section id="conceptsPage" class="page">
+        <div class="section-intro">
+          <div>
+            <h2>Weekly concepts tracker</h2>
+            <p>Track written notes or proof for the two weekly concepts.</p>
+          </div>
+          <span class="requirement-pill">2 CONCEPTS REQUIRED</span>
+        </div>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h3>Concept proof submissions</h3>
+              <p>Click a status box to cycle through Done → Not submitted → Not marked.</p>
+            </div>
+            <button class="btn btn-light admin-only" id="clearConceptsBtn" type="button" hidden>Reset concepts</button>
+          </div>
+          <div class="table-wrap tracker-wrap">
+            <table class="tracker-table" id="conceptTable"></table>
+          </div>
+          <div class="table-foot">
+            <span id="conceptCount"></span>
+            <span>Concept proof is tracked separately from daily coding.</span>
+          </div>
+        </section>
+      </section>
+
+      <!-- MEMBERS -->
+      <section id="membersPage" class="page">
+        <div class="section-intro">
+          <div>
+            <h2>Manage your members</h2>
+            <p>All eight original members are included. You can add, rename or remove members.</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <form id="addMemberForm" class="add-member-form admin-only" hidden>
+            <label for="memberName">Add a member</label>
+            <div class="add-controls">
+              <input id="memberName" type="text" maxlength="60" placeholder="Enter full name" required>
+              <button class="btn btn-primary" type="submit">+ Add member</button>
+            </div>
+          </form>
+
+          <div class="members-list-heading">
+            <div>
+              <h3>DSA Group Members</h3>
+              <p>Registered members and their roles</p>
+            </div>
+            <span class="tiny-tag" id="memberCountTag">8 MEMBERS</span>
+          </div>
+
+          <div id="memberManager" class="member-manager"></div>
+        </section>
+      </section>
+
+      <!-- LEADERBOARD -->
+      <section id="leaderboardPage" class="page leaderboard-page">
+        <div class="leaderboard-hero">
+          <div class="leaderboard-hero-copy">
+            <span class="leaderboard-kicker">🏆 DSA COMMUNITY</span>
+            <h2>DSA Champions</h2>
+            <p>Consistency today. Excellence tomorrow.</p>
+          </div>
+          <div class="leaderboard-controls">
+            <label class="week-picker"><span>VIEW</span><select id="leaderboardMode" aria-label="Leaderboard time period"><option value="week">Week</option><option value="month" disabled>Month (date data unavailable)</option></select></label>
+            <div class="week-chip" id="leaderboardWeek">WEEK 1</div>
+          </div>
+        </div>
+        <p class="leaderboard-month-note">Monthly rankings need dated tracker records. This dashboard stores numbered weeks only, so monthly totals are unavailable.</p>
+        <div class="leaderboard-summary" id="leaderboardSummary"></div>
+        <section class="podium-section">
+          <div class="leaderboard-section-heading"><div><h3>Top achievers</h3><p>Eligible members with at least 6 of 8 points</p></div><span>🥇 🥈 🥉</span></div>
+          <div class="leaderboard-podium" id="leaderboardPodium"></div>
+        </section>
+        <div class="leaderboard-eligibility-note">Earn at least 6 of 8 points to qualify for leaderboard rankings.</div>
+        <section class="panel leaderboard-panel">
+          <div class="panel-heading"><div><h3>Weekly rankings</h3><p>Dense ranking: tied scores share a rank, and the next score gets the next rank.</p></div><span class="tiny-tag">75% TO QUALIFY</span></div>
+          <div class="table-wrap">
+            <table class="summary-table leaderboard-table">
+              <thead><tr><th>RANK</th><th>MEMBER NAME</th><th>DAILY SUBMISSIONS</th><th>WEEKLY CONCEPTS</th><th>TOTAL SCORE</th><th>COMPLETION</th></tr></thead>
+              <tbody id="leaderboardRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+      <!-- REPORT -->
+      <section id="reportPage" class="page">
+        <div class="section-intro">
+          <div>
+            <h2>Weekly report</h2>
+            <p>Use Print / Save PDF to save the selected week's report.</p>
+          </div>
+          <button class="btn btn-primary" id="reportPrintBtn" type="button">Print / Save PDF ↗</button>
+        </div>
+        <div id="printReport" class="print-report"></div>
+      </section>
+
+      <footer class="app-footer">
+        <span>DSA Admin Dashboard</span>
+        <span>Shared MongoDB dashboard · Public read access</span>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="loginDialog" class="security-dialog">
+    <form id="loginForm">
+      <h2>Admin login</h2><p>Sign in to manage shared dashboard data.</p>
+      <label>Username<input name="username" autocomplete="username" value="Krish" required></label>
+      <label>Password
+        <span class="password-field"><input id="adminPassword" name="password" type="password" maxlength="72" autocomplete="current-password" required><button id="togglePassword" class="btn btn-light" type="button" aria-label="Show password" aria-pressed="false">Show</button></span>
+      </label>
+      <div class="dialog-actions"><button class="btn btn-light" id="cancelLogin" type="button">Cancel</button><button class="btn btn-primary" id="loginSubmit" type="submit">Login &amp; Continue</button></div>
+      <div id="loginError" class="security-error" role="alert" aria-live="polite"></div>
+    </form>
+  </dialog>
+  <div id="securityGate" class="security-gate" hidden>Connecting to the secure shared dashboard…</div>  <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
