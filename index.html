@@ -76,10 +76,6 @@
         </div>
 
         <div class="top-actions">
-          <label class="week-picker">
-            <span>WEEK</span>
-            <select id="weekSelect" aria-label="Choose week"></select>
-          </label>
           <button class="btn btn-light" id="loginBtn" type="button">Admin login</button>
           <span id="adminModeIndicator" class="admin-mode-indicator" hidden>Admin Mode</span>
           <button class="btn btn-light" id="logoutBtn" type="button" hidden>Log out</button>
@@ -196,22 +192,33 @@
         <div class="section-intro">
           <div>
             <h2>Daily submission tracker</h2>
-            <p>Click any status box to cycle through Done → Not submitted → Not marked.</p>
+            <p>Review a selected week or date. Sundays, exam break, and future dates are not markable.</p>
           </div>
-          <div class="legend">
-            <span><i class="status-dot done-dot">✓</i> Done</span>
-            <span><i class="status-dot absent-dot">×</i> Not submitted</span>
-            <span><i class="status-dot blank-dot"></i> Not marked</span>
-          </div>
+          <button class="btn btn-primary phase-toggle" id="phaseToggle" type="button" aria-expanded="false" aria-controls="phaseContent">📅 Open Phase Calendar</button>
         </div>
+
+        <section class="phase-tracker" id="phaseTracker" aria-label="DSA phase tracker">
+          <div class="phase-tracker-head"><div><span class="phase-kicker">DSA PHASE TRACKER</span><strong id="phaseSummary">Loading schedule…</strong><small id="phaseToday"></small></div><span class="phase-selected-summary" id="phaseSelectionSummary"></span></div>
+          <div id="phaseContent" class="phase-content" hidden>
+            <div class="phase-list" id="phaseList"></div>
+            <div class="phase-calendar" id="phaseCalendar" hidden>
+              <div class="calendar-toolbar"><button type="button" id="previousMonthBtn" aria-label="Previous month">‹</button><label><span class="sr-only">Calendar month</span><select id="calendarMonth" aria-label="Choose calendar month"></select></label><button type="button" id="nextMonthBtn" aria-label="Next month">›</button><button class="calendar-today-btn" type="button" id="returnTodayBtn">Return to Today</button></div>
+              <div class="calendar-boundary-message" id="calendarBoundaryMessage" role="status" aria-live="polite"></div>
+              <div class="calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+              <div class="calendar-grid" id="calendarGrid" role="grid" aria-label="DSA phase calendar"></div>
+              <div class="calendar-legend"><span><i class="legend-phase"></i>Phase work</span><span><i class="legend-break"></i>Exam break</span><span><i class="legend-sunday"></i>Sunday</span><span><i class="legend-pause"></i>Official pause</span><span><i class="legend-selected"></i>Selected</span><span><i class="legend-today"></i>Today</span><span><i class="legend-future"></i>Future</span></div>
+              <p class="calendar-note" id="calendarNote">Saved submissions are organized by numbered week, without individual date fields. Calendar dates follow the existing Monday–Saturday week schedule.</p>
+            </div>
+          </div>
+        </section>
 
         <section class="panel">
           <div class="panel-heading">
             <div>
               <h3>Weekly DSA progress</h3>
-              <p>Monday–Saturday · Select a box to update a status</p>
+              <p id="selectedWeekLabel">Week 1 · dates loading</p>
             </div>
-            <button class="btn btn-light admin-only" id="clearDailyBtn" type="button" hidden>Reset week</button>
+            <div class="daily-week-controls"><button class="btn btn-light" id="previousWeekBtn" type="button" aria-label="Previous week">Previous Week</button><button class="btn btn-light" id="nextWeekBtn" type="button" aria-label="Next week">Next Week</button><button class="btn btn-light admin-only" id="clearDailyBtn" type="button" hidden>Reset week</button></div>
           </div>
           <div id="dailyAchievements" class="achievement-list"></div>
           <div class="table-wrap tracker-wrap">

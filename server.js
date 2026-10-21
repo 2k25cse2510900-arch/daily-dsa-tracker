@@ -16,6 +16,16 @@ const { safeMongoDiagnostic } = require("./diagnostics");
 
 const PAGES = ["overview", "daily", "concepts", "members", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
+const MAX_WEEKS = 27;
+const WEEK_ONE_MONDAY = Date.UTC(2026, 6, 27);
+function scheduledSlots(weekNumber) {
+  if (weekNumber <= 13) return [0, 1, 2, 3, 4, 5];
+  return Array.from({ length: 6 }, (_, index) => index).filter(index => {
+    const date = new Date(WEEK_ONE_MONDAY + ((weekNumber - 1) * 7 + index) * 86400000);
+    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    return date.getUTCDay() !== 0 && ((value >= "2026-10-12" && value <= "2026-10-28") || (value >= "2026-12-14" && value <= "2027-01-16"));
+  });
+}
 const PORT = Number(process.env.PORT) || 3000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const production = process.env.NODE_ENV === "production";
@@ -120,7 +130,7 @@ function validState(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
       !Array.isArray(value.members) || value.members.length > 500 ||
       !value.weeks || typeof value.weeks !== "object" || Array.isArray(value.weeks) ||
-      !Number.isInteger(value.currentWeek) || value.currentWeek < 1 || value.currentWeek > 12) return false;
+      !Number.isInteger(value.currentWeek) || value.currentWeek < 1 || value.currentWeek > MAX_WEEKS) return false;
 
   const ids = new Set();
   const names = new Set();
@@ -134,7 +144,7 @@ function validState(value) {
     names.add(member.name.trim().toLocaleLowerCase());
   }
   for (const [weekKey, week] of Object.entries(value.weeks)) {
-    if (!/^(?:[1-9]|1[0-2])$/.test(weekKey) || !week || typeof week !== "object" ||
+    if (!/^(?:[1-9]|1[0-9]|2[0-7])$/.test(weekKey) || !week || typeof week !== "object" ||
         Object.keys(week).some(key => !["daily", "concepts"].includes(key)) ||
         !week.daily || typeof week.daily !== "object" || !week.concepts || typeof week.concepts !== "object") return false;
     for (const [id, values] of Object.entries(week.daily)) {
@@ -244,24 +254,26 @@ app.get("/api/page-data/:page", async (req, res) => {
   const page = req.params.page;
   if (!PAGES.includes(page)) return res.status(404).json({ error: "Page not found." });
   const weekNumber = Number(req.query.week);
-  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > 12) return res.status(400).json({ error: "Choose a valid week." });
+  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > MAX_WEEKS) return res.status(400).json({ error: "Choose a valid week." });
   const document = await db.collection("dashboard").findOne({ _id: "shared" });
   const shared = document || { members: [], weeks: {} };
   const members = shared.members.map(({ id, name }) => ({ id, name, role: "Member" }));
   const savedWeek = shared.weeks[String(weekNumber)] || { daily: {}, concepts: {} };
   const daily = id => Array.from({ length: 6 }, (_, i) => STATUSES.has(savedWeek.daily?.[id]?.[i]) ? savedWeek.daily[id][i] : "blank");
   const concepts = id => Array.from({ length: 2 }, (_, i) => STATUSES.has(savedWeek.concepts?.[id]?.[i]) ? savedWeek.concepts[id][i] : "blank");
+  const workSlots = scheduledSlots(weekNumber);
+  const possible = workSlots.length + (workSlots.length ? 2 : 0);
   const rows = members.map(member => {
-    const d = daily(member.id);
-    const c = concepts(member.id);
-    return { ...member, ...scoreWeek(d, c) };
+    const d = workSlots.map(index => daily(member.id)[index]);
+    const c = workSlots.length ? concepts(member.id) : [];
+    return { ...member, ...scoreWeek(d, c, possible) };
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   if (page === "daily") return res.json({ page, week: weekNumber, members, statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)])) });
   if (page === "concepts") return res.json({ page, week: weekNumber, members, statuses: Object.fromEntries(members.map(member => [member.id, concepts(member.id)])) });
   if (page === "members") return res.json({ page, members });
   if (page === "leaderboard") {
-    applyEligibleDenseRanks(rows, 6);
+    applyEligibleDenseRanks(rows, possible ? Math.ceil(possible * 0.75) : Infinity);
     return res.json({ page, week: weekNumber, members: rows, participants: rows.length, qualified: rows.filter(row => row.qualified).length, highest: rows.length ? rows[0].score : 0 });
   }
   if (page === "overview") {

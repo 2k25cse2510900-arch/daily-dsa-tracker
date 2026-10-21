@@ -9,6 +9,7 @@
 const STORAGE_KEY = "dsaAdminDashboard_v1";
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const STATUS_ORDER = ["blank", "done", "absent"];
+const isoDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const INITIAL_MEMBERS = [];
 
@@ -49,9 +50,10 @@ function iconMarkup(name) {
 function renderAchievementCards(kind, total, description) {
   const particles = Array.from({ length: 10 }, (_, index) => `
     <i class="achievement-particle" style="--particle-x:${(index * 37 + 9) % 100}%;--particle-delay:${(index % 5) * -0.8}s;--particle-duration:${4 + (index % 4)}s;--particle-size:${4 + (index % 3) * 2}px;--particle-drift:${(index % 2 ? 1 : -1) * (14 + index * 2)}px"></i>`).join("");
+  const scheduledTotal = kind === "daily" ? total : workingDayIndexes(currentWeek).length ? total : 0;
   return state.members.filter(member => {
-    const values = kind === "daily" ? getDaily(member.id) : getConcepts(member.id);
-    return countDone(values) === total;
+    const values = kind === "daily" ? dailyStatusesForScoring(member.id) : conceptsForScoring(member.id);
+    return scheduledTotal > 0 && countDone(values) === scheduledTotal;
   }).map(member => {
     const key = `${kind}:${currentWeek}:${member.id}`;
     return `
@@ -63,7 +65,7 @@ function renderAchievementCards(kind, total, description) {
           <strong>${escapeHTML(member.name)}</strong>
           <span>${description}</span>
         </span>
-        <span class="achievement-score">${total}/${total}</span>
+      <span class="achievement-score">${scheduledTotal}/${scheduledTotal}</span>
       </article>`;
   }).join("");
 }
@@ -173,7 +175,11 @@ function selectChampionStyle(member) {
 
 function podiumCard(member, rank, score) {
   const percent = consistencyPresentation(member.percent);
-  const podiumHeight = rank === 1 ? 116 : rank === 2 ? 94 : 78;
+  const dailyPossible = workingDayIndexes(currentWeek).length;
+  const conceptsPossible = dailyPossible ? 2 : 0;
+  const totalPossiblePoints = possibleForWeek();
+  const nameLines = Math.max(1, Math.ceil(Array.from(member.name).length / 22));
+  const podiumHeight = (rank === 1 ? 132 : rank === 2 ? 118 : 106) + (nameLines - 1) * 16;
   const safeName = escapeHTML(member.name);
   const dailyDone = member.dailyDone;
   const conceptsDone = member.conceptsDone;
@@ -182,10 +188,10 @@ function podiumCard(member, rank, score) {
       <div class="champion-pedestal">
         <span class="podium-place">${rank === 1 ? "CHAMPION" : rank === 2 ? "RUNNER UP" : "THIRD PLACE"}</span>
         <h4>${safeName}</h4>
-        <strong class="winner-score">${score}/8 <small>points</small></strong>
+        <strong class="winner-score">${score}/${totalPossiblePoints} <small>points</small></strong>
         <div class="winner-progress ${percent.tone}"><span style="--progress:${percent.progress}%"></span></div>
         ${perfectBadgeMarkup(percent)}
-        <div class="winner-details"><span>${dailyDone}/6 daily</span><span>${conceptsDone}/2 concepts</span></div>
+        <div class="winner-details"><span>${dailyDone}/${dailyPossible} daily</span><span>${conceptsDone}/${conceptsPossible} concepts</span></div>
       </div>
       <span class="character-shadow" aria-hidden="true"></span>
       ${championFigure(rank, selectChampionStyle(member))}
@@ -197,11 +203,18 @@ function podiumCard(member, rank, score) {
 function renderArenaAchievements(source = null) {
   const container = $("arenaAchievements");
   if (!container) return;
+  if (!possibleForWeek()) {
+    container.innerHTML = '<p class="arena-achievement-empty">No phase work is scheduled this week.</p>';
+    return;
+  }
   if (!(source || state.members).length) {
     container.innerHTML = '<p class="arena-achievement-empty">No member data is available for this week yet.</p>';
     return;
   }
   const members = source || state.members.map(member => ({ member, stats: memberStats(member.id), daily: getDaily(member.id) }));
+  const dailyPossible = workingDayIndexes(currentWeek).length;
+  const conceptsPossible = dailyPossible ? 2 : 0;
+  const weeklyPossible = possibleForWeek();
   const maxPercent = Math.max(...members.map(item => item.stats.percent));
   const champions = members.filter(item => item.stats.percent === maxPercent);
   const longestStreak = members.map(item => {
@@ -214,10 +227,10 @@ function renderArenaAchievements(source = null) {
   });
   const maxStreak = Math.max(...longestStreak.map(item => item.streak));
   const categories = [
-    { title: "Perfect Week", detail: "8/8 tracked tasks · 100%", icon: "✦", winners: members.filter(item => item.stats.percent === 100).map(item => `${escapeHTML(item.member.name)} · 8/8 (100%)`), empty: "No 100% completions recorded." },
-    { title: "Consistency Champion", detail: "Highest verified completion", icon: "◎", winners: champions.map(item => `${escapeHTML(item.member.name)} · ${item.stats.percent}% (${item.stats.overallDone}/8)`), empty: "Completion data is unavailable." },
-    { title: "Daily Champion", detail: "6/6 daily submissions", icon: "⌁", winners: members.filter(item => item.stats.dailyDone === 6).map(item => `${escapeHTML(item.member.name)} · 6/6 daily`), empty: "No complete daily sets yet." },
-    { title: "Concept Master", detail: "2/2 concept proofs", icon: "⌘", winners: members.filter(item => item.stats.conceptsDone === 2).map(item => `${escapeHTML(item.member.name)} · 2/2 concepts`), empty: "No complete concept sets yet." },
+    { title: "Perfect Week", detail: `${weeklyPossible}/${weeklyPossible} tracked tasks · 100%`, icon: "✦", winners: members.filter(item => weeklyPossible && item.stats.percent === 100).map(item => `${escapeHTML(item.member.name)} · ${weeklyPossible}/${weeklyPossible} (100%)`), empty: "No 100% completions recorded." },
+    { title: "Consistency Champion", detail: "Highest verified completion", icon: "◎", winners: champions.map(item => `${escapeHTML(item.member.name)} · ${item.stats.percent}% (${item.stats.overallDone}/${weeklyPossible})`), empty: "Completion data is unavailable." },
+    { title: "Daily Champion", detail: `${dailyPossible}/${dailyPossible} daily submissions`, icon: "⌁", winners: members.filter(item => dailyPossible && item.stats.dailyDone === dailyPossible).map(item => `${escapeHTML(item.member.name)} · ${dailyPossible}/${dailyPossible} daily`), empty: "No complete daily sets yet." },
+    { title: "Concept Master", detail: `${conceptsPossible}/${conceptsPossible} concept proofs`, icon: "⌘", winners: members.filter(item => conceptsPossible && item.stats.conceptsDone === conceptsPossible).map(item => `${escapeHTML(item.member.name)} · ${conceptsPossible}/${conceptsPossible} concepts`), empty: "No complete concept sets yet." },
     { title: "Streak Keeper", detail: "Consecutive completed weekdays", icon: "↗", winners: maxStreak >= 2 ? longestStreak.filter(item => item.streak === maxStreak).map(item => `${escapeHTML(item.member.name)} · ${item.streak} days in a row`) : [], empty: "No consecutive completed days recorded." }
   ];
   container.innerHTML = categories.map((award, index) => `<article class="arena-award arena-award-${index + 1}"><span class="arena-award-icon" aria-hidden="true">${award.icon}</span><div class="arena-award-copy"><strong>${award.title}</strong><small>${award.detail}</small><div class="arena-award-winners">${award.winners.length ? award.winners.map(name => `<span>${name}</span>`).join("") : `<span class="arena-award-empty">${award.empty}</span>`}</div></div></article>`).join("");
@@ -316,7 +329,7 @@ function ensureAllData() {
     state.members = INITIAL_MEMBERS.map(member => ({ ...member }));
   }
 
-  for (let weekNumber = 1; weekNumber <= 12; weekNumber++) {
+  for (let weekNumber = 1; weekNumber <= MAX_WEEKS; weekNumber++) {
     for (const member of state.members) {
       ensureMemberWeek(weekNumber, member.id);
     }
@@ -324,7 +337,7 @@ function ensureAllData() {
 
   if (!Number.isInteger(state.currentWeek) ||
       state.currentWeek < 1 ||
-      state.currentWeek > 12) {
+      state.currentWeek > MAX_WEEKS) {
     state.currentWeek = 1;
   }
 
@@ -415,15 +428,15 @@ function countAllDone() {
   let total = 0;
 
   for (const member of state.members) {
-    total += countDone(getDaily(member.id));
-    total += countDone(getConcepts(member.id));
+    total += countDone(dailyStatusesForScoring(member.id));
+    total += countDone(conceptsForScoring(member.id));
   }
 
   return total;
 }
 
 function totalPossible() {
-  return state.members.length * (DAYS.length + 2);
+  return state.members.length * possibleForWeek();
 }
 
 function percentage(done, possible) {
@@ -431,14 +444,14 @@ function percentage(done, possible) {
 }
 
 function memberStats(memberId) {
-  const daily = getDaily(memberId);
-  const concepts = getConcepts(memberId);
+  const daily = dailyStatusesForScoring(memberId);
+  const concepts = conceptsForScoring(memberId);
 
   const dailyDone = countDone(daily);
   const conceptsDone = countDone(concepts);
   const overallDone = dailyDone + conceptsDone;
 
-  const possible = DAYS.length + 2;
+  const possible = possibleForWeek();
   const marked = countMarked(daily) + countMarked(concepts);
 
   return {
@@ -454,6 +467,7 @@ function memberStats(memberId) {
 }
 
 function overallLabel(stats) {
+  if (!stats.possible) return { text: "No scheduled work", className: "blank" };
   if (stats.overallDone === stats.possible) {
     return { text: "Complete", className: "done" };
   }
@@ -540,36 +554,221 @@ document.querySelectorAll("[data-go]").forEach(button => {
   });
 });
 
-/* -------------------- WEEK SELECTOR -------------------- */
+const MAX_WEEKS = 27;
+const PROGRAM_START = "2026-08-01";
+const CALENDAR_END = "2027-01-31";
+const FIRST_WEEK_MONDAY = new Date(2026, 6, 27);
+const DSA_PHASES = [
+  { name: "Phase 1", label: "Phase 1", start: "2026-08-01", end: "2026-08-30", tone: "phase-one" },
+  { name: "Phase 2", label: "Phase 2", start: "2026-08-31", end: null, tone: "phase-two" },
+  { name: "Phase 3", label: "Phase 3 · Special Shortened Phase", start: "2026-10-12", end: "2026-10-28", tone: "phase-three" },
+  { name: "Exam Break", label: "Exam Break", start: "2026-10-29", end: "2026-12-13", tone: "exam-break" },
+  { name: "Phase 4", label: "Phase 4", start: "2026-12-14", end: "2027-01-16", tone: "phase-four" }
+];
+let selectedCalendarDate = isoDate(new Date());
+const CALENDAR_MONTHS = Array.from({ length: 6 }, (_, index) => new Date(2026, 7 + index, 1));
+const currentMonthOffset = (new Date().getFullYear() - 2026) * 12 + new Date().getMonth() - 7;
+let calendarMonthDate = CALENDAR_MONTHS[Math.min(5, Math.max(0, currentMonthOffset))];
+let openPhaseName = "";
+const dateLabel = value => value ? new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Historical dates not recorded";
+const OFFICIAL_PAUSE_DATES = new Set();
 
-function initializeWeekSelector() {
-  const select = $("weekSelect");
-  select.innerHTML = "";
+function weekForDate(value) {
+  if (value < PROGRAM_START || value > CALENDAR_END) return null;
+  const daysSinceAnchor = Math.floor((new Date(`${value}T12:00:00`) - FIRST_WEEK_MONDAY) / 86400000);
+  const week = Math.floor(daysSinceAnchor / 7) + 1;
+  return week >= 1 && week <= MAX_WEEKS ? week : null;
+}
 
-  for (let week = 1; week <= 12; week++) {
-    const option = document.createElement("option");
-    option.value = String(week);
-    option.textContent = "Week " + week;
-    select.appendChild(option);
-  }
+function dateForWeekSlot(week, index) {
+  const date = new Date(FIRST_WEEK_MONDAY);
+  date.setDate(date.getDate() + (week - 1) * 7 + index);
+  return isoDate(date);
+}
 
-  select.value = String(currentWeek);
+function nonWorkingDate(value) {
+  const date = new Date(`${value}T12:00:00`);
+  return date.getDay() === 0 || OFFICIAL_PAUSE_DATES.has(value) || (value >= "2026-10-29" && value <= "2026-12-13");
+}
 
-  select.addEventListener("change", () => {
-    currentWeek = Number(select.value);
-    state.currentWeek = currentWeek;
+function scheduledWorkDate(value) {
+  const inPhaseThree = value >= "2026-10-12" && value <= "2026-10-28";
+  const inPhaseFour = value >= "2026-12-14" && value <= "2027-01-16";
+  const beforePhaseThree = value >= PROGRAM_START && value < "2026-10-12";
+  return !nonWorkingDate(value) && (beforePhaseThree || inPhaseThree || inPhaseFour);
+}
 
-    if (!isAdmin) {
-      navigatePage(activePage).catch(error => showToast(error.message, "error"));
-      return;
-    }
+function futureDate(value) {
+  return value > isoDate(new Date());
+}
 
-    ensureAllData();
-    saveState();
-    renderAll();
+function workingDayIndexes(week = currentWeek) {
+  if (week <= 13) return DAYS.map((_, index) => index);
+  return DAYS.map((_, index) => index).filter(index => scheduledWorkDate(dateForWeekSlot(week, index)));
+}
 
-    showToast("Switched to Week " + currentWeek);
+function dailyStatusesForScoring(memberId, week = currentWeek) {
+  const statuses = getDaily(memberId);
+  return workingDayIndexes(week).map(index => statuses[index]);
+}
+
+function conceptsForScoring(memberId, week = currentWeek) {
+  return workingDayIndexes(week).length ? getConcepts(memberId) : [];
+}
+
+function possibleForWeek(week = currentWeek) {
+  const dailyPossible = workingDayIndexes(week).length;
+  return dailyPossible + (dailyPossible ? 2 : 0);
+}
+
+function phaseForDate(value) {
+  if (value >= "2026-10-12" && value <= "2026-10-28") return DSA_PHASES[2];
+  if (value >= "2026-10-29" && value <= "2026-12-13") return DSA_PHASES[3];
+  if (value >= "2026-12-14" && value <= "2027-01-16") return DSA_PHASES[4];
+  if (value >= DSA_PHASES[0].start && value <= DSA_PHASES[0].end) return DSA_PHASES[0];
+  if (value >= DSA_PHASES[1].start && value < DSA_PHASES[2].start) return DSA_PHASES[1];
+  return null;
+}
+
+function daysBetween(from, to) {
+  return Math.round((new Date(`${to}T12:00:00`) - new Date(`${from}T12:00:00`)) / 86400000);
+}
+
+function currentScheduleSummary(today) {
+  const phase = phaseForDate(today);
+  if (today >= "2026-10-29" && today <= "2026-12-13") return { title: "Exam Break — No Phase Work Scheduled", detail: `${dateLabel(DSA_PHASES[3].start)}–${dateLabel(DSA_PHASES[3].end)}` };
+  if (!phase) return today < PROGRAM_START ? { title: `Program starts ${dateLabel(PROGRAM_START)}`, detail: `Today · ${dateLabel(today)}` } : { title: `Program schedule complete · Phase 4 ended ${dateLabel(DSA_PHASES[4].end)}`, detail: `Today · ${dateLabel(today)}` };
+  if (!phase.end) return { title: `${phase.label} · since ${dateLabel(phase.start)} · end date unavailable`, detail: `Today · ${dateLabel(today)}` };
+  const range = `${phase.label} · ${dateLabel(phase.start)}–${dateLabel(phase.end)}`;
+  const remaining = daysBetween(today, phase.end);
+  const days = remaining === 0 ? "Ends today" : `${remaining} days remaining`;
+  return { title: range, detail: `Today · ${dateLabel(today)} · ${days}` };
+}
+
+function weekRangeLabel(week) {
+  const slots = Array.from({ length: 6 }, (_, index) => dateForWeekSlot(week, index)).filter(value => value >= PROGRAM_START && value <= CALENDAR_END);
+  if (!slots.length) return `Week ${week} · no scheduled dates`;
+  const work = slots.filter(scheduledWorkDate);
+  const phaseBreak = slots.every(value => nonWorkingDate(value) || value > "2027-01-16");
+  if (phaseBreak) return `Week ${week} · ${dateLabel(slots[0])}–${dateLabel(slots.at(-1))} · no phase work scheduled`;
+  return `Week ${week} · ${dateLabel(slots[0])}–${dateLabel(slots.at(-1))} · ${work.length} scheduled working day${work.length === 1 ? "" : "s"}`;
+}
+
+function updateWeek(week, preferredDate = null) {
+  currentWeek = Math.max(1, Math.min(MAX_WEEKS, week));
+  state.currentWeek = currentWeek;
+  const date = preferredDate && weekForDate(preferredDate) === currentWeek
+    ? preferredDate
+    : Array.from({ length: 6 }, (_, index) => dateForWeekSlot(currentWeek, index)).find(value => value >= PROGRAM_START && value <= CALENDAR_END) || PROGRAM_START;
+  selectedCalendarDate = date;
+  calendarMonthDate = new Date(`${date}T12:00:00`);
+  if (isAdmin) { ensureAllData(); saveState(); renderAll(); }
+  else navigatePage(activePage).catch(error => showToast(error.message, "error"));
+  renderPhaseTracker();
+  if (activePage === "daily") renderDailyTable();
+}
+
+function renderPhaseTracker() {
+  const today = isoDate(new Date());
+  const current = currentScheduleSummary(today);
+  const selectedPhase = phaseForDate(selectedCalendarDate);
+  const selectedNote = nonWorkingDate(selectedCalendarDate)
+    ? selectedCalendarDate >= "2026-10-29" && selectedCalendarDate <= "2026-12-13" ? "Exam Break — No Phase Work Scheduled" : OFFICIAL_PAUSE_DATES.has(selectedCalendarDate) ? "Official pause — no phase work scheduled" : "Sunday — Non-working day"
+    : selectedPhase?.label || selectedPhase?.name || (selectedCalendarDate > "2027-01-16" ? "Program schedule complete" : "Historical phase boundary unavailable");
+  $("phaseSummary").textContent = current.title;
+  $("phaseToday").textContent = current.detail;
+  const selectionSummary = $("phaseSelectionSummary");
+  selectionSummary.hidden = selectedCalendarDate === today;
+  selectionSummary.textContent = selectionSummary.hidden ? "" : `Selected · ${dateLabel(selectedCalendarDate)} · ${selectedNote}`;
+  const statuses = new Map(DSA_PHASES.map(phase => {
+    const active = today >= phase.start && (phase.end ? today <= phase.end : today < DSA_PHASES[2].start);
+    return [phase.name, active ? "Current" : today < phase.start ? "Upcoming" : "Complete"];
+  }));
+  $("phaseList").innerHTML = DSA_PHASES.map(phase => {
+    const range = phase.end ? `${dateLabel(phase.start)} – ${dateLabel(phase.end)}` : `Starts ${dateLabel(phase.start)} · end boundary unavailable`;
+    return `<button type="button" class="phase-row ${phase.tone}${openPhaseName === phase.name ? " is-open" : ""}" data-phase="${phase.name}" aria-expanded="${openPhaseName === phase.name}" aria-controls="phaseCalendar"><span><b>${phase.label}</b><small>${range}</small></span><span class="phase-status">${statuses.get(phase.name)}</span><span aria-hidden="true">${openPhaseName === phase.name ? "−" : "+"}</span></button>`;
+  }).join("");
+  renderPhaseCalendar();
+  $("selectedWeekLabel").textContent = weekRangeLabel(currentWeek);
+  $("previousWeekBtn").disabled = currentWeek <= 1;
+  $("nextWeekBtn").disabled = currentWeek >= MAX_WEEKS;
+  if ($("weekChip")) $("weekChip").textContent = `SELECTED · ${dateLabel(selectedCalendarDate)}`;
+}
+
+function renderPhaseCalendar() {
+  const monthSelect = $("calendarMonth");
+  if (!monthSelect.options.length) CALENDAR_MONTHS.forEach(month => { const option = document.createElement("option"); option.value = `${month.getFullYear()}-${month.getMonth()}`; option.textContent = month.toLocaleDateString(undefined, { month: "long", year: "numeric" }); monthSelect.append(option); });
+  monthSelect.value = `${calendarMonthDate.getFullYear()}-${calendarMonthDate.getMonth()}`;
+  const year = calendarMonthDate.getFullYear(), month = calendarMonthDate.getMonth();
+  const offset = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells = Array.from({ length: Math.ceil((offset + days) / 7) * 7 }, (_, index) => {
+    const day = index - offset + 1;
+    if (day < 1 || day > days) return `<span class="calendar-empty" role="gridcell" aria-hidden="true"></span>`;
+    const date = new Date(year, month, day), value = isoDate(date), phase = phaseForDate(value);
+    const classes = ["calendar-day", phase?.tone || "", date.getDay() === 0 ? "is-sunday" : "", value === selectedCalendarDate ? "is-selected" : "", value === isoDate(new Date()) ? "is-today" : "", futureDate(value) ? "is-future" : "", OFFICIAL_PAUSE_DATES.has(value) ? "is-pause" : "", value < PROGRAM_START || value > CALENDAR_END ? "is-outside-range" : ""].filter(Boolean).join(" ");
+    const stateLabel = value >= "2026-10-29" && value <= "2026-12-13" ? "Exam Break — no phase work scheduled" : OFFICIAL_PAUSE_DATES.has(value) ? "Official pause" : date.getDay() === 0 ? "Sunday — non-working day" : phase?.label || phase?.name || (value < PROGRAM_START ? "Before program start" : value > "2027-01-16" ? "No phase work scheduled" : "Historical phase boundary unavailable");
+    const label = `${date.toLocaleDateString(undefined, { dateStyle: "full" })}, ${stateLabel}${value === todayDate() ? ", today" : ""}${value === selectedCalendarDate ? ", selected" : ""}`;
+    return `<button role="gridcell" type="button" class="${classes}" data-date="${value}" aria-label="${label}" aria-pressed="${value === selectedCalendarDate}" ${value < PROGRAM_START || value > CALENDAR_END ? "disabled" : ""}>${day}</button>`;
   });
+  $("calendarGrid").innerHTML = cells.join("");
+  const atStart = year === 2026 && month === 7, atEnd = year === 2027 && month === 0;
+  $("previousMonthBtn").disabled = atStart;
+  $("nextMonthBtn").disabled = atEnd;
+  $("calendarBoundaryMessage").textContent = atStart ? "August 2026 is the first supported month." : atEnd ? "January 2027 is the last supported month." : "";
+}
+
+function todayDate() { return isoDate(new Date()); }
+
+function selectCalendarDate(value) {
+  if (value < PROGRAM_START || value > CALENDAR_END) return;
+  selectedCalendarDate = value;
+  const date = new Date(`${value}T12:00:00`);
+  calendarMonthDate = new Date(date.getFullYear(), date.getMonth(), 1);
+  const week = weekForDate(value);
+  if (week !== currentWeek) updateWeek(week, value);
+  else { renderPhaseTracker(); if (activePage === "daily") renderDailyTable(); }
+}
+
+function initializePhaseTracker() {
+  $("phaseToggle").addEventListener("click", event => {
+    const expanded = event.currentTarget.getAttribute("aria-expanded") === "true";
+    if (!expanded && !openPhaseName) {
+      const phase = phaseForDate(selectedCalendarDate) || phaseForDate(todayDate()) || DSA_PHASES[0];
+      openPhaseName = phase.name;
+    }
+    event.currentTarget.setAttribute("aria-expanded", String(!expanded));
+    event.currentTarget.textContent = expanded ? "📅 Open Phase Calendar" : "Close Calendar";
+    $("phaseContent").hidden = expanded;
+    $("phaseCalendar").hidden = !openPhaseName;
+    if (!expanded) renderPhaseTracker();
+  });
+  $("phaseList").addEventListener("click", event => {
+    const row = event.target.closest("[data-phase]"); if (!row) return;
+    openPhaseName = openPhaseName === row.dataset.phase ? "" : row.dataset.phase;
+    const phase = DSA_PHASES.find(item => item.name === openPhaseName);
+    if (phase?.start) calendarMonthDate = new Date(`${phase.start}T12:00:00`);
+    $("phaseCalendar").hidden = !openPhaseName;
+    renderPhaseTracker();
+  });
+  $("calendarGrid").addEventListener("click", event => { const day = event.target.closest("[data-date]"); if (day && !day.disabled) selectCalendarDate(day.dataset.date); });
+  $("calendarGrid").addEventListener("keydown", event => {
+    const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    if (!Object.hasOwn(moves, event.key)) return;
+    event.preventDefault();
+    const date = new Date(`${event.target.dataset.date || selectedCalendarDate}T12:00:00`);
+    date.setDate(date.getDate() + moves[event.key]);
+    if (date < new Date("2026-08-01T00:00:00") || date > new Date("2027-01-31T23:59:59")) return;
+    selectCalendarDate(isoDate(date));
+    requestAnimationFrame(() => $("calendarGrid").querySelector(`[data-date="${isoDate(date)}"]`)?.focus());
+  });
+  $("calendarMonth").addEventListener("change", event => { const [year, month] = event.target.value.split("-").map(Number); calendarMonthDate = new Date(year, month, 1); renderPhaseCalendar(); });
+  $("previousMonthBtn").addEventListener("click", () => { if (calendarMonthDate.getFullYear() === 2026 && calendarMonthDate.getMonth() === 7) return; calendarMonthDate = new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() - 1, 1); renderPhaseCalendar(); });
+  $("nextMonthBtn").addEventListener("click", () => { if (calendarMonthDate.getFullYear() === 2027 && calendarMonthDate.getMonth() === 0) return; calendarMonthDate = new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 1); renderPhaseCalendar(); });
+  $("returnTodayBtn").addEventListener("click", () => selectCalendarDate(todayDate()));
+  $("previousWeekBtn").addEventListener("click", () => { if (currentWeek > 1) updateWeek(currentWeek - 1); });
+  $("nextWeekBtn").addEventListener("click", () => { if (currentWeek < MAX_WEEKS) updateWeek(currentWeek + 1); });
+  renderPhaseTracker();
 }
 
 /* -------------------- STATUS BUTTONS -------------------- */
@@ -634,9 +833,13 @@ function bindStatusButtons(container) {
       }
 
       if (kind === "daily") {
+        const value = button.dataset.date;
+        if (!value || !scheduledWorkDate(value) || futureDate(value) || weekForDate(value) !== currentWeek) return;
+        selectCalendarDate(value);
         const values = getDaily(memberId);
         values[index] = cycleStatus(values[index]);
       } else {
+        if (!workingDayIndexes(currentWeek).length) return;
         const values = getConcepts(memberId);
         values[index] = cycleStatus(values[index]);
       }
@@ -651,12 +854,11 @@ function bindStatusButtons(container) {
 
 function renderDailyTable() {
   const table = $("dailyTable");
-
   let html = `
     <thead>
       <tr>
         <th>MEMBER</th>
-        ${DAYS.map(day => `<th>${day.toUpperCase()}</th>`).join("")}
+        ${DAYS.map((day, index) => { const value = dateForWeekSlot(currentWeek, index); return `<th><button type="button" class="daily-date-select${value === selectedCalendarDate ? " is-selected" : ""}" data-daily-date="${value}" aria-pressed="${value === selectedCalendarDate}" aria-label="Select ${day}, ${dateLabel(value)}" ${!scheduledWorkDate(value) || futureDate(value) ? "disabled" : ""}>${day.toUpperCase()}<small>${new Date(`${value}T12:00:00`).getDate()}</small></button></th>`; }).join("")}
         <th>DONE</th>
       </tr>
     </thead>
@@ -669,7 +871,8 @@ function renderDailyTable() {
 
   for (const member of state.members) {
     const daily = getDaily(member.id);
-    const isComplete = countDone(daily) === DAYS.length;
+    const workIndexes = workingDayIndexes(currentWeek);
+    const isComplete = workIndexes.length > 0 && countDone(workIndexes.map(index => daily[index])) === workIndexes.length;
 
     html += `
       <tr class="${isComplete ? "daily-complete-row" : ""}">
@@ -685,19 +888,23 @@ function renderDailyTable() {
     `;
 
     daily.forEach((status, index) => {
+      const date = dateForWeekSlot(currentWeek, index);
+      const scheduled = scheduledWorkDate(date);
       html += `
         <td>
-          ${statusButton(status, {
+          ${scheduled ? statusButton(status, {
             "data-status-kind": "daily",
             "data-member-id": member.id,
-            "data-index": index
-          })}
+            "data-index": index,
+            "data-date": date,
+            ...(futureDate(date) ? { "disabled": "disabled" } : {})
+          }) : `<span class="no-work-cell">${date >= "2026-10-29" && date <= "2026-12-13" ? "Exam break" : "No phase work"}</span>`}
         </td>
       `;
     });
 
     html += `
-        <td><span class="status-badge ${isComplete ? "done" : "partial"}">${countDone(daily)}/6${isComplete ? " complete" : ""}</span></td>
+        <td><span class="status-badge ${isComplete ? "done" : "partial"}">${workIndexes.length ? `${countDone(workIndexes.map(index => daily[index]))}/${workIndexes.length}${isComplete ? " complete" : ""}` : "No phase work"}</span></td>
       </tr>
     `;
   }
@@ -705,18 +912,21 @@ function renderDailyTable() {
   html += "</tbody>";
   table.innerHTML = html;
 
+  table.querySelectorAll("[data-daily-date]").forEach(button => button.addEventListener("click", () => selectCalendarDate(button.dataset.dailyDate)));
   bindStatusButtons(table);
-  $("dailyAchievements").innerHTML = renderAchievementCards("daily", DAYS.length, "Every daily submission is complete.");
+  $("dailyAchievements").innerHTML = renderAchievementCards("daily", workingDayIndexes(currentWeek).length, "Every daily submission is complete.");
 
-  const allDaily = state.members.flatMap(member => getDaily(member.id));
-  $("dailyCount").textContent =
-    `${countDone(allDaily)} completed · ${countAbsent(allDaily)} not submitted · ${allDaily.filter(value => value === "blank").length} unmarked`;
+  const allDaily = state.members.flatMap(member => dailyStatusesForScoring(member.id));
+  $("dailyCount").textContent = nonWorkingDate(selectedCalendarDate)
+    ? `${dateLabel(selectedCalendarDate)} is a non-working day. The table shows this record's other weekdays.`
+    : `${countDone(allDaily)} completed · ${countAbsent(allDaily)} not submitted · ${allDaily.filter(value => value === "blank").length} unmarked`;
 }
 
 /* -------------------- CONCEPTS TRACKER -------------------- */
 
 function renderConceptTable() {
   const table = $("conceptTable");
+  const weekHasWork = workingDayIndexes(currentWeek).length > 0;
 
   let html = `
     <thead>
@@ -736,7 +946,7 @@ function renderConceptTable() {
 
   for (const member of state.members) {
     const concepts = getConcepts(member.id);
-    const isComplete = countDone(concepts) === 2;
+    const isComplete = weekHasWork && countDone(concepts) === 2;
 
     html += `
       <tr class="${isComplete ? "concept-complete-row" : ""}">
@@ -754,17 +964,17 @@ function renderConceptTable() {
     concepts.forEach((status, index) => {
       html += `
         <td>
-          ${statusButton(status, {
+          ${weekHasWork ? statusButton(status, {
             "data-status-kind": "concepts",
             "data-member-id": member.id,
             "data-index": index
-          })}
+          }) : `<span class="no-work-cell">No phase work</span>`}
         </td>
       `;
     });
 
     html += `
-        <td><span class="status-badge ${isComplete ? "done" : "partial"}">${countDone(concepts)}/2${isComplete ? " complete" : ""}</span></td>
+        <td><span class="status-badge ${isComplete ? "done" : "partial"}">${weekHasWork ? `${countDone(concepts)}/2${isComplete ? " complete" : ""}` : "No phase work"}</span></td>
       </tr>
     `;
   }
@@ -773,7 +983,7 @@ function renderConceptTable() {
   table.innerHTML = html;
 
   bindStatusButtons(table);
-  $("conceptAchievements").innerHTML = renderAchievementCards("concepts", 2, "Both weekly concepts are complete.");
+  $("conceptAchievements").innerHTML = renderAchievementCards("concepts", weekHasWork ? 2 : 0, "Both weekly concepts are complete.");
 
   const allConcepts = state.members.flatMap(member => getConcepts(member.id));
   $("conceptCount").textContent =
@@ -786,13 +996,10 @@ function renderStats() {
   const totalMembers = state.members.length;
   const done = countAllDone();
   const possible = totalPossible();
-  const allStatuses = state.members.flatMap(member => [
-    ...getDaily(member.id),
-    ...getConcepts(member.id)
-  ]);
+  const allStatuses = state.members.flatMap(member => [...dailyStatusesForScoring(member.id), ...conceptsForScoring(member.id)]);
 
-  const dailyStatuses = state.members.flatMap(member => getDaily(member.id));
-  const conceptStatuses = state.members.flatMap(member => getConcepts(member.id));
+  const dailyStatuses = state.members.flatMap(member => dailyStatusesForScoring(member.id));
+  const conceptStatuses = state.members.flatMap(member => conceptsForScoring(member.id));
 
   const dailyDone = countDone(dailyStatuses);
   const conceptsDone = countDone(conceptStatuses);
@@ -808,14 +1015,14 @@ function renderStats() {
     },
     {
       label: "Daily submissions",
-      value: `${dailyDone}/${totalMembers * DAYS.length}`,
+      value: `${dailyDone}/${totalMembers * workingDayIndexes(currentWeek).length}`,
       description: "Completed this week",
       icon: "daily",
       color: "green"
     },
     {
       label: "Concept proofs",
-      value: `${conceptsDone}/${totalMembers * 2}`,
+      value: `${conceptsDone}/${totalMembers * (workingDayIndexes(currentWeek).length ? 2 : 0)}`,
       description: "Completed this week",
       icon: "concepts",
       color: "purple"
@@ -838,7 +1045,7 @@ function renderStats() {
     </article>
   `).join("");
 
-  $("weekChip").textContent = "WEEK " + currentWeek;
+  $("weekChip").textContent = weekForDate(selectedCalendarDate) === currentWeek ? `SELECTED · ${dateLabel(selectedCalendarDate)}` : `NO DATED RECORD · ${dateLabel(selectedCalendarDate)}`;
 }
 
 /* -------------------- MEMBER CONSISTENCY -------------------- */
@@ -887,9 +1094,9 @@ function renderPreview() {
     return `
       <tr>
         <td>${escapeHTML(member.name)}</td>
-        <td>${stats.dailyDone}/6</td>
-        <td>${stats.conceptsDone}/2</td>
-        <td>${stats.overallDone}/8 (${stats.percent}%) ${perfectBadgeMarkup(consistencyPresentation(stats.percent))}</td>
+        <td>${stats.dailyDone}/${workingDayIndexes(currentWeek).length}</td>
+        <td>${stats.conceptsDone}/${workingDayIndexes(currentWeek).length ? 2 : 0}</td>
+        <td>${stats.overallDone}/${stats.possible} (${stats.percent ?? "N/A"}%) ${perfectBadgeMarkup(consistencyPresentation(stats.percent))}</td>
         <td><span class="status-badge ${label.className}">${label.text}</span></td>
       </tr>
     `;
@@ -916,8 +1123,8 @@ function renderMembers() {
     const stats = isAdmin ? memberStats(member.id) : null;
     const consistency = stats ? consistencyPresentation(stats.percent) : null;
     const progressMarkup = stats ? `
-      <div class="member-progress ${consistency.tone}" role="progressbar" aria-label="${stats.overallDone} of 8 weekly tasks complete" aria-valuemin="0" aria-valuemax="8" aria-valuenow="${stats.overallDone}">
-        <span>${stats.overallDone}/8</span>
+      <div class="member-progress ${consistency.tone}" role="progressbar" aria-label="${stats.overallDone} of ${stats.possible} weekly tasks complete" aria-valuemin="0" aria-valuemax="${stats.possible}" aria-valuenow="${stats.overallDone}">
+        <span>${stats.overallDone}/${stats.possible}</span>
         <div class="member-progress-track ${consistency.tone}"><i style="width:${consistency.progress}%"></i></div>
         ${perfectBadgeMarkup(consistency)}
       </div>` : "";
@@ -1029,7 +1236,7 @@ $("addMemberForm").addEventListener("submit", event => {
 
   state.members.push(member);
 
-  for (let week = 1; week <= 12; week++) {
+  for (let week = 1; week <= MAX_WEEKS; week++) {
     ensureMemberWeek(week, member.id);
   }
 
@@ -1193,7 +1400,6 @@ $("restoreFile").addEventListener("change", async event => {
     currentWeek = state.currentWeek;
     ensureAllData();
 
-    $("weekSelect").value = String(currentWeek);
     saveState();
     renderAll();
 
@@ -1209,20 +1415,23 @@ $("restoreFile").addEventListener("change", async event => {
 /* -------------------- LEADERBOARD -------------------- */
 
 function renderViewerLeaderboard(data) {
+  const dailyPossible = workingDayIndexes(data.week).length;
+  const conceptsPossible = dailyPossible ? 2 : 0;
+  const totalPossiblePoints = possibleForWeek(data.week);
   $("leaderboardWeek").textContent = `WEEK ${data.week}`;
   $("leaderboardSummary").innerHTML = `
     <div class="leaderboard-stat"><span>PARTICIPANTS</span><strong>${data.participants}</strong></div>
-    <div class="leaderboard-stat"><span>HIGHEST SCORE</span><strong>${data.highest}/8</strong></div>
+    <div class="leaderboard-stat"><span>HIGHEST SCORE</span><strong>${data.highest}/${totalPossiblePoints}</strong></div>
     <div class="leaderboard-stat"><span>QUALIFIED</span><strong>${data.qualified}</strong></div>`;
   const qualified = data.members.filter(member => member.qualified && member.rank <= 3);
   const podium = $("leaderboardPodium");
   podium.dataset.podiumKey = qualified.length ? `leaderboard:${data.week}:${qualified.map(member => `${member.rank}:${member.name}:${member.score}`).join("|")}` : "";
-  podium.innerHTML = qualified.map(member => podiumCard(member, member.rank, member.score)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 6 of 8 tasks to appear on the podium.</div>`;
+  podium.innerHTML = qualified.map(member => podiumCard(member, member.rank, member.score)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 75% of scheduled tasks to appear on the podium.</div>`;
   $("leaderboardRows").innerHTML = data.members.map(member => {
     const rankCell = member.qualified ? rankBadgeMarkup(member.rank) : `<span class="leaderboard-unqualified">Keep Going</span>`;
     const className = member.qualified && member.rank <= 3 ? `leaderboard-rank-${member.rank}` : "";
-    const value = consistencyPresentation(member.percent);
-    return `<tr class="${className}"><td>${rankCell}</td><td><strong>${escapeHTML(member.name)}</strong></td><td>${member.dailyDone}/6</td><td>${member.conceptsDone}/2</td><td><strong>${member.score}/8</strong></td><td>${consistencyMeterMarkup(member.percent, `${member.name} completion`)}<small class="${value.tone}">${value.text} ${perfectBadgeMarkup(value)}</small></td></tr>`;
+    const value = consistencyPresentation(totalPossiblePoints ? member.percent : null);
+    return `<tr class="${className}"><td>${rankCell}</td><td><strong>${escapeHTML(member.name)}</strong></td><td>${member.dailyDone}/${dailyPossible}</td><td>${member.conceptsDone}/${conceptsPossible}</td><td><strong>${member.score}/${totalPossiblePoints}</strong></td><td>${consistencyMeterMarkup(totalPossiblePoints ? member.percent : null, `${member.name} completion`)}<small class="${value.tone}">${totalPossiblePoints ? value.text : "No scheduled work"} ${totalPossiblePoints ? perfectBadgeMarkup(value) : ""}</small></td></tr>`;
   }).join("") || `<tr><td colspan="6">No members yet.</td></tr>`;
 }
 
@@ -1232,7 +1441,7 @@ function renderLeaderboard() {
   }
   const tbody = $("leaderboardRows");
   const podium = $("leaderboardPodium");
-  const eligibleMinimum = 6;
+  const eligibleMinimum = possibleForWeek() ? Math.ceil(possibleForWeek() * 0.75) : Infinity;
   $("leaderboardWeek").textContent = `WEEK ${currentWeek}`;
 
   const rankings = state.members.map(member => ({
@@ -1254,9 +1463,12 @@ function renderLeaderboard() {
 
   const participants = state.members.length;
   const highest = rankings.length ? Math.max(...rankings.map(member => member.overallDone)) : 0;
+  const dailyPossible = workingDayIndexes(currentWeek).length;
+  const conceptsPossible = dailyPossible ? 2 : 0;
+  const totalPossiblePoints = possibleForWeek();
   $("leaderboardSummary").innerHTML = `
     <div class="leaderboard-stat"><span>PARTICIPANTS</span><strong>${participants}</strong></div>
-    <div class="leaderboard-stat"><span>HIGHEST SCORE</span><strong>${highest}/8</strong></div>
+    <div class="leaderboard-stat"><span>HIGHEST SCORE</span><strong>${highest}/${totalPossiblePoints}</strong></div>
     <div class="leaderboard-stat"><span>QUALIFIED</span><strong>${eligible.length}</strong></div>
   `;
 
@@ -1268,7 +1480,7 @@ function renderLeaderboard() {
 
   const podiumMembers = eligible.filter(member => member.rank <= 3);
   podium.dataset.podiumKey = podiumMembers.length ? `leaderboard:${currentWeek}:${podiumMembers.map(member => `${member.rank}:${member.name}:${member.overallDone}`).join("|")}` : "";
-  podium.innerHTML = podiumMembers.map(member => podiumCard(member, member.rank, member.overallDone)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 6 of 8 tasks to appear on the podium.</div>`;
+  podium.innerHTML = podiumMembers.map(member => podiumCard(member, member.rank, member.overallDone)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 75% of scheduled tasks to appear on the podium.</div>`;
 
   tbody.innerHTML = rankings.map(member => {
     const isEligible = member.overallDone >= eligibleMinimum;
@@ -1280,9 +1492,9 @@ function renderLeaderboard() {
       <tr class="${placeClass.trim()}">
         <td>${rankCell}</td>
         <td><strong>${escapeHTML(member.name)}</strong></td>
-        <td>${member.dailyDone}/6</td>
-        <td>${member.conceptsDone}/2</td>
-        <td><strong>${member.overallDone}/8</strong></td>
+        <td>${member.dailyDone}/${dailyPossible}</td>
+        <td>${member.conceptsDone}/${conceptsPossible}</td>
+        <td><strong>${member.overallDone}/${totalPossiblePoints}</strong></td>
         <td>${consistencyMeterMarkup(member.percent, `${member.name} completion`)}<small class="${value.tone}">${value.text} ${perfectBadgeMarkup(value)}</small></td>
       </tr>
     `;
@@ -1293,10 +1505,12 @@ function renderReport() {
   const report = $("printReport");
   const totalMembers = state.members.length;
   const possible = totalPossible();
+  const dailyPossible = workingDayIndexes(currentWeek).length;
+  const conceptsPossible = dailyPossible ? 2 : 0;
   const done = countAllDone();
 
-  const dailyStatuses = state.members.flatMap(member => getDaily(member.id));
-  const conceptStatuses = state.members.flatMap(member => getConcepts(member.id));
+  const dailyStatuses = state.members.flatMap(member => dailyStatusesForScoring(member.id));
+  const conceptStatuses = state.members.flatMap(member => conceptsForScoring(member.id));
 
   const dailyDone = countDone(dailyStatuses);
   const conceptDone = countDone(conceptStatuses);
@@ -1307,11 +1521,11 @@ function renderReport() {
     const consistency = consistencyPresentation(stats.percent);
 
     return `
-      <tr class="${stats.overallDone === stats.possible ? "report-perfect-row" : ""}">
+      <tr class="${stats.possible > 0 && stats.overallDone === stats.possible ? "report-perfect-row" : ""}">
         <td>${escapeHTML(member.name)}</td>
-        <td>${stats.dailyDone}/6</td>
-        <td>${stats.conceptsDone}/2</td>
-        <td>${stats.overallDone}/8</td>
+        <td>${stats.dailyDone}/${dailyPossible}</td>
+        <td>${stats.conceptsDone}/${conceptsPossible}</td>
+        <td>${stats.overallDone}/${stats.possible}</td>
         <td><div class="report-progress ${consistency.tone}" role="progressbar" aria-label="${escapeHTML(member.name)} completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${consistency.progress}"><span style="width:${consistency.progress}%"></span></div><strong class="${consistency.tone}">${consistency.text} ${perfectBadgeMarkup(consistency)}</strong></td>
         <td><span class="status-badge ${label.className}">${label.text}</span></td>
       </tr>
@@ -1351,11 +1565,11 @@ function renderReport() {
       </div>
       <div class="report-stat">
         <span>Daily Submissions</span>
-        <strong>${dailyDone}/${totalMembers * DAYS.length}</strong>
+        <strong>${dailyDone}/${totalMembers * dailyPossible}</strong>
       </div>
       <div class="report-stat">
         <span>Concept Proofs</span>
-        <strong>${conceptDone}/${totalMembers * 2}</strong>
+        <strong>${conceptDone}/${totalMembers * conceptsPossible}</strong>
       </div>
       <div class="report-stat">
         <span>Overall Completion</span>
@@ -1530,9 +1744,9 @@ function setSecurityGate(message, canImport = false) {
 async function loadSharedData() {
   const data = await apiRequest("/api/data");
   state = { members: data.members, weeks: data.weeks, currentWeek: data.currentWeek };
-  currentWeek = state.currentWeek;
+  currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek;
+  state.currentWeek = currentWeek;
   sharedReady = true;
-  $("weekSelect").value = String(currentWeek);
   ensureAllData();
   renderAll();
 }
@@ -1546,9 +1760,9 @@ function clearViewerData() {
 
 function renderViewerOverview(data) {
   const members = data.participants;
-  const dailyPossible = members * 6;
-  const conceptsPossible = members * 2;
-  const overallPossible = members * 8;
+  const dailyPossible = members * workingDayIndexes(data.week).length;
+  const conceptsPossible = members * (workingDayIndexes(data.week).length ? 2 : 0);
+  const overallPossible = members * possibleForWeek(data.week);
   const completed = data.dailyDone + data.conceptsDone;
   const stats = [
     ["Group members", members, "Registered members", "blue"],
@@ -1557,12 +1771,15 @@ function renderViewerOverview(data) {
     ["Overall completion", `${overallPossible ? Math.round(completed / overallPossible * 100) : "N/A"}${overallPossible ? "%" : ""}`, "This week's progress", "orange"]
   ];
   $("statsGrid").innerHTML = stats.map(([label, value, description, color]) => `<article class="stat-card ${color}"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-description">${description}</div></article>`).join("");
-  $("weekChip").textContent = `WEEK ${data.week}`;
+  $("weekChip").textContent = weekForDate(selectedCalendarDate) === data.week ? `SELECTED · ${dateLabel(selectedCalendarDate)}` : `NO DATED RECORD · ${dateLabel(selectedCalendarDate)}`;
   $("memberSummary").innerHTML = data.summary.map(member => {
-    const value = consistencyPresentation(member.percent);
-    return `<div class="member-summary-row ${value.tone}"><span class="member-summary-name">${escapeHTML(member.name)}</span><div class="member-summary-track">${consistencyMeterMarkup(member.percent, `${member.name} weekly consistency`)}</div><span class="member-summary-percent ${value.tone}">${value.text} ${perfectBadgeMarkup(value)}</span></div>`;
+    const value = consistencyPresentation(overallPossible ? member.percent : null);
+    return `<div class="member-summary-row ${value.tone}"><span class="member-summary-name">${escapeHTML(member.name)}</span><div class="member-summary-track">${consistencyMeterMarkup(overallPossible ? member.percent : null, `${member.name} weekly consistency`)}</div><span class="member-summary-percent ${value.tone}">${overallPossible ? value.text : "No scheduled work"} ${overallPossible ? perfectBadgeMarkup(value) : ""}</span></div>`;
   }).join("") || `<div class="empty-state">No members yet.</div>`;
-  $("previewRows").innerHTML = data.summary.map(member => `<tr><td>${escapeHTML(member.name)}</td><td>${member.dailyDone}/6</td><td>${member.conceptsDone}/2</td><td>${member.overallDone}/8 (${member.percent}%) ${perfectBadgeMarkup(consistencyPresentation(member.percent))}</td><td>${member.overallDone === 8 ? "Complete" : member.overallDone ? "In progress" : "Not marked"}</td></tr>`).join("") || `<tr><td colspan="5">No members yet.</td></tr>`;
+  const dailyPerMember = workingDayIndexes(data.week).length;
+  const conceptsPerMember = dailyPerMember ? 2 : 0;
+  const overallPerMember = possibleForWeek(data.week);
+  $("previewRows").innerHTML = data.summary.map(member => `<tr><td>${escapeHTML(member.name)}</td><td>${member.dailyDone}/${dailyPerMember}</td><td>${member.conceptsDone}/${conceptsPerMember}</td><td>${member.overallDone}/${overallPerMember} (${overallPerMember ? member.percent : "N/A"}%) ${perfectBadgeMarkup(consistencyPresentation(overallPerMember ? member.percent : null))}</td><td>${overallPerMember ? member.overallDone === overallPerMember ? "Complete" : member.overallDone ? "In progress" : "Not marked" : "No scheduled work"}</td></tr>`).join("") || `<tr><td colspan="5">No members yet.</td></tr>`;
   renderArenaAchievements(data.summary.map(member => ({ member, stats: member, daily: [] })));
 }
 
@@ -1631,9 +1848,9 @@ function initializeSecurityControls() {
         if (error.status !== 404) throw error;
         localSnapshot = loadState();
         state = localSnapshot;
-        currentWeek = state.currentWeek || 1;
+        currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek || 1;
+        state.currentWeek = currentWeek;
         ensureAllData();
-        $("weekSelect").value = String(currentWeek);
         $("loginDialog").close();
         renderAll();
         setSecurityGate("Shared data is not initialized. Import this browser's existing data to preserve it.", true);
@@ -1653,7 +1870,9 @@ async function initializeApp() {
   // Do not inherit a restored scroll offset when the dashboard first opens.
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   window.scrollTo(0, 0);
-  initializeWeekSelector();
+  const initialWeek = weekForDate(selectedCalendarDate);
+  if (initialWeek) { currentWeek = initialWeek; state.currentWeek = initialWeek; }
+  initializePhaseTracker();
   initializeSecurityControls();
   try {
     const session = await apiRequest("/api/session");
@@ -1666,9 +1885,9 @@ async function initializeApp() {
       if (error.status === 404) {
         localSnapshot = loadState();
         state = localSnapshot;
-        currentWeek = state.currentWeek || 1;
+        currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek || 1;
+        state.currentWeek = currentWeek;
         ensureAllData();
-        $("weekSelect").value = String(currentWeek);
         renderAll();
         setSecurityGate("Shared data is not initialized. Import this browser’s existing data to preserve it, or use the admin import endpoint.", true);
       } else {
