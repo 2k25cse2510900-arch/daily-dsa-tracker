@@ -314,15 +314,15 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ error: error.status === 413 ? "Request too large." : "Request could not be completed." });
 });
 
-async function startLocalServer() {
-  try {
-    await initializeRuntime();
-    app.listen(PORT, () => console.log(`DSA dashboard listening on port ${PORT}`));
-  } catch {
-    console.error("Could not start the dashboard. Check required environment variables and MongoDB network access.");
-    await mongo.close().catch(() => {});
-    process.exitCode = 1;
-  }
+function startLocalServer() {
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`DSA dashboard listening on port ${PORT}`);
+  });
+
+  // Make the web service available to Render's port scan while MongoDB and
+  // indexes initialize. Runtime-gated routes return 503 until this completes.
+  initializeRuntime().catch(() => {});
+  return server;
 }
 
 if (require.main === module) startLocalServer();
