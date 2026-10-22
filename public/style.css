@@ -1228,6 +1228,17 @@ table {
   margin: 10mm;
 }
 
+ .leetcode-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 20px 0 10px; padding: 12px 14px; border: 1px solid #e8e4ee; border-radius: 12px; background: #fbfaff; }
+.leetcode-heading > div { display: grid; gap: 3px; }
+.leetcode-heading strong { color: #382d48; font-size: 13px; }
+.leetcode-heading small, .leetcode-fetch { color: #7e7488; font-size: 10px; }
+.leetcode-link { display: block; width: fit-content; margin-top: 7px; color: #6846a2; font-size: 11px; font-weight: 700; }
+.leetcode-stats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.leetcode-stats span { padding: 3px 6px; border-radius: 6px; color: #5d5269; background: #f1eef7; font-size: 9px; }
+.leetcode-fetch { display: block; margin-top: 5px; }
+.leetcode-fetch.success { color: #28734d; }
+.leetcode-fetch.unavailable { color: #9a6324; }
+@media (max-width: 620px) { .leetcode-heading { align-items: flex-start; flex-direction: column; } }
 @media print {
   body {
     color: #111827;
@@ -2435,3 +2446,27 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
 @media print {
   .ambient-code-scene { display: none !important; }
 }
+.leetcode-activity-summary { display: grid; gap: 10px; margin: 14px 0; padding: 13px 15px; border: 1px solid #e7e1ef; border-radius: 12px; background: #fbfaff; color: #51475e; font-size: 11px; }
+.leetcode-activity-summary > strong { color: #382d48; }
+.leetcode-activity-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; }
+.leetcode-activity-head strong { color: #382d48; }
+.leetcode-activity-head small { color: #7e7488; }
+.leetcode-activity-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.leetcode-activity-counts span { padding: 5px 8px; border-radius: 7px; background: #f1eef7; font-weight: 700; }
+.leetcode-activity-summary ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 7px; margin: 0; padding: 0; list-style: none; }
+.leetcode-activity-summary li { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; padding: 8px; border: 1px solid #ece8f1; border-radius: 8px; background: #fff; }
+.leetcode-activity-summary li strong { color: #44394f; }
+.leetcode-activity-summary li small { grid-column: 1 / -1; color: #7e7488; }
+.leetcode-activity-summary .verified { color: #28734d; font-weight: 700; }
+.leetcode-activity-summary .unverified { color: #9a6324; font-weight: 700; }
+.leetcode-automation-status { display: grid; gap: 5px; padding: 9px; border-radius: 8px; background: #f2f7f4; color: #496457; }
+.leetcode-automation-status > strong { color: #2d5741; }
+.leetcode-activity-review-list { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
+.leetcode-activity-review-list li { display: grid; grid-template-columns: 1fr auto; gap: 4px 9px; color: #825c2c; }
+.leetcode-activity-review-list li > small, .activity-review-actions { grid-column: 1 / -1; }
+.activity-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.activity-review-actions .btn { min-height: 30px; padding: 5px 9px; font-size: 10px; }
+.leetcode-activity-panel { display: flex; align-items: flex-start; gap: 10px; }
+.leetcode-activity-panel .leetcode-activity-summary { flex: 1 1 auto; min-width: 0; }
+.leetcode-activity-panel #refreshLeetCodeActivityBtn { flex: 0 0 auto; margin-top: 14px; }
+@media (max-width: 760px) { .leetcode-activity-panel { flex-direction: column-reverse; } .leetcode-activity-panel #refreshLeetCodeActivityBtn { margin: 0; } }

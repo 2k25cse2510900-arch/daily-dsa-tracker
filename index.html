@@ -220,6 +220,7 @@
             </div>
             <div class="daily-week-controls"><button class="btn btn-light" id="previousWeekBtn" type="button" aria-label="Previous week">Previous Week</button><button class="btn btn-light" id="nextWeekBtn" type="button" aria-label="Next week">Next Week</button><button class="btn btn-light admin-only" id="clearDailyBtn" type="button" hidden>Reset week</button></div>
           </div>
+          <div class="leetcode-activity-panel"><div id="leetcodeActivitySummary" class="leetcode-activity-summary" role="status" aria-live="polite"></div><button class="btn btn-light admin-only" id="refreshLeetCodeActivityBtn" type="button" hidden>Refresh LeetCode Activity</button></div>
           <div id="dailyAchievements" class="achievement-list"></div>
           <div class="table-wrap tracker-wrap">
             <table class="tracker-table" id="dailyTable"></table>
@@ -286,6 +287,7 @@
             <span class="tiny-tag" id="memberCountTag">8 MEMBERS</span>
           </div>
 
+          <div class="leetcode-heading"><div><strong>LeetCode profiles</strong><small>Refreshes periodically; use Refresh now for an admin update.</small></div><button id="leetcodeRefreshBtn" class="btn btn-secondary admin-only" type="button" hidden>Refresh now</button></div>
           <div id="memberManager" class="member-manager"></div>
         </section>
       </section>
@@ -353,6 +355,7 @@
   <div id="securityGate" class="security-gate" hidden>Connecting to the secure shared dashboard…</div>  <input type="file" id="restoreFile" accept=".json,application/json" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="activity-date.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

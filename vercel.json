@@ -11,5 +11,10 @@
         { "key": "Referrer-Policy", "value": "no-referrer" }
       ]
     }
+  ],
+  "functions": { "server.js": { "maxDuration": 60 } },
+  "crons": [
+    { "path": "/api/cron/leetcode-refresh", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/leetcode-activity", "schedule": "0 0 * * *" }
   ]
 }

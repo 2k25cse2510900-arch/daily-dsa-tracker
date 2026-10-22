@@ -31,6 +31,15 @@ Set these values in `.env` locally or in your hosting provider's secret manager:
 - `ADMIN_PASSWORD`: unique password of 14–72 UTF-8 bytes for the Krish account.
 - `NODE_ENV=production` in production; this enables Secure cookies and proxy handling.
 - `PORT`: optional; defaults to 3000.
+- `CRON_SECRET`: required for Vercel's daily LeetCode stats and activity cron endpoints. Set a random secret in Vercel project environment variables; each endpoint rejects requests without its bearer token. No new environment variables or packages are required.
+
+## Automatic LeetCode activity tracking
+
+Persistent Node servers collect the eight mapped public profiles every 15 minutes and schedule finalization for the prior activity date at 05:30 Asia/Kolkata. On restart, the service catches up in bounded batches. The existing MongoDB connection stores deduplicated public submission metadata in `leetcodeSubmissions`; a submission of any verdict counts as an attempt. The current dashboard has no daily-question assignment field, so activity remains defined as any submission by that member on that activity date. Records that were never observed cannot be recovered later.
+
+Finalization marks Done when stored or freshly fetched submissions prove an attempt. It only marks Not Submitted when a fresh response has fewer than 20 records and its oldest record reaches earlier than the activity date's start; API failures, capped or incomplete responses, and existing manual Done statuses are reported as Needs review. On the Daily Submissions page, an authenticated admin can explicitly resolve a Needs review member as Done or Not Submitted. Those decisions record the admin and timestamp, and automatic retries preserve manual decisions and verified Done outcomes. A manual Not Submitted decision is rejected if stored or legacy verified submission evidence exists.
+
+Vercel's activity cron runs at 00:00 UTC (05:30 IST) using the existing `CRON_SECRET`. Vercel's daily cron allowance does not support the 15-minute collection schedule, so a Vercel deployment cannot guarantee collection throughout the day; it performs a fresh collection at rollover and finalizes conservatively. A sleeping/stopped Render process also cannot collect while offline; startup catch-up uses stored history and fresh public data, and flags gaps it cannot verify for admin review.
 
 Visit `http://localhost:3000`. Sign in as `Krish`. On the first run, choose **Import this browser's existing data** to copy the existing browser's localStorage data into an empty shared database. This is a one-time insert and returns an error if shared data already exists. It does not run automatically or overwrite server data.
 

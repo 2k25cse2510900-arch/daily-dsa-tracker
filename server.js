@@ -13,6 +13,10 @@ const helmet = require("helmet");
 const { applyEligibleDenseRanks } = require("./ranking");
 const { scoreWeek } = require("./scoring");
 const { safeMongoDiagnostic } = require("./diagnostics");
+const { createAdminOnly } = require("./admin-auth");
+const { REFRESH_INTERVAL_MS, REQUEST_GAP_MS, RECENT_SUBMISSION_LIMIT, profileForMember, fetchProfile, fetchRecentSubmissions, inspectMemberActivity, effectiveActivityDate, trackerPosition, publicRecord } = require("./leetcode");
+const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
+const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus } = require("./activity-jobs");
 
 const PAGES = ["overview", "daily", "concepts", "members", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
@@ -36,6 +40,10 @@ let adminPasswordHash;
 let adminCredentialVersion;
 let mongoConnectPromise;
 let runtimeInitializationPromise;
+let leetcodeRefreshPromise;
+let leetcodeActivityCyclePromise;
+let lastLeetcodeRefreshAt = 0;
+const leetcodeActivityRefreshes = new Map();
 
 function requireEnv(name) {
   if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`);
@@ -108,7 +116,8 @@ function initializeRuntime() {
       await Promise.all([
         db.collection("sessions").createIndex({ expires: 1 }, { expireAfterSeconds: 0 }),
         db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-        db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 })
+        db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }),
+        db.collection("leetcodeSubmissions").createIndex({ memberId: 1, activityDate: 1 })
       ]);
     })().catch(error => {
       runtimeInitializationPromise = undefined;
@@ -161,14 +170,10 @@ function audit(req, action, affected) {
   db.collection("audit").insertOne({ at: new Date(), admin: "Krish", action, affected }).catch(() => {});
 }
 
-function adminOnly(req, res, next) {
-  if (!isAdminSession(req)) return res.status(401).json({ error: "Authentication required." });
-  next();
-}
-
 function isAdminSession(req) {
   return req.session?.role === "admin" && req.session?.username === "Krish" && req.session?.credentialVersion === adminCredentialVersion;
 }
+const adminOnly = createAdminOnly(isAdminSession);
 
 function mongoRateLimit(bucket, limit) {
   return async (req, res, next) => {
@@ -247,7 +252,12 @@ app.post("/api/logout", (req, res) => req.session.destroy(() => {
 app.get("/api/data", adminOnly, async (req, res) => {
   const document = await db.collection("dashboard").findOne({ _id: "shared" });
   if (!document) return res.status(404).json({ error: "Shared dashboard data has not been initialized. An admin must import the existing backup." });
-  res.json({ members: document.members, weeks: document.weeks, currentWeek: document.currentWeek });
+  const profiles = await db.collection("leetcodeProfiles").find({}).toArray();
+  const cacheById = new Map(profiles.map(profile => [profile.memberId, profile]));
+  res.json({ members: document.members, weeks: document.weeks, currentWeek: document.currentWeek, leetcode: Object.fromEntries(document.members.map(member => {
+    const profile = profileForMember(member);
+    return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
+  }).filter(Boolean)) });
 });
 
 app.get("/api/page-data/:page", async (req, res) => {
@@ -269,9 +279,26 @@ app.get("/api/page-data/:page", async (req, res) => {
     return { ...member, ...scoreWeek(d, c, possible) };
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
-  if (page === "daily") return res.json({ page, week: weekNumber, members, statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)])) });
+  if (page === "daily") {
+    const date = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : null;
+    const activity = date ? await db.collection("leetcodeActivity").findOne({ _id: date }, { projection: { _id: 0 } }) : null;
+    const activityDate = currentActivityDate();
+    const previousActivityDate = addActivityDays(activityDate, -1);
+    const [collectionJob, finalizationJob] = await Promise.all([
+      db.collection("leetcodeActivityJobs").findOne({ _id: activityDate }, { projection: { _id: 0 } }),
+      db.collection("leetcodeActivityJobs").findOne({ _id: previousActivityDate }, { projection: { _id: 0 } })
+    ]);
+    return res.json({ page, week: weekNumber, date, activity, activityDate, previousActivityDate, collectionJob: isAdminSession(req) ? collectionJob?.collection || null : null, finalizationJob: isAdminSession(req) ? finalizationJob?.finalization || null : null, members, statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)])) });
+  }
   if (page === "concepts") return res.json({ page, week: weekNumber, members, statuses: Object.fromEntries(members.map(member => [member.id, concepts(member.id)])) });
-  if (page === "members") return res.json({ page, members });
+  if (page === "members") {
+    const docs = await db.collection("leetcodeProfiles").find({}).toArray();
+    const cacheById = new Map(docs.map(doc => [doc.memberId, doc]));
+    return res.json({ page, members, leetcode: Object.fromEntries(shared.members.map(member => {
+      const profile = profileForMember(member);
+      return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
+    }).filter(Boolean)) });
+  }
   if (page === "leaderboard") {
     applyEligibleDenseRanks(rows, possible ? Math.ceil(possible * 0.75) : Infinity);
     return res.json({ page, week: weekNumber, members: rows, participants: rows.length, qualified: rows.filter(row => row.qualified).length, highest: rows.length ? rows[0].score : 0 });
@@ -292,6 +319,486 @@ app.post("/api/data", adminOnly, async (req, res) => {
   res.json({ ok: true });
 });
 
+async function refreshLeetCodeProfiles({ force = false } = {}) {
+  if (leetcodeRefreshPromise) return leetcodeRefreshPromise;
+  if (!force && Date.now() - lastLeetcodeRefreshAt < REFRESH_INTERVAL_MS) return { skipped: true };
+  leetcodeRefreshPromise = (async () => {
+    const locks = db.collection("jobLocks");
+    const lockToken = crypto.randomUUID();
+    const now = new Date();
+    try {
+      await locks.updateOne({ _id: "leetcode-refresh", $or: [{ expiresAt: { $lt: now } }, { expiresAt: { $exists: false } }] },
+        { $set: { token: lockToken, expiresAt: new Date(Date.now() + 3 * 60 * 1000) } }, { upsert: true });
+    } catch (error) {
+      if (error.code === 11000) return { skipped: true, inProgress: true };
+      throw error;
+    }
+    const acquired = await locks.findOne({ _id: "leetcode-refresh", token: lockToken });
+    if (!acquired) return { skipped: true, inProgress: true };
+    try {
+    const document = await db.collection("dashboard").findOne({ _id: "shared" });
+    if (!document) throw new Error("DASHBOARD_NOT_INITIALIZED");
+    const profiles = document.members.map(member => ({ member, profile: profileForMember(member) })).filter(item => item.profile);
+    const existing = new Map((await db.collection("leetcodeProfiles").find({}).toArray()).map(record => [record.memberId, record]));
+    if (!force && profiles.length && profiles.every(({ member }) => {
+      const fetched = existing.get(member.id)?.lastFetchedAt;
+      return fetched && Date.now() - new Date(fetched).getTime() < REFRESH_INTERVAL_MS;
+    })) return { skipped: true };
+    lastLeetcodeRefreshAt = Date.now();
+    const results = [];
+    for (const { member, profile } of profiles) {
+      try {
+        const stats = await fetchProfile(profile.username);
+        const record = { _id: member.id, memberId: member.id, username: profile.username, stats, status: "Success", lastFetchedAt: new Date(), error: null };
+        await db.collection("leetcodeProfiles").replaceOne({ _id: member.id }, record, { upsert: true });
+        results.push({ memberId: member.id, username: profile.username, status: "Success" });
+      } catch (error) {
+        const code = ["RATE_LIMITED", "PROFILE_UNAVAILABLE", "UPSTREAM_UNAVAILABLE", "INVALID_STATS", "UPSTREAM_ERROR"].includes(error.message) ? error.message : error.name === "AbortError" ? "TIMEOUT" : "UPSTREAM_UNAVAILABLE";
+        await db.collection("leetcodeProfiles").updateOne({ _id: member.id }, { $set: { memberId: member.id, username: profile.username, status: "Unavailable", error: code }, $setOnInsert: { stats: null, lastFetchedAt: null } }, { upsert: true });
+        results.push({ memberId: member.id, username: profile.username, status: "Unavailable", error: code });
+      }
+      if (results.length < profiles.length) await new Promise(resolve => setTimeout(resolve, REQUEST_GAP_MS));
+    }
+    return { refreshed: results.length, results };
+    } finally {
+      await locks.deleteOne({ _id: "leetcode-refresh", token: lockToken }).catch(() => {});
+    }
+  })().finally(() => { leetcodeRefreshPromise = null; });
+  return leetcodeRefreshPromise;
+}
+
+app.post("/api/admin/leetcode/refresh", adminOnly, async (req, res) => {
+  try {
+    const result = await refreshLeetCodeProfiles({ force: true });
+    res.json(result);
+  } catch {
+    res.status(503).json({ error: "LeetCode refresh could not complete." });
+  }
+});
+
+// Persistent local servers refresh periodically. Vercel uses its configured Cron invocation.
+app.get("/api/cron/leetcode-refresh", async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get("authorization") !== `Bearer ${secret}`) return res.status(401).json({ error: "Unauthorized." });
+  try { res.json(await refreshLeetCodeProfiles()); }
+  catch { res.status(503).json({ error: "Scheduled LeetCode refresh could not complete." }); }
+});
+
+app.get("/api/cron/leetcode-activity", async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get("authorization") !== `Bearer ${secret}`) return res.status(401).json({ error: "Unauthorized." });
+  try { res.json(await runLeetCodeActivityCycle()); }
+  catch { res.status(503).json({ error: "Scheduled LeetCode activity collection could not complete." }); }
+});
+
+function currentActivityDate() {
+  return effectiveActivityDate(Date.now() / 1000, "Asia/Kolkata");
+}
+
+async function setVerifiedDailyDone(memberId, week, slot) {
+  const field = `weeks.${week}.daily.${memberId}`;
+  for (let retry = 0; retry < 3; retry++) {
+    const document = await db.collection("dashboard").findOne({ _id: "shared" });
+    if (!document) throw new Error("DASHBOARD_NOT_INITIALIZED");
+    const saved = document.weeks?.[String(week)]?.daily?.[memberId];
+    let current;
+    if (Array.isArray(saved) && saved.length === 6 && saved.every(value => STATUSES.has(value))) current = saved;
+    else if (saved === undefined) current = Array(6).fill("blank");
+    else throw new Error("INVALID_DAILY_TRACKER");
+    if (current[slot] === "done") return false;
+    const updated = current.slice();
+    updated[slot] = "done";
+    const filter = saved === undefined ? { [field]: { $exists: false } } : { [field]: saved };
+    const result = await db.collection("dashboard").updateOne({ _id: "shared", ...filter }, { $set: { [field]: updated, updatedAt: new Date() } });
+    if (result.modifiedCount === 1) return true;
+  }
+  throw new Error("DAILY_TRACKER_CHANGED_CONCURRENTLY");
+}
+
+async function setDailyAbsentIfBlank(memberId, week, slot) {
+  const field = `weeks.${week}.daily.${memberId}`;
+  for (let retry = 0; retry < 3; retry++) {
+    const document = await db.collection("dashboard").findOne({ _id: "shared" });
+    if (!document) throw new Error("DASHBOARD_NOT_INITIALIZED");
+    const saved = document.weeks?.[String(week)]?.daily?.[memberId];
+    let current;
+    if (Array.isArray(saved) && saved.length === 6 && saved.every(value => STATUSES.has(value))) current = saved;
+    else if (saved === undefined) current = Array(6).fill("blank");
+    else throw new Error("INVALID_DAILY_TRACKER");
+    if (current[slot] !== "blank") return { updated: false, status: current[slot] };
+    const updated = current.slice();
+    updated[slot] = "absent";
+    const filter = saved === undefined ? { [field]: { $exists: false } } : { [field]: saved };
+    const result = await db.collection("dashboard").updateOne({ _id: "shared", ...filter }, { $set: { [field]: updated, updatedAt: new Date() } });
+    if (result.modifiedCount === 1) return { updated: true, status: "absent" };
+  }
+  throw new Error("DAILY_TRACKER_CHANGED_CONCURRENTLY");
+}
+
+async function setDailyStatusExplicit(memberId, week, slot, status) {
+  const field = `weeks.${week}.daily.${memberId}`;
+  const trackerStatus = status === "Done" ? "done" : "absent";
+  for (let retry = 0; retry < 3; retry++) {
+    const document = await db.collection("dashboard").findOne({ _id: "shared" });
+    if (!document) throw new Error("DASHBOARD_NOT_INITIALIZED");
+    const saved = document.weeks?.[String(week)]?.daily?.[memberId];
+    let current;
+    if (Array.isArray(saved) && saved.length === 6 && saved.every(value => STATUSES.has(value))) current = saved;
+    else if (saved === undefined) current = Array(6).fill("blank");
+    else throw new Error("INVALID_DAILY_TRACKER");
+    if (current[slot] === trackerStatus) return false;
+    const updated = current.slice();
+    updated[slot] = trackerStatus;
+    const filter = saved === undefined ? { [field]: { $exists: false } } : { [field]: saved };
+    const result = await db.collection("dashboard").updateOne({ _id: "shared", ...filter }, { $set: { [field]: updated, updatedAt: new Date() } });
+    if (result.modifiedCount === 1) return true;
+  }
+  throw new Error("DAILY_TRACKER_CHANGED_CONCURRENTLY");
+}
+
+function acquireLeetCodeActivityLock(lockToken) {
+  return (async () => {
+    const locks = db.collection("jobLocks");
+    const lockId = "leetcode-activity";
+    try {
+      await locks.updateOne({ _id: lockId, $or: [{ expiresAt: { $lt: new Date() } }, { expiresAt: { $exists: false } }] },
+        { $set: { token: lockToken, expiresAt: new Date(Date.now() + 10 * 60 * 1000) } }, { upsert: true });
+    } catch (error) {
+      if (error.code === 11000) return null;
+      throw error;
+    }
+    return await locks.findOne({ _id: lockId, token: lockToken }) ? { locks, lockId, lockToken } : null;
+  })();
+}
+
+async function finalizeActivityDate(date, members, recentByMember) {
+  const rawPosition = trackerPosition(date);
+  const position = rawPosition && scheduledSlots(rawPosition.week).includes(rawPosition.slot) ? rawPosition : null;
+  if (!position) {
+    const result = { status: "Not scheduled", finalizedAt: new Date(), membersChecked: 0, verifiedAttempts: 0, done: 0, notSubmitted: 0, needsReview: 0, entriesUpdated: 0, statuses: {} };
+    await db.collection("leetcodeActivityJobs").updateOne({ _id: date }, { $set: { date, finalization: result, updatedAt: new Date() } }, { upsert: true });
+    return result;
+  }
+  const statuses = {};
+  const priorFinalization = await db.collection("leetcodeActivityJobs").findOne({ _id: date }, { projection: { finalization: 1 } });
+  const priorStatuses = priorFinalization?.finalization?.statuses || {};
+  let done = 0;
+  let notSubmitted = 0;
+  let needsReview = 0;
+  let verifiedAttempts = 0;
+  let entriesUpdated = 0;
+  for (const member of members) {
+    const priorStatus = priorStatuses[member.id];
+    if (preserveFinalizationStatus(priorStatus)) {
+      statuses[member.id] = priorStatus;
+      if (priorStatus.status === "Done") done++;
+      else if (priorStatus.status === "Not Submitted") notSubmitted++;
+      else needsReview++;
+      verifiedAttempts += priorStatus.attemptCount || 0;
+      continue;
+    }
+    const historyRows = await db.collection("leetcodeSubmissions").find({ memberId: member.id, activityDate: date }).toArray();
+    const storedAttempts = matchingActivitySubmissions(historyRows, date);
+    if (priorStatus?.source === "automatic" && priorStatus.status === "Not Submitted" && !storedAttempts.length) {
+      statuses[member.id] = priorStatus;
+      notSubmitted++;
+      continue;
+    }
+    const profile = profileForMember(member);
+    if (!profile && !storedAttempts.length) {
+      statuses[member.id] = { status: "Needs review", source: "automatic", detail: "No LeetCode profile is mapped to this member." };
+      needsReview++;
+      continue;
+    }
+    const recent = recentByMember.get(member.id);
+    const result = classifyFinalization({ historyRows, recentRows: recent?.rows, fetchSucceeded: recent?.succeeded, date, limit: RECENT_SUBMISSION_LIMIT });
+    if (result.status === "Done") {
+      verifiedAttempts += result.attempts.length;
+      try {
+        const updated = position ? await setVerifiedDailyDone(member.id, position.week, position.slot) : false;
+        if (updated) entriesUpdated++;
+        statuses[member.id] = { status: "Done", source: "automatic", attemptCount: result.attempts.length, updated };
+        done++;
+      } catch {
+          statuses[member.id] = { status: "Needs review", source: "automatic", detail: "Attempt verified, but tracker update failed.", attemptCount: result.attempts.length };
+        needsReview++;
+      }
+    } else if (result.status === "Not Submitted" && position) {
+      try {
+        const outcome = await setDailyAbsentIfBlank(member.id, position.week, position.slot);
+        if (outcome.status === "done") {
+          statuses[member.id] = { status: "Needs review", source: "automatic", detail: "Existing Done status was preserved because no matching attempt was found." };
+          needsReview++;
+        } else {
+          statuses[member.id] = { status: "Not Submitted", source: "automatic", updated: outcome.updated };
+          if (outcome.updated) entriesUpdated++;
+          notSubmitted++;
+        }
+      } catch {
+        statuses[member.id] = { status: "Needs review", source: "automatic", detail: "No attempt could be recorded in the tracker." };
+        needsReview++;
+      }
+    } else {
+      statuses[member.id] = { status: "Needs review", source: "automatic", detail: result.detail || "Submission data is incomplete." };
+      needsReview++;
+    }
+  }
+  const result = {
+    status: needsReview ? "Needs review" : "Finalized",
+    finalizedAt: new Date(), membersChecked: members.length,
+    verifiedAttempts, done, notSubmitted, needsReview, entriesUpdated, statuses
+  };
+  await db.collection("leetcodeActivityJobs").updateOne({ _id: date }, { $set: { date, finalization: result, updatedAt: new Date() } }, { upsert: true });
+  return result;
+}
+
+async function runLeetCodeActivityCycle() {
+  if (leetcodeActivityCyclePromise) return leetcodeActivityCyclePromise;
+  leetcodeActivityCyclePromise = (async () => {
+    const lockToken = crypto.randomUUID();
+    const lock = await acquireLeetCodeActivityLock(lockToken);
+    if (!lock) return { skipped: true, inProgress: true };
+    const startedAt = Date.now();
+    const activityDate = currentActivityDate();
+    console.info("[leetcode-activity] cycle started", { activityDate });
+    try {
+      const dashboard = await db.collection("dashboard").findOne({ _id: "shared" });
+      if (!dashboard) throw new Error("DASHBOARD_NOT_INITIALIZED");
+      const now = new Date();
+      const currentDate = currentActivityDate();
+      const rawCurrentPosition = trackerPosition(currentDate);
+      const currentPosition = rawCurrentPosition && scheduledSlots(rawCurrentPosition.week).includes(rawCurrentPosition.slot) ? rawCurrentPosition : null;
+      const recentByMember = new Map();
+      const currentStatuses = {};
+      let membersChecked = 0;
+      let verifiedAttempts = 0;
+      let entriesUpdated = 0;
+      let unableToVerify = 0;
+      let successfulLookups = 0;
+      const mapped = dashboard.members.map(member => ({ member, profile: profileForMember(member) }));
+      for (const { member, profile } of mapped) {
+        if (!profile) {
+          unableToVerify++;
+          currentStatuses[member.id] = { status: "Unable to verify", detail: "No LeetCode profile is mapped to this member." };
+          continue;
+        }
+        membersChecked++;
+        let rows;
+        try {
+          rows = await fetchRecentSubmissions(profile.username);
+          recentByMember.set(member.id, { rows, succeeded: true });
+          successfulLookups++;
+        } catch (error) {
+          recentByMember.set(member.id, { rows: null, succeeded: false });
+          unableToVerify++;
+          currentStatuses[member.id] = { status: "Unable to verify", detail: ["RATE_LIMITED", "PROFILE_UNAVAILABLE", "UPSTREAM_UNAVAILABLE", "INVALID_ACTIVITY", "UPSTREAM_ERROR"].includes(error.message) ? error.message : "UPSTREAM_UNAVAILABLE" };
+          if (membersChecked < mapped.filter(item => item.profile).length) await new Promise(resolve => setTimeout(resolve, REQUEST_GAP_MS));
+          continue;
+        }
+        let historySaveFailed = false;
+        try { await persistSubmissionHistory(db.collection("leetcodeSubmissions"), member, profile.username, rows, now); }
+        catch { historySaveFailed = true; }
+        const attempts = rows.filter(row => effectiveActivityDate(row.timestamp) === currentDate);
+        if (attempts.length && currentPosition) {
+          try {
+            const updated = await setVerifiedDailyDone(member.id, currentPosition.week, currentPosition.slot);
+            if (updated) entriesUpdated++;
+            verifiedAttempts += attempts.length;
+            currentStatuses[member.id] = { status: "Attempt verified", attemptCount: attempts.length, updated, detail: historySaveFailed ? "Submission verified; history could not be saved." : undefined };
+          } catch {
+            verifiedAttempts += attempts.length;
+            currentStatuses[member.id] = { status: "Attempt verified", attemptCount: attempts.length, updated: false, detail: "Tracker update failed." };
+          }
+        } else if (attempts.length) {
+          verifiedAttempts += attempts.length;
+          currentStatuses[member.id] = { status: "Attempt verified", attemptCount: attempts.length, updated: false, detail: "No scheduled tracker slot exists for this date." };
+        } else {
+          currentStatuses[member.id] = { status: "No attempt observed", detail: rows.length >= RECENT_SUBMISSION_LIMIT ? "Recent response reached its limit; older activity may be omitted." : "No submission appeared in the latest public response." };
+        }
+        if (membersChecked < mapped.filter(item => item.profile).length) await new Promise(resolve => setTimeout(resolve, REQUEST_GAP_MS));
+      }
+      const collectedAt = successfulLookups ? new Date() : null;
+      const prior = await db.collection("leetcodeActivityJobs").findOne({ _id: currentDate });
+      const collection = {
+        status: successfulLookups ? (unableToVerify ? "Partial" : "Success") : "Unable to verify",
+        collectedAt: collectedAt || prior?.collection?.collectedAt || null,
+        lastAttemptAt: new Date(), membersChecked, verifiedAttempts, entriesUpdated, unableToVerify, statuses: currentStatuses
+      };
+      await db.collection("leetcodeActivityJobs").updateOne({ _id: currentDate }, { $set: { date: currentDate, collection, updatedAt: new Date() } }, { upsert: true });
+
+      const cursor = await db.collection("leetcodeActivityJobs").findOne({ _id: "scheduler" });
+      const dates = activityDatesToFinalize(cursor?.lastFinalizedDate || null, currentDate, 7);
+      const yesterday = addActivityDays(currentDate, -1);
+      if (!dates.includes(yesterday)) {
+        const yesterdayDoc = await db.collection("leetcodeActivityJobs").findOne({ _id: yesterday }, { projection: { finalization: 1 } });
+        if (yesterdayDoc?.finalization?.status === "Needs review") dates.push(yesterday);
+      }
+      let lastFinalizedDate = cursor?.lastFinalizedDate || null;
+      for (const date of dates.sort()) {
+        const existing = await db.collection("leetcodeActivityJobs").findOne({ _id: date }, { projection: { finalization: 1 } });
+        if (existing?.finalization?.status === "Finalized") {
+          if (!lastFinalizedDate || date > lastFinalizedDate) lastFinalizedDate = date;
+          continue;
+        }
+        await finalizeActivityDate(date, dashboard.members, date === yesterday ? recentByMember : new Map());
+        if (!lastFinalizedDate || date > lastFinalizedDate) lastFinalizedDate = date;
+      }
+      if (lastFinalizedDate) await db.collection("leetcodeActivityJobs").updateOne({ _id: "scheduler" }, { $set: { lastFinalizedDate, updatedAt: new Date() } }, { upsert: true });
+      const result = { currentDate, collection, finalizedDates: dates };
+      console.info("[leetcode-activity] cycle completed", { activityDate: currentDate, membersChecked, verifiedAttempts, entriesUpdated, unableToVerify, finalizedDates: dates.length, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (error) {
+      console.error("[leetcode-activity] cycle failed", { activityDate, code: safeDiagnosticCode(error), durationMs: Date.now() - startedAt });
+      throw error;
+    } finally {
+      await lock.locks.deleteOne({ _id: lock.lockId, token: lock.lockToken }).catch(() => {});
+    }
+  })().finally(() => { leetcodeActivityCyclePromise = null; });
+  return leetcodeActivityCyclePromise;
+}
+
+function refreshLeetCodeActivity(date, position) {
+  if (leetcodeActivityRefreshes.size) return Promise.resolve({ inProgress: true, date });
+  const refresh = (async () => {
+    const locks = db.collection("jobLocks");
+    const lockToken = crypto.randomUUID();
+    const lockId = "leetcode-activity";
+    try {
+      await locks.updateOne({ _id: lockId, $or: [{ expiresAt: { $lt: new Date() } }, { expiresAt: { $exists: false } }] },
+        { $set: { token: lockToken, expiresAt: new Date(Date.now() + 10 * 60 * 1000) } }, { upsert: true });
+    } catch (error) {
+      if (error.code === 11000) return { inProgress: true, date };
+      throw error;
+    }
+    if (!await locks.findOne({ _id: lockId, token: lockToken })) return { inProgress: true, date };
+    try {
+      const document = await db.collection("dashboard").findOne({ _id: "shared" });
+      if (!document) throw new Error("DASHBOARD_NOT_INITIALIZED");
+      const statuses = {};
+      const mapped = document.members.map(member => ({ member, profile: profileForMember(member) }));
+      let membersChecked = 0;
+      let verifiedAttempts = 0;
+      let membersWithAttempts = 0;
+      let entriesUpdated = 0;
+      let trackerUpdateFailures = 0;
+      let unableToVerify = 0;
+      let successfulLookups = 0;
+      for (const { member, profile } of mapped) {
+        if (!profile) {
+          unableToVerify++;
+          statuses[member.id] = { username: null, status: "Unable to verify", detail: "No LeetCode profile is mapped to this member." };
+          continue;
+        }
+        membersChecked++;
+        const checked = await inspectMemberActivity({
+          fetchSubmissions: fetchRecentSubmissions, username: profile.username, date,
+          markDone: () => setVerifiedDailyDone(member.id, position.week, position.slot),
+          onSubmissions: rows => persistSubmissionHistory(db.collection("leetcodeSubmissions"), member, profile.username, rows)
+        });
+        if (checked.fetched) successfulLookups++;
+        if (!checked.verified) {
+          unableToVerify++;
+          statuses[member.id] = { username: profile.username, status: checked.status, detail: checked.detail, recentRecords: checked.recentRecords ?? null };
+        } else {
+          membersWithAttempts++;
+          verifiedAttempts += checked.attempts.length;
+          if (checked.updated) entriesUpdated++;
+          if (checked.trackerUpdateFailed) trackerUpdateFailures++;
+          statuses[member.id] = {
+            username: profile.username, status: checked.status,
+            detail: checked.trackerUpdateFailed ? `${checked.detail}; tracker update failed` : checked.detail,
+            attemptCount: checked.attempts.length, updated: checked.updated, trackerUpdateFailed: Boolean(checked.trackerUpdateFailed)
+          };
+        }
+        if (membersChecked < mapped.filter(item => item.profile).length) await new Promise(resolve => setTimeout(resolve, REQUEST_GAP_MS));
+      }
+      const summary = { membersChecked, verifiedAttempts, membersWithAttempts, entriesUpdated, unableToVerify, trackerUpdateFailures };
+      const refreshedAt = new Date();
+      const prior = await db.collection("leetcodeActivity").findOne({ _id: date }, { projection: { lastSuccessfulAt: 1 } });
+      const lastSuccessfulAt = successfulLookups ? refreshedAt : prior?.lastSuccessfulAt || null;
+      const activityResult = { _id: date, date, week: position.week, slot: position.slot, refreshedAt, lastSuccessfulAt, summary, statuses };
+      await db.collection("leetcodeActivity").replaceOne({ _id: date }, activityResult, { upsert: true });
+      audit({ session: { username: "Krish" } }, "leetcode-activity-refresh", date);
+      return activityResult;
+    } finally {
+      await locks.deleteOne({ _id: lockId, token: lockToken }).catch(() => {});
+    }
+  })().finally(() => leetcodeActivityRefreshes.delete("active"));
+  leetcodeActivityRefreshes.set("active", refresh);
+  return refresh;
+}
+
+app.post("/api/admin/leetcode/activity/refresh", adminOnly, async (req, res) => {
+  const date = req.body?.date;
+  const position = trackerPosition(date);
+  const requestedWeek = Number(req.body?.week);
+  if (!position || position.week !== requestedWeek || date < "2026-08-01" || date > "2027-01-16" || date > currentActivityDate() || !scheduledSlots(position.week).includes(position.slot)) {
+    return res.status(400).json({ error: "Choose a past or current scheduled tracker date and its matching week." });
+  }
+  try {
+    const result = await refreshLeetCodeActivity(date, position);
+    if (result.inProgress) return res.status(409).json({ error: "An activity refresh for this date is already running." });
+    res.json(result);
+  } catch {
+    res.status(503).json({ error: "LeetCode activity could not be refreshed." });
+  }
+});
+
+app.post("/api/admin/leetcode/activity/finalize", adminOnly, async (req, res) => {
+  const { date, memberId, status } = req.body || {};
+  const position = trackerPosition(date);
+  if (!position || date < "2026-08-01" || date >= currentActivityDate() || !scheduledSlots(position.week).includes(position.slot) || !["Done", "Not Submitted"].includes(status) || typeof memberId !== "string") {
+    return res.status(400).json({ error: "Choose a previous scheduled activity date, member, and manual status." });
+  }
+  const lockToken = crypto.randomUUID();
+  let lock;
+  try {
+    lock = await acquireLeetCodeActivityLock(lockToken);
+    if (!lock) return res.status(409).json({ error: "LeetCode activity processing is in progress. Try again shortly." });
+    const dashboard = await db.collection("dashboard").findOne({ _id: "shared" });
+    const member = dashboard?.members.find(item => item.id === memberId);
+    if (!member) return res.status(404).json({ error: "Member not found." });
+    const activityJob = await db.collection("leetcodeActivityJobs").findOne({ _id: date });
+    const previousFinalization = activityJob?.finalization;
+    if (!previousFinalization) return res.status(409).json({ error: "This activity date has not been automatically reviewed yet." });
+    const existingAttempt = await db.collection("leetcodeSubmissions").findOne({ memberId, activityDate: date });
+    const legacyActivity = await db.collection("leetcodeActivity").findOne({ _id: date });
+    const legacyVerified = legacyActivity?.statuses?.[memberId]?.status === "Attempt verified";
+    if (status === "Not Submitted" && (existingAttempt || legacyVerified)) return res.status(409).json({ error: "A verified LeetCode attempt exists for this date. The tracker cannot be marked Not Submitted." });
+    const decidedAt = new Date();
+    let decision;
+    try { decision = manualFinalizationDecision(previousFinalization, memberId, status, req.session.username, decidedAt); }
+    catch (error) {
+      if (error.message === "VERIFIED_DONE_PROTECTED") return res.status(409).json({ error: "An automatically verified Done status is protected." });
+      return res.status(409).json({ error: "This member does not currently need manual review." });
+    }
+    const trackerChanged = await setDailyStatusExplicit(memberId, position.week, position.slot, status);
+    const statuses = { ...(previousFinalization.statuses || {}), [memberId]: { ...decision, updated: trackerChanged } };
+    const all = Object.values(statuses);
+    const done = all.filter(item => item.status === "Done").length;
+    const notSubmitted = all.filter(item => item.status === "Not Submitted").length;
+    const needsReview = all.filter(item => item.status === "Needs review").length;
+    const finalization = {
+      ...previousFinalization,
+      status: needsReview ? "Needs review" : "Finalized",
+      finalizedAt: decidedAt,
+      manualReviewedAt: decidedAt,
+      done, notSubmitted, needsReview,
+      entriesUpdated: all.filter(item => item.updated).length,
+      statuses,
+      decisions: [...(previousFinalization.decisions || []), { memberId, status, actor: req.session.username, at: decidedAt }]
+    };
+    await db.collection("leetcodeActivityJobs").updateOne({ _id: date }, { $set: { date, finalization, updatedAt: decidedAt } });
+    audit(req, "leetcode-activity-manual-finalization", `${date}:${memberId}:${status}`);
+    console.info("[leetcode-activity] manual decision recorded", { activityDate: date, memberId, status, actor: req.session.username });
+    res.json({ date, finalization });
+  } catch {
+    res.status(503).json({ error: "The manual activity decision could not be saved." });
+  } finally {
+    if (lock) await lock.locks.deleteOne({ _id: lock.lockId, token: lock.lockToken }).catch(() => {});
+  }
+});
+
 app.post("/api/admin/import", adminOnly, async (req, res) => {
   if (!validState(req.body)) return res.status(400).json({ error: "Backup data failed validation." });
   const result = await db.collection("dashboard").updateOne({ _id: "shared" }, { $setOnInsert: { members: req.body.members, weeks: req.body.weeks, currentWeek: req.body.currentWeek, createdAt: new Date() } }, { upsert: true });
@@ -305,9 +812,22 @@ app.get("/api/admin/audit", adminOnly, async (req, res) => {
   res.json(entries);
 });
 
+function startLeetCodeActivityScheduler() {
+  const collect = () => runLeetCodeActivityCycle().catch(() => {});
+  collect();
+  setInterval(collect, 15 * 60 * 1000).unref();
+  const scheduleBoundary = () => {
+    const delay = Math.max(1, nextActivityBoundaryMs(Date.now() / 1000) - Date.now());
+    const timer = setTimeout(() => { collect(); scheduleBoundary(); }, delay);
+    timer.unref();
+  };
+  scheduleBoundary();
+}
+
 app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
 app.get("/index.html", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
 app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
+app.get("/activity-date.js", (req, res) => res.sendFile(path.join(__dirname, "activity-date.js")));
 app.get("/script.js", (req, res) => res.sendFile(path.join(__dirname, "script.js")));
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
@@ -321,7 +841,21 @@ function startLocalServer() {
 
   // Make the web service available to Render's port scan while MongoDB and
   // indexes initialize. Runtime-gated routes return 503 until this completes.
-  initializeRuntime().catch(() => {});
+  let activitySchedulerStarted = false;
+  const initializeBackgroundJobs = () => initializeRuntime().then(() => {
+    refreshLeetCodeProfiles().catch(() => {});
+    if (!process.env.VERCEL && !activitySchedulerStarted) {
+      activitySchedulerStarted = true;
+      startLeetCodeActivityScheduler();
+    }
+  }).catch(() => {});
+  initializeBackgroundJobs();
+  if (!process.env.VERCEL) setInterval(() => {
+    if (db) refreshLeetCodeProfiles().catch(() => {});
+  }, REFRESH_INTERVAL_MS).unref();
+  if (!process.env.VERCEL) setInterval(() => {
+    if (!activitySchedulerStarted) initializeBackgroundJobs();
+  }, 60 * 1000).unref();
   return server;
 }
 

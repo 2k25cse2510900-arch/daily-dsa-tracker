@@ -532,6 +532,7 @@ function showPage(pageName) {
   if (pageName === "report") {
     renderReport();
   }
+  if (pageName === "daily" && isAdmin) loadDailyActivityStatus();
 
   animatePageAchievements(pageName);
   if (pageName === "leaderboard") observePodiumVisibility();
@@ -565,7 +566,8 @@ const DSA_PHASES = [
   { name: "Exam Break", label: "Exam Break", start: "2026-10-29", end: "2026-12-13", tone: "exam-break" },
   { name: "Phase 4", label: "Phase 4", start: "2026-12-14", end: "2027-01-16", tone: "phase-four" }
 ];
-let selectedCalendarDate = isoDate(new Date());
+let selectedCalendarDate = effectiveActivityDate(Date.now() / 1000);
+let calendarDateSelectedManually = false;
 const CALENDAR_MONTHS = Array.from({ length: 6 }, (_, index) => new Date(2026, 7 + index, 1));
 const currentMonthOffset = (new Date().getFullYear() - 2026) * 12 + new Date().getMonth() - 7;
 let calendarMonthDate = CALENDAR_MONTHS[Math.min(5, Math.max(0, currentMonthOffset))];
@@ -599,7 +601,7 @@ function scheduledWorkDate(value) {
 }
 
 function futureDate(value) {
-  return value > isoDate(new Date());
+  return value > effectiveActivityDate(Date.now() / 1000);
 }
 
 function workingDayIndexes(week = currentWeek) {
@@ -655,6 +657,7 @@ function weekRangeLabel(week) {
 }
 
 function updateWeek(week, preferredDate = null) {
+  calendarDateSelectedManually = true;
   currentWeek = Math.max(1, Math.min(MAX_WEEKS, week));
   state.currentWeek = currentWeek;
   const date = preferredDate && weekForDate(preferredDate) === currentWeek
@@ -664,6 +667,7 @@ function updateWeek(week, preferredDate = null) {
   calendarMonthDate = new Date(`${date}T12:00:00`);
   if (isAdmin) { ensureAllData(); saveState(); renderAll(); }
   else navigatePage(activePage).catch(error => showToast(error.message, "error"));
+  if (activePage === "daily" && isAdmin) loadDailyActivityStatus();
   renderPhaseTracker();
   if (activePage === "daily") renderDailyTable();
 }
@@ -722,12 +726,13 @@ function todayDate() { return isoDate(new Date()); }
 
 function selectCalendarDate(value) {
   if (value < PROGRAM_START || value > CALENDAR_END) return;
+  calendarDateSelectedManually = true;
   selectedCalendarDate = value;
   const date = new Date(`${value}T12:00:00`);
   calendarMonthDate = new Date(date.getFullYear(), date.getMonth(), 1);
   const week = weekForDate(value);
   if (week !== currentWeek) updateWeek(week, value);
-  else { renderPhaseTracker(); if (activePage === "daily") renderDailyTable(); }
+  else { renderPhaseTracker(); if (activePage === "daily") { renderDailyTable(); loadDailyActivityStatus(); } }
 }
 
 function initializePhaseTracker() {
@@ -920,6 +925,119 @@ function renderDailyTable() {
   $("dailyCount").textContent = nonWorkingDate(selectedCalendarDate)
     ? `${dateLabel(selectedCalendarDate)} is a non-working day. The table shows this record's other weekdays.`
     : `${countDone(allDaily)} completed · ${countAbsent(allDaily)} not submitted · ${allDaily.filter(value => value === "blank").length} unmarked`;
+  const activityButton = $("refreshLeetCodeActivityBtn");
+  if (activityButton) activityButton.disabled = !isAdmin || leetcodeActivityRefreshInProgress || !scheduledWorkDate(selectedCalendarDate) || futureDate(selectedCalendarDate);
+  renderLeetCodeActivitySummary();
+}
+
+let leetcodeActivityRecord = null;
+let activityStatusRequest = 0;
+let leetcodeActivityRefreshInProgress = false;
+let leetcodeAutomationStatus = null;
+
+function renderLeetCodeActivitySummary() {
+  const container = $("leetcodeActivitySummary");
+  if (!container) return;
+  const activityDate = `${escapeHTML(dateLabel(selectedCalendarDate))} · activity day (05:30 IST rollover)`;
+  const automatic = leetcodeAutomationStatus;
+  const finalizationMembers = automatic?.finalization?.statuses ? state.members.map(member => {
+    const item = automatic.finalization.statuses[member.id];
+    if (!item) return "";
+    const source = item.source === "manual"
+      ? `Manual confirmation by ${escapeHTML(item.decidedBy || "admin")} · ${escapeHTML(new Date(item.decidedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }))} IST`
+      : item.source === "automatic" ? (item.status === "Done" ? "Automatically verified" : "Automatically assessed") : "Legacy result · origin not recorded";
+    const actions = isAdmin && item.status === "Needs review" ? `<span class="activity-review-actions"><button type="button" class="btn btn-light" data-finalize-member="${escapeHTML(member.id)}" data-finalize-status="Done">Mark Done</button><button type="button" class="btn btn-light" data-finalize-member="${escapeHTML(member.id)}" data-finalize-status="Not Submitted">Mark Not Submitted</button></span>` : "";
+    return `<li><strong>${escapeHTML(member.name)}</strong><span>${escapeHTML(item.status)} · ${source}</span><small>${escapeHTML(item.detail || "")}</small>${actions}</li>`;
+  }).join("") : "";
+  const automaticHtml = automatic ? `<div class="leetcode-automation-status"><strong>Automatic tracking · current activity date ${escapeHTML(dateLabel(automatic.activityDate))}</strong><span>Collection: ${escapeHTML(automatic.collection?.status || "Waiting for first collection")}${automatic.collection?.collectedAt ? ` · last successful fetch ${escapeHTML(`${new Date(automatic.collection.collectedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`)}` : ""}</span>${automatic.finalization ? `<span>Previous activity date ${escapeHTML(dateLabel(automatic.previousActivityDate))}: ${escapeHTML(automatic.finalization.status)} · Done ${automatic.finalization.done || 0} · Not Submitted ${automatic.finalization.notSubmitted || 0} · Needs review ${automatic.finalization.needsReview || 0} · checked ${automatic.finalization.membersChecked || 0} · verified attempts ${automatic.finalization.verifiedAttempts || 0} · entries updated ${automatic.finalization.entriesUpdated || 0}${automatic.finalization.finalizedAt ? ` · last finalized/reviewed ${escapeHTML(`${new Date(automatic.finalization.finalizedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`)}` : ""}</span>${finalizationMembers ? `<ul class="leetcode-activity-review-list">${finalizationMembers}</ul>` : ""}` : `<span>Previous activity date ${escapeHTML(dateLabel(automatic.previousActivityDate))}: not finalized yet.</span>`}</div>` : "";
+  if (!leetcodeActivityRecord || leetcodeActivityRecord.date !== selectedCalendarDate) {
+    container.innerHTML = `${automaticHtml}<strong>LeetCode activity · ${activityDate}</strong><span>No manual activity refresh recorded for this activity date.</span>`;
+    bindManualFinalizationActions(container);
+    return;
+  }
+  const { summary = {}, statuses = {}, lastSuccessfulAt } = leetcodeActivityRecord;
+  const lastRefresh = lastSuccessfulAt ? `${new Date(lastSuccessfulAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "None yet";
+  const memberStatuses = state.members.map(member => {
+    const item = statuses[member.id];
+    return `<li><strong>${escapeHTML(member.name)}</strong><span class="${item?.status === "Attempt verified" ? "verified" : "unverified"}">${escapeHTML(item?.status || "Not checked")}</span><small>${escapeHTML(item?.detail || "")}${item?.attemptCount ? ` · ${item.attemptCount} attempt${item.attemptCount === 1 ? "" : "s"}` : ""}</small></li>`;
+  }).join("");
+  container.innerHTML = `${automaticHtml}<div class="leetcode-activity-head"><strong>LeetCode activity · ${escapeHTML(dateLabel(leetcodeActivityRecord.date))} · activity day (05:30 IST rollover)</strong><small>Last successful activity fetch: ${escapeHTML(lastRefresh)}</small></div><div class="leetcode-activity-counts"><span>${summary.membersChecked || 0} checked</span><span>${summary.verifiedAttempts || 0} verified attempt${summary.verifiedAttempts === 1 ? "" : "s"}</span><span>${summary.entriesUpdated || 0} tracker entr${summary.entriesUpdated === 1 ? "y" : "ies"} updated</span><span>${summary.unableToVerify || 0} unable to verify</span><span>${summary.trackerUpdateFailures || 0} tracker update failure${summary.trackerUpdateFailures === 1 ? "" : "s"}</span></div><ul>${memberStatuses}</ul>`;
+  bindManualFinalizationActions(container);
+}
+
+function bindManualFinalizationActions(container) {
+  container.querySelectorAll("[data-finalize-member]").forEach(button => button.addEventListener("click", async () => {
+    if (!isAdmin || button.disabled || !leetcodeAutomationStatus?.previousActivityDate) return;
+    button.disabled = true;
+    const date = leetcodeAutomationStatus.previousActivityDate;
+    const memberId = button.dataset.finalizeMember;
+    const status = button.dataset.finalizeStatus;
+    try {
+      const result = await apiRequest("/api/admin/leetcode/activity/finalize", { method: "POST", body: JSON.stringify({ date, memberId, status }) });
+      leetcodeAutomationStatus.finalization = result.finalization;
+      await loadSharedData();
+      await loadDailyActivityStatus();
+      showToast(`${dateLabel(date)} · ${status} manually confirmed.`, "success");
+    } catch (error) {
+      showToast(error.message, "error");
+      button.disabled = false;
+    }
+  }));
+}
+
+async function loadDailyActivityStatus() {
+  const requestId = ++activityStatusRequest;
+  const query = new URLSearchParams({ week: String(currentWeek), date: selectedCalendarDate });
+  try {
+    const data = await apiRequest(`/api/page-data/daily?${query}`);
+    if (requestId !== activityStatusRequest || data.date !== selectedCalendarDate) return;
+    leetcodeActivityRecord = data.activity || null;
+    leetcodeAutomationStatus = { activityDate: data.activityDate, previousActivityDate: data.previousActivityDate, collection: data.collectionJob, finalization: data.finalizationJob };
+    renderLeetCodeActivitySummary();
+  } catch (error) {
+    if (requestId === activityStatusRequest) {
+      leetcodeActivityRecord = null;
+      leetcodeAutomationStatus = null;
+      renderLeetCodeActivitySummary();
+    }
+  }
+}
+
+function initializeLeetCodeActivityControls() {
+  const button = $("refreshLeetCodeActivityBtn");
+  button.addEventListener("click", async () => {
+    if (!isAdmin || button.disabled || leetcodeActivityRefreshInProgress) return;
+    if (!calendarDateSelectedManually) {
+      const effectiveDate = effectiveActivityDate(Date.now() / 1000);
+      if (effectiveDate !== selectedCalendarDate) {
+        selectedCalendarDate = effectiveDate;
+        currentWeek = weekForDate(effectiveDate) || currentWeek;
+        state.currentWeek = currentWeek;
+        calendarMonthDate = new Date(`${effectiveDate}T12:00:00`);
+        renderPhaseTracker();
+        renderDailyTable();
+      }
+    }
+    const date = selectedCalendarDate;
+    const week = currentWeek;
+    leetcodeActivityRefreshInProgress = true;
+    button.disabled = true;
+    button.textContent = "Checking LeetCode…";
+    try {
+      const result = await apiRequest("/api/admin/leetcode/activity/refresh", { method: "POST", body: JSON.stringify({ date, week }) });
+      leetcodeActivityRecord = result;
+      await loadSharedData();
+      if (activePage === "daily") await loadDailyActivityStatus();
+      const summary = result.summary || {};
+      const message = `${dateLabel(date)} activity day (05:30 IST rollover): checked ${summary.membersChecked || 0}; verified ${summary.verifiedAttempts || 0} attempt(s); updated ${summary.entriesUpdated || 0}; unable to verify ${summary.unableToVerify || 0}; tracker update failures ${summary.trackerUpdateFailures || 0}.`;
+      showToast(message, summary.unableToVerify || summary.trackerUpdateFailures ? "error" : "success");
+    } catch (error) { showToast(error.message, "error"); }
+    finally {
+      leetcodeActivityRefreshInProgress = false;
+      button.textContent = "Refresh LeetCode Activity";
+      if (activePage === "daily") renderDailyTable();
+    }
+  });
 }
 
 /* -------------------- CONCEPTS TRACKER -------------------- */
@@ -1120,6 +1238,7 @@ function renderMembers() {
   }
 
   container.innerHTML = state.members.map((member, index) => {
+    const profile = leetcodeProfiles[member.id];
     const stats = isAdmin ? memberStats(member.id) : null;
     const consistency = stats ? consistencyPresentation(stats.percent) : null;
     const progressMarkup = stats ? `
@@ -1134,6 +1253,7 @@ function renderMembers() {
         <div class="member-info">
           <strong>${escapeHTML(member.name)}</strong>
           <small>${escapeHTML(member.role || `Member ${index + 1}`)}</small>
+          ${profile ? `<a class="leetcode-link" href="${escapeHTML(profile.profileUrl)}" target="_blank" rel="noopener noreferrer">LeetCode · ${escapeHTML(profile.username)}</a><div class="leetcode-stats">${profile.stats ? `<span><b>${profile.stats.total}</b> solved</span><span>Easy ${profile.stats.easy}</span><span>Medium ${profile.stats.medium}</span><span>Hard ${profile.stats.hard}</span>` : `<span>Statistics unavailable</span>`}</div><small class="leetcode-fetch ${profile.status === "Success" ? "success" : "unavailable"}">${escapeHTML(profile.status)}${profile.stale ? " · cached data may be stale" : ""}${profile.lastFetchedAt ? ` · Updated ${escapeHTML(new Date(profile.lastFetchedAt).toLocaleString())}` : ""}</small>` : `<small class="leetcode-fetch">LeetCode profile not mapped</small>`}
         </div>
         ${progressMarkup}
         <div class="member-actions">
@@ -1146,6 +1266,22 @@ function renderMembers() {
         </div>
       </article>`;
   }).join("");
+
+  const refreshButton = $("leetcodeRefreshBtn");
+  if (refreshButton && !refreshButton.dataset.bound) {
+    refreshButton.dataset.bound = "true";
+    refreshButton.addEventListener("click", async () => {
+      refreshButton.disabled = true;
+      refreshButton.textContent = "Refreshing…";
+      try {
+        const result = await apiRequest("/api/admin/leetcode/refresh", { method: "POST" });
+        await loadSharedData();
+        const unavailable = result.results?.filter(item => item.status !== "Success").length || 0;
+        showToast(`Fetched ${result.results?.length || 0} profiles${unavailable ? `; ${unavailable} unavailable` : ""}.`, unavailable ? "error" : "success");
+      } catch (error) { showToast(error.message, "error"); }
+      finally { refreshButton.disabled = false; refreshButton.textContent = "Refresh now"; }
+    });
+  }
 
   container.querySelectorAll("[data-member-action]").forEach(button => {
     button.addEventListener("click", () => {
@@ -1672,6 +1808,7 @@ let isAdmin = false;
 let sharedReady = false;
 let activePage = "overview";
 let viewerPageData = null;
+let leetcodeProfiles = {};
 let localSnapshot = null;
 let sessionExpiryTimer = null;
 let sessionExpiresAt = 0;
@@ -1743,6 +1880,7 @@ function setSecurityGate(message, canImport = false) {
 
 async function loadSharedData() {
   const data = await apiRequest("/api/data");
+  leetcodeProfiles = data.leetcode || {};
   state = { members: data.members, weeks: data.weeks, currentWeek: data.currentWeek };
   currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek;
   state.currentWeek = currentWeek;
@@ -1756,6 +1894,9 @@ function clearViewerData() {
   viewerPageData = null;
   ["statsGrid", "memberSummary", "previewRows", "dailyTable", "conceptTable", "dailyAchievements", "conceptAchievements", "memberManager", "leaderboardRows", "leaderboardPodium", "leaderboardSummary", "printReport"].forEach(id => { if ($(id)) $(id).innerHTML = ""; });
   ["memberCountTag", "dailyCount", "conceptCount"].forEach(id => { if ($(id)) $(id).textContent = ""; });
+  leetcodeActivityRecord = null;
+  leetcodeAutomationStatus = null;
+  if ($("leetcodeActivitySummary")) $("leetcodeActivitySummary").innerHTML = "";
 }
 
 function renderViewerOverview(data) {
@@ -1788,6 +1929,7 @@ async function navigatePage(page) {
   if (!PAGE_INFO[page]) return;
   clearViewerData();
   const query = new URLSearchParams({ week: String(currentWeek) });
+  if (page === "daily") query.set("date", selectedCalendarDate);
   try {
     const data = await apiRequest(`/api/page-data/${encodeURIComponent(page)}?${query}`);
     viewerPageData = data;
@@ -1796,9 +1938,10 @@ async function navigatePage(page) {
     if (page === "daily" || page === "concepts") {
       const weekData = page === "daily" ? { daily: data.statuses, concepts: {} } : { daily: {}, concepts: data.statuses };
       state = { members: data.members, weeks: { [String(data.week)]: weekData }, currentWeek: data.week };
+      if (page === "daily") { leetcodeActivityRecord = data.activity || null; leetcodeAutomationStatus = null; }
       if (page === "daily") renderDailyTable(); else renderConceptTable();
     }
-    if (page === "members") { state = { members: data.members, weeks: {}, currentWeek }; renderMembers(); }
+    if (page === "members") { state = { members: data.members, weeks: {}, currentWeek }; leetcodeProfiles = data.leetcode || {}; renderMembers(); }
     if (page === "report") {
       state = { members: data.members, weeks: { [String(data.week)]: { daily: data.statuses.daily, concepts: data.statuses.concepts } }, currentWeek: data.week };
       renderReport();
@@ -1873,6 +2016,7 @@ async function initializeApp() {
   const initialWeek = weekForDate(selectedCalendarDate);
   if (initialWeek) { currentWeek = initialWeek; state.currentWeek = initialWeek; }
   initializePhaseTracker();
+  initializeLeetCodeActivityControls();
   initializeSecurityControls();
   try {
     const session = await apiRequest("/api/session");
