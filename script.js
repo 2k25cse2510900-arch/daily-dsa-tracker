@@ -934,11 +934,17 @@ let leetcodeActivityRecord = null;
 let activityStatusRequest = 0;
 let leetcodeActivityRefreshInProgress = false;
 let leetcodeAutomationStatus = null;
+let leetcodeTrackingSummary = null;
 
 function renderLeetCodeActivitySummary() {
   const container = $("leetcodeActivitySummary");
   if (!container) return;
-  const activityDate = `${escapeHTML(dateLabel(selectedCalendarDate))} · activity day (05:30 IST rollover)`;
+  const tracking = leetcodeTrackingSummary || {};
+  const displayedDate = tracking.activityDate || selectedCalendarDate;
+  const lastFetch = tracking.lastSuccessfulAt
+    ? `${new Date(tracking.lastSuccessfulAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`
+    : "No successful fetch recorded";
+  const trackingCounts = `<div class="leetcode-activity-counts"><span>Verified attempts: ${Number(tracking.verifiedAttempts) || 0}</span><span>Unable to verify: ${Number(tracking.unableToVerify) || 0}</span><span>Tracker update failures: ${Number(tracking.trackerUpdateFailures) || 0}</span></div>`;
   const automatic = leetcodeAutomationStatus;
   const finalizationMembers = automatic?.finalization?.statuses ? state.members.map(member => {
     const item = automatic.finalization.statuses[member.id];
@@ -949,19 +955,17 @@ function renderLeetCodeActivitySummary() {
     const actions = isAdmin && item.status === "Needs review" ? `<span class="activity-review-actions"><button type="button" class="btn btn-light" data-finalize-member="${escapeHTML(member.id)}" data-finalize-status="Done">Mark Done</button><button type="button" class="btn btn-light" data-finalize-member="${escapeHTML(member.id)}" data-finalize-status="Not Submitted">Mark Not Submitted</button></span>` : "";
     return `<li><strong>${escapeHTML(member.name)}</strong><span>${escapeHTML(item.status)} · ${source}</span><small>${escapeHTML(item.detail || "")}</small>${actions}</li>`;
   }).join("") : "";
-  const automaticHtml = automatic ? `<div class="leetcode-automation-status"><strong>Automatic tracking · current activity date ${escapeHTML(dateLabel(automatic.activityDate))}</strong><span>Collection: ${escapeHTML(automatic.collection?.status || "Waiting for first collection")}${automatic.collection?.collectedAt ? ` · last successful fetch ${escapeHTML(`${new Date(automatic.collection.collectedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`)}` : ""}</span>${automatic.finalization ? `<span>Previous activity date ${escapeHTML(dateLabel(automatic.previousActivityDate))}: ${escapeHTML(automatic.finalization.status)} · Done ${automatic.finalization.done || 0} · Not Submitted ${automatic.finalization.notSubmitted || 0} · Needs review ${automatic.finalization.needsReview || 0} · checked ${automatic.finalization.membersChecked || 0} · verified attempts ${automatic.finalization.verifiedAttempts || 0} · entries updated ${automatic.finalization.entriesUpdated || 0}${automatic.finalization.finalizedAt ? ` · last finalized/reviewed ${escapeHTML(`${new Date(automatic.finalization.finalizedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`)}` : ""}</span>${finalizationMembers ? `<ul class="leetcode-activity-review-list">${finalizationMembers}</ul>` : ""}` : `<span>Previous activity date ${escapeHTML(dateLabel(automatic.previousActivityDate))}: not finalized yet.</span>`}</div>` : "";
-  if (!leetcodeActivityRecord || leetcodeActivityRecord.date !== selectedCalendarDate) {
-    container.innerHTML = `${automaticHtml}<strong>LeetCode activity · ${activityDate}</strong><span>No manual activity refresh recorded for this activity date.</span>`;
-    bindManualFinalizationActions(container);
-    return;
-  }
-  const { summary = {}, statuses = {}, lastSuccessfulAt } = leetcodeActivityRecord;
-  const lastRefresh = lastSuccessfulAt ? `${new Date(lastSuccessfulAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "None yet";
+  const selectedStatuses = leetcodeActivityRecord?.date === displayedDate ? leetcodeActivityRecord.statuses || {} : {};
   const memberStatuses = state.members.map(member => {
-    const item = statuses[member.id];
-    return `<li><strong>${escapeHTML(member.name)}</strong><span class="${item?.status === "Attempt verified" ? "verified" : "unverified"}">${escapeHTML(item?.status || "Not checked")}</span><small>${escapeHTML(item?.detail || "")}${item?.attemptCount ? ` · ${item.attemptCount} attempt${item.attemptCount === 1 ? "" : "s"}` : ""}</small></li>`;
+    const item = selectedStatuses[member.id];
+    const isUnable = item?.status === "Unable to verify";
+    const detail = item?.detail || (isUnable ? "Public submission data was incomplete or unavailable. This is not a confirmed Not Submitted result." : item?.status === "No attempt observed" ? "No matching record appeared in the available response; this does not confirm non-submission." : "");
+    return `<li><strong>${escapeHTML(member.name)}</strong><span class="${item?.status === "Attempt verified" ? "verified" : isUnable ? "unverified" : "tracking-neutral"}">${escapeHTML(item?.status || "Not checked")}</span><small>${escapeHTML(detail)}${item?.attemptCount ? ` · ${item.attemptCount} attempt${item.attemptCount === 1 ? "" : "s"}` : ""}</small></li>`;
   }).join("");
-  container.innerHTML = `${automaticHtml}<div class="leetcode-activity-head"><strong>LeetCode activity · ${escapeHTML(dateLabel(leetcodeActivityRecord.date))} · activity day (05:30 IST rollover)</strong><small>Last successful activity fetch: ${escapeHTML(lastRefresh)}</small></div><div class="leetcode-activity-counts"><span>${summary.membersChecked || 0} checked</span><span>${summary.verifiedAttempts || 0} verified attempt${summary.verifiedAttempts === 1 ? "" : "s"}</span><span>${summary.entriesUpdated || 0} tracker entr${summary.entriesUpdated === 1 ? "y" : "ies"} updated</span><span>${summary.unableToVerify || 0} unable to verify</span><span>${summary.trackerUpdateFailures || 0} tracker update failure${summary.trackerUpdateFailures === 1 ? "" : "s"}</span></div><ul>${memberStatuses}</ul>`;
+  const collectionDetails = automatic?.collection ? `<div class="tracking-detail-block"><strong>Automatic collection · ${escapeHTML(dateLabel(automatic.activityDate))}</strong><span>${escapeHTML(automatic.collection.status || "Collection status unavailable")}${automatic.collection.collectedAt ? ` · last successful fetch ${escapeHTML(`${new Date(automatic.collection.collectedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`)}` : ""}</span></div>` : "";
+  const finalizationDetails = automatic?.finalization ? `<div class="tracking-detail-block"><strong>Previous activity date ${escapeHTML(dateLabel(automatic.previousActivityDate))}</strong><span>${escapeHTML(automatic.finalization.status)} · Done ${automatic.finalization.done || 0} · Not Submitted ${automatic.finalization.notSubmitted || 0} · Needs review ${automatic.finalization.needsReview || 0} · verified attempts ${automatic.finalization.verifiedAttempts || 0} · tracker updates ${automatic.finalization.entriesUpdated || 0}${automatic.finalization.finalizedAt ? ` · reviewed ${escapeHTML(`${new Date(automatic.finalization.finalizedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`)}` : ""}</span>${finalizationMembers ? `<ul class="leetcode-activity-review-list">${finalizationMembers}</ul>` : ""}</div>` : automatic ? `<div class="tracking-detail-block"><strong>Previous activity date ${escapeHTML(dateLabel(automatic.previousActivityDate))}</strong><span>Not finalized yet.</span></div>` : "";
+  const limitations = `<p class="tracking-limitations">LeetCode exposes a recent, capped public submission list. A missing record is shown as Unable to verify unless the available evidence proves otherwise; it is not a confirmed Not Submitted result. Activity dates roll over at 05:30 Asia/Kolkata.</p>`;
+  container.innerHTML = `<div class="leetcode-activity-head"><strong>LeetCode tracking · ${escapeHTML(dateLabel(displayedDate))} (activity date)</strong><small>Last successful fetch: ${escapeHTML(lastFetch)}</small></div>${trackingCounts}<details class="tracking-details"><summary>View tracking details</summary>${limitations}${selectedStatuses && Object.keys(selectedStatuses).length ? `<h4>Member results</h4><ul>${memberStatuses}</ul>` : `<p>No member-level activity results are recorded for this date.</p>`}${collectionDetails}${finalizationDetails}</details>`;
   bindManualFinalizationActions(container);
 }
 
@@ -992,11 +996,13 @@ async function loadDailyActivityStatus() {
     const data = await apiRequest(`/api/page-data/daily?${query}`);
     if (requestId !== activityStatusRequest || data.date !== selectedCalendarDate) return;
     leetcodeActivityRecord = data.activity || null;
+    leetcodeTrackingSummary = data.trackingSummary || null;
     leetcodeAutomationStatus = { activityDate: data.activityDate, previousActivityDate: data.previousActivityDate, collection: data.collectionJob, finalization: data.finalizationJob };
     renderLeetCodeActivitySummary();
   } catch (error) {
     if (requestId === activityStatusRequest) {
       leetcodeActivityRecord = null;
+      leetcodeTrackingSummary = null;
       leetcodeAutomationStatus = null;
       renderLeetCodeActivitySummary();
     }
@@ -1026,6 +1032,13 @@ function initializeLeetCodeActivityControls() {
     try {
       const result = await apiRequest("/api/admin/leetcode/activity/refresh", { method: "POST", body: JSON.stringify({ date, week }) });
       leetcodeActivityRecord = result;
+      leetcodeTrackingSummary = {
+        activityDate: result.date,
+        lastSuccessfulAt: result.lastSuccessfulAt,
+        verifiedAttempts: result.summary?.verifiedAttempts || 0,
+        unableToVerify: result.summary?.unableToVerify || 0,
+        trackerUpdateFailures: result.summary?.trackerUpdateFailures || 0
+      };
       await loadSharedData();
       if (activePage === "daily") await loadDailyActivityStatus();
       const summary = result.summary || {};
@@ -1895,6 +1908,7 @@ function clearViewerData() {
   ["statsGrid", "memberSummary", "previewRows", "dailyTable", "conceptTable", "dailyAchievements", "conceptAchievements", "memberManager", "leaderboardRows", "leaderboardPodium", "leaderboardSummary", "printReport"].forEach(id => { if ($(id)) $(id).innerHTML = ""; });
   ["memberCountTag", "dailyCount", "conceptCount"].forEach(id => { if ($(id)) $(id).textContent = ""; });
   leetcodeActivityRecord = null;
+  leetcodeTrackingSummary = null;
   leetcodeAutomationStatus = null;
   if ($("leetcodeActivitySummary")) $("leetcodeActivitySummary").innerHTML = "";
 }

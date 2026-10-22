@@ -21,3 +21,10 @@ test("browser loads the shared activity date helper before dashboard logic", () 
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert.ok(html.indexOf('src="activity-date.js"') < html.indexOf('src="script.js"'));
 });
+
+test("weekly tracking details use a native disclosure and explain unavailable activity", () => {
+  const script = fs.readFileSync(path.join(root, "script.js"), "utf8");
+  assert.match(script, /<details class="tracking-details"><summary>View tracking details<\/summary>/);
+  assert.match(script, /This is not a confirmed Not Submitted result/);
+  assert.match(script, /Tracker update failures:/);
+});

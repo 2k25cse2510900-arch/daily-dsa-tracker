@@ -16,7 +16,7 @@ const { safeMongoDiagnostic } = require("./diagnostics");
 const { createAdminOnly } = require("./admin-auth");
 const { REFRESH_INTERVAL_MS, REQUEST_GAP_MS, RECENT_SUBMISSION_LIMIT, profileForMember, fetchProfile, fetchRecentSubmissions, inspectMemberActivity, effectiveActivityDate, trackerPosition, publicRecord } = require("./leetcode");
 const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
-const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus } = require("./activity-jobs");
+const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, ACTIVITY_LOCK_LEASE_MS, ACTIVITY_LOCK_HEARTBEAT_MS, acquireActivityLease, renewActivityLease, releaseActivityLease } = require("./activity-jobs");
 
 const PAGES = ["overview", "daily", "concepts", "members", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
@@ -44,6 +44,7 @@ let leetcodeRefreshPromise;
 let leetcodeActivityCyclePromise;
 let lastLeetcodeRefreshAt = 0;
 const leetcodeActivityRefreshes = new Map();
+const activityLockOwnerId = `${process.pid}:${crypto.randomUUID()}`;
 
 function requireEnv(name) {
   if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`);
@@ -281,14 +282,35 @@ app.get("/api/page-data/:page", async (req, res) => {
 
   if (page === "daily") {
     const date = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : null;
-    const activity = date ? await db.collection("leetcodeActivity").findOne({ _id: date }, { projection: { _id: 0 } }) : null;
+    const storedActivity = date ? await db.collection("leetcodeActivity").findOne({ _id: date }, { projection: { _id: 0 } }) : null;
     const activityDate = currentActivityDate();
     const previousActivityDate = addActivityDays(activityDate, -1);
     const [collectionJob, finalizationJob] = await Promise.all([
       db.collection("leetcodeActivityJobs").findOne({ _id: activityDate }, { projection: { _id: 0 } }),
       db.collection("leetcodeActivityJobs").findOne({ _id: previousActivityDate }, { projection: { _id: 0 } })
     ]);
-    return res.json({ page, week: weekNumber, date, activity, activityDate, previousActivityDate, collectionJob: isAdminSession(req) ? collectionJob?.collection || null : null, finalizationJob: isAdminSession(req) ? finalizationJob?.finalization || null : null, members, statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)])) });
+    const isAdmin = isAdminSession(req);
+    const currentCollection = date === activityDate ? collectionJob?.collection : null;
+    const activity = storedActivity || (currentCollection ? {
+      date: activityDate,
+      lastSuccessfulAt: currentCollection.collectedAt || null,
+      summary: {
+        membersChecked: currentCollection.membersChecked,
+        verifiedAttempts: currentCollection.verifiedAttempts,
+        unableToVerify: currentCollection.unableToVerify,
+        trackerUpdateFailures: Object.values(currentCollection.statuses || {}).filter(item => item?.trackerUpdateFailed || (item?.status === "Attempt verified" && item.updated === false && /tracker update failed/i.test(item.detail || ""))).length
+      },
+      statuses: currentCollection.statuses || {}
+    } : null);
+    const safeSummary = publicActivityRecord(activity)?.summary || {};
+    const trackingSummary = {
+      activityDate: activity?.date || date || activityDate,
+      lastSuccessfulAt: activity?.lastSuccessfulAt || null,
+      verifiedAttempts: safeSummary.verifiedAttempts || 0,
+      unableToVerify: safeSummary.unableToVerify || 0,
+      trackerUpdateFailures: safeSummary.trackerUpdateFailures || 0
+    };
+    return res.json({ page, week: weekNumber, date, activity: isAdmin ? activity : publicActivityRecord(activity), trackingSummary, activityDate, previousActivityDate, collectionJob: isAdmin ? collectionJob?.collection || null : null, finalizationJob: isAdmin ? finalizationJob?.finalization || null : null, members, statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)])) });
   }
   if (page === "concepts") return res.json({ page, week: weekNumber, members, statuses: Object.fromEntries(members.map(member => [member.id, concepts(member.id)])) });
   if (page === "members") {
@@ -456,19 +478,35 @@ async function setDailyStatusExplicit(memberId, week, slot, status) {
   throw new Error("DAILY_TRACKER_CHANGED_CONCURRENTLY");
 }
 
-function acquireLeetCodeActivityLock(lockToken) {
-  return (async () => {
-    const locks = db.collection("jobLocks");
-    const lockId = "leetcode-activity";
-    try {
-      await locks.updateOne({ _id: lockId, $or: [{ expiresAt: { $lt: new Date() } }, { expiresAt: { $exists: false } }] },
-        { $set: { token: lockToken, expiresAt: new Date(Date.now() + 10 * 60 * 1000) } }, { upsert: true });
-    } catch (error) {
-      if (error.code === 11000) return null;
-      throw error;
-    }
-    return await locks.findOne({ _id: lockId, token: lockToken }) ? { locks, lockId, lockToken } : null;
-  })();
+async function acquireLeetCodeActivityLock(lockToken, operation, activityDate, operationId) {
+  const lockId = "leetcode-activity";
+  const log = (event, details = {}) => console.info("[leetcode-activity] lock", { event, ...details, operation, activityDate, operationId });
+  const result = await acquireActivityLease(db.collection("jobLocks"), {
+    lockId, token: lockToken, ownerId: activityLockOwnerId,
+    leaseMs: ACTIVITY_LOCK_LEASE_MS,
+    log
+  });
+  if (!result.acquired) return result;
+  const lock = { ...result, lockToken, operation, activityDate, operationId, log };
+  lock.heartbeatPending = Promise.resolve();
+  lock.heartbeat = setInterval(() => {
+    lock.heartbeatPending = lock.heartbeatPending.then(() => renewActivityLease(lock)).then(() => lock.log("lease-renewed", { lockId })).catch(error => console.error("[leetcode-activity] lock", {
+      event: "heartbeat-failed", lockId, operation, activityDate, operationId, code: error.message === "ACTIVITY_LEASE_LOST" ? error.message : "LEASE_RENEWAL_FAILED"
+    }));
+  }, ACTIVITY_LOCK_HEARTBEAT_MS);
+  lock.heartbeat.unref?.();
+  return lock;
+}
+
+async function releaseLeetCodeActivityLock(lock) {
+  clearInterval(lock.heartbeat);
+  await lock.heartbeatPending;
+  lock.log(lock.completed ? "completed" : "releasing", { lockId: lock.lockId });
+  try {
+    await releaseActivityLease(lock, lock.log);
+  } catch (error) {
+    console.error("[leetcode-activity] lock", { event: "release-failed", lockId: lock.lockId, operation: lock.operation, activityDate: lock.activityDate, operationId: lock.operationId, code: safeDiagnosticCode(error) });
+  }
 }
 
 async function finalizeActivityDate(date, members, recentByMember) {
@@ -556,10 +594,11 @@ async function runLeetCodeActivityCycle() {
   if (leetcodeActivityCyclePromise) return leetcodeActivityCyclePromise;
   leetcodeActivityCyclePromise = (async () => {
     const lockToken = crypto.randomUUID();
-    const lock = await acquireLeetCodeActivityLock(lockToken);
-    if (!lock) return { skipped: true, inProgress: true };
-    const startedAt = Date.now();
     const activityDate = currentActivityDate();
+    const operationId = crypto.randomUUID();
+    const lock = await acquireLeetCodeActivityLock(lockToken, "scheduled-cycle", activityDate, operationId);
+    if (!lock.acquired) return { skipped: true, inProgress: true, lockState: lock.reason, retryAfterSeconds: lock.retryAfterSeconds };
+    const startedAt = Date.now();
     console.info("[leetcode-activity] cycle started", { activityDate });
     try {
       const dashboard = await db.collection("dashboard").findOne({ _id: "shared" });
@@ -645,32 +684,29 @@ async function runLeetCodeActivityCycle() {
       }
       if (lastFinalizedDate) await db.collection("leetcodeActivityJobs").updateOne({ _id: "scheduler" }, { $set: { lastFinalizedDate, updatedAt: new Date() } }, { upsert: true });
       const result = { currentDate, collection, finalizedDates: dates };
-      console.info("[leetcode-activity] cycle completed", { activityDate: currentDate, membersChecked, verifiedAttempts, entriesUpdated, unableToVerify, finalizedDates: dates.length, durationMs: Date.now() - startedAt });
+      console.info("[leetcode-activity] cycle completed", { activityDate: currentDate, operationId, membersChecked, verifiedAttempts, entriesUpdated, unableToVerify, finalizedDates: dates.length, durationMs: Date.now() - startedAt });
+      lock.completed = true;
       return result;
     } catch (error) {
       console.error("[leetcode-activity] cycle failed", { activityDate, code: safeDiagnosticCode(error), durationMs: Date.now() - startedAt });
       throw error;
     } finally {
-      await lock.locks.deleteOne({ _id: lock.lockId, token: lock.lockToken }).catch(() => {});
+      await releaseLeetCodeActivityLock(lock);
     }
   })().finally(() => { leetcodeActivityCyclePromise = null; });
   return leetcodeActivityCyclePromise;
 }
 
 function refreshLeetCodeActivity(date, position) {
-  if (leetcodeActivityRefreshes.size) return Promise.resolve({ inProgress: true, date });
+  if (leetcodeActivityRefreshes.has(date)) {
+    console.info("[leetcode-activity] lock", { event: "blocked-local-active", lockId: "leetcode-activity", operation: "manual-refresh", activityDate: date, operationId: crypto.randomUUID() });
+    return Promise.resolve({ inProgress: true, lockState: "active", date });
+  }
   const refresh = (async () => {
-    const locks = db.collection("jobLocks");
     const lockToken = crypto.randomUUID();
-    const lockId = "leetcode-activity";
-    try {
-      await locks.updateOne({ _id: lockId, $or: [{ expiresAt: { $lt: new Date() } }, { expiresAt: { $exists: false } }] },
-        { $set: { token: lockToken, expiresAt: new Date(Date.now() + 10 * 60 * 1000) } }, { upsert: true });
-    } catch (error) {
-      if (error.code === 11000) return { inProgress: true, date };
-      throw error;
-    }
-    if (!await locks.findOne({ _id: lockId, token: lockToken })) return { inProgress: true, date };
+    const operationId = crypto.randomUUID();
+    const lock = await acquireLeetCodeActivityLock(lockToken, "manual-refresh", date, operationId);
+    if (!lock.acquired) return { inProgress: true, lockState: lock.reason, retryAfterSeconds: lock.retryAfterSeconds, date };
     try {
       const document = await db.collection("dashboard").findOne({ _id: "shared" });
       if (!document) throw new Error("DASHBOARD_NOT_INITIALIZED");
@@ -716,15 +752,16 @@ function refreshLeetCodeActivity(date, position) {
       const refreshedAt = new Date();
       const prior = await db.collection("leetcodeActivity").findOne({ _id: date }, { projection: { lastSuccessfulAt: 1 } });
       const lastSuccessfulAt = successfulLookups ? refreshedAt : prior?.lastSuccessfulAt || null;
-      const activityResult = { _id: date, date, week: position.week, slot: position.slot, refreshedAt, lastSuccessfulAt, summary, statuses };
+      const activityResult = { _id: date, date, week: position.week, slot: position.slot, refreshedAt, lastSuccessfulAt, summary, statuses, lockRecovered: Boolean(lock.recovered) };
       await db.collection("leetcodeActivity").replaceOne({ _id: date }, activityResult, { upsert: true });
       audit({ session: { username: "Krish" } }, "leetcode-activity-refresh", date);
+      lock.completed = true;
       return activityResult;
     } finally {
-      await locks.deleteOne({ _id: lockId, token: lockToken }).catch(() => {});
+      await releaseLeetCodeActivityLock(lock);
     }
-  })().finally(() => leetcodeActivityRefreshes.delete("active"));
-  leetcodeActivityRefreshes.set("active", refresh);
+  })().finally(() => leetcodeActivityRefreshes.delete(date));
+  leetcodeActivityRefreshes.set(date, refresh);
   return refresh;
 }
 
@@ -737,9 +774,13 @@ app.post("/api/admin/leetcode/activity/refresh", adminOnly, async (req, res) => 
   }
   try {
     const result = await refreshLeetCodeActivity(date, position);
-    if (result.inProgress) return res.status(409).json({ error: "An activity refresh for this date is already running." });
+    if (result.inProgress) return res.status(409).json({
+      error: result.lockState === "active" ? "A LeetCode activity refresh is already running in this server process." : "A valid LeetCode activity lease is still in effect. Retry after the estimated wait.",
+      code: result.lockState === "active" ? "ACTIVITY_REFRESH_ACTIVE" : "ACTIVITY_REFRESH_LEASE_VALID", date, retryAfterSeconds: result.retryAfterSeconds || null
+    });
     res.json(result);
   } catch {
+    console.error("[leetcode-activity] manual refresh failed", { date, code: "ACTIVITY_REFRESH_FAILED" });
     res.status(503).json({ error: "LeetCode activity could not be refreshed." });
   }
 });
@@ -751,10 +792,11 @@ app.post("/api/admin/leetcode/activity/finalize", adminOnly, async (req, res) =>
     return res.status(400).json({ error: "Choose a previous scheduled activity date, member, and manual status." });
   }
   const lockToken = crypto.randomUUID();
+  const operationId = crypto.randomUUID();
   let lock;
   try {
-    lock = await acquireLeetCodeActivityLock(lockToken);
-    if (!lock) return res.status(409).json({ error: "LeetCode activity processing is in progress. Try again shortly." });
+    lock = await acquireLeetCodeActivityLock(lockToken, "manual-finalization", date, operationId);
+    if (!lock.acquired) return res.status(409).json({ error: "A valid LeetCode activity lease is still in effect. Retry after the estimated wait.", code: "ACTIVITY_REFRESH_LEASE_VALID", retryAfterSeconds: lock.retryAfterSeconds || null });
     const dashboard = await db.collection("dashboard").findOne({ _id: "shared" });
     const member = dashboard?.members.find(item => item.id === memberId);
     if (!member) return res.status(404).json({ error: "Member not found." });
@@ -791,11 +833,13 @@ app.post("/api/admin/leetcode/activity/finalize", adminOnly, async (req, res) =>
     await db.collection("leetcodeActivityJobs").updateOne({ _id: date }, { $set: { date, finalization, updatedAt: decidedAt } });
     audit(req, "leetcode-activity-manual-finalization", `${date}:${memberId}:${status}`);
     console.info("[leetcode-activity] manual decision recorded", { activityDate: date, memberId, status, actor: req.session.username });
+    lock.completed = true;
     res.json({ date, finalization });
   } catch {
+    console.error("[leetcode-activity] manual decision failed", { activityDate: date, code: "MANUAL_FINALIZATION_FAILED" });
     res.status(503).json({ error: "The manual activity decision could not be saved." });
   } finally {
-    if (lock) await lock.locks.deleteOne({ _id: lock.lockId, token: lock.lockToken }).catch(() => {});
+    if (lock?.acquired) await releaseLeetCodeActivityLock(lock);
   }
 });
 

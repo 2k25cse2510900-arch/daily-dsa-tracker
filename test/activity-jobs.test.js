@@ -3,11 +3,39 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { effectiveActivityDate, addActivityDays } = require("../activity-date");
-const { submissionDocument, persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus } = require("../activity-jobs");
+const { submissionDocument, persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, acquireActivityLease, releaseActivityLease, withActivityLease } = require("../activity-jobs");
 
 const member = { id: "member-1", name: "Test Member" };
 const timestamp = value => Math.floor(Date.parse(value) / 1000);
 const attempt = (statusDisplay, id, iso = "2026-10-22T00:30:00Z") => ({ id, title: "Two Sum", titleSlug: "two-sum", timestamp: timestamp(iso), statusDisplay, lang: "python3" });
+
+function memoryLocks() {
+  const rows = new Map();
+  const matches = (row, filter) => Object.entries(filter).every(([key, value]) => {
+    if (value && typeof value === "object" && "$exists" in value) return (key in row) === value.$exists;
+    return row[key] instanceof Date && value instanceof Date ? row[key].getTime() === value.getTime() : row[key] === value;
+  });
+  return {
+    rows,
+    async findOne(filter) { return rows.get(filter._id) || null; },
+    async insertOne(document) {
+      if (rows.has(document._id)) { const error = new Error("duplicate"); error.code = 11000; throw error; }
+      rows.set(document._id, structuredClone(document));
+    },
+    async updateOne(filter, update) {
+      const current = rows.get(filter._id);
+      if (!current || !matches(current, filter)) return { modifiedCount: 0 };
+      rows.set(filter._id, { ...current, ...structuredClone(update.$set) });
+      return { modifiedCount: 1 };
+    },
+    async deleteOne(filter) {
+      const current = rows.get(filter._id);
+      if (!current || !matches(current, filter)) return { deletedCount: 0 };
+      rows.delete(filter._id);
+      return { deletedCount: 1 };
+    }
+  };
+}
 
 test("persistent submission records use the shared 05:30 IST activity date", () => {
   const before = submissionDocument(member, "SampleUser", attempt("Wrong Answer", "101", "2026-10-21T23:59:59Z"));
@@ -100,4 +128,106 @@ test("automatic retries preserve verified Done and admin-confirmed outcomes", ()
   assert.equal(preserveFinalizationStatus({ status: "Not Submitted", source: "manual", decidedBy: "Krish" }), true);
   assert.equal(preserveFinalizationStatus({ status: "Not Submitted", source: "automatic" }), false);
   assert.equal(preserveFinalizationStatus({ status: "Needs review", source: "automatic" }), false);
+});
+
+test("student activity projection omits technical diagnostics and admin decision metadata", () => {
+  const result = publicActivityRecord({
+    date: "2026-10-22", lastSuccessfulAt: new Date("2026-10-22T00:30:00Z"),
+    summary: { membersChecked: 8, verifiedAttempts: 2, unableToVerify: 3, trackerUpdateFailures: 1 },
+    statuses: { "member-1": { status: "Unable to verify", detail: "PROFILE_UNAVAILABLE", username: "private-name", decidedBy: "Krish", attemptCount: 0 } }
+  });
+  assert.equal(result.statuses["member-1"].status, "Unable to verify");
+  assert.equal(result.statuses["member-1"].detail, undefined);
+  assert.equal(result.statuses["member-1"].username, undefined);
+  assert.equal(result.statuses["member-1"].decidedBy, undefined);
+  assert.equal(result.summary.trackerUpdateFailures, 1);
+});
+
+test("activity lock releases after successful completion and thrown errors", async () => {
+  const collection = memoryLocks();
+  const successful = await withActivityLease({ collection, lockId: "leetcode-activity", token: "ok", ownerId: "server-a", heartbeatMs: 1000 }, async () => "done");
+  assert.equal(successful.value, "done");
+  assert.equal(collection.rows.has("leetcode-activity"), false);
+  await assert.rejects(withActivityLease({ collection, lockId: "leetcode-activity", token: "throws", ownerId: "server-a", heartbeatMs: 1000 }, async () => { throw new Error("job failed"); }), /job failed/);
+  assert.equal(collection.rows.has("leetcode-activity"), false);
+});
+
+test("activity lock timeout expiry permits recovery", async () => {
+  const collection = memoryLocks();
+  const now = new Date("2026-10-22T00:00:00Z");
+  const logEvents = [];
+  const acquired = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "old", ownerId: "server-old", now, leaseMs: 1000 });
+  assert.equal(acquired.acquired, true);
+  const stillActive = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "other", ownerId: "server-new", now: new Date(now.getTime() + 500), leaseMs: 1000, log: event => logEvents.push(event) });
+  assert.equal(stillActive.reason, "valid-lease");
+  assert.equal(logEvents[0], "blocked-valid-lease");
+  const recovered = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "new", ownerId: "server-new", now: new Date(now.getTime() + 1001), leaseMs: 1000 });
+  assert.equal(recovered.acquired, true);
+  assert.equal(recovered.recovered, true);
+});
+
+test("heartbeat extends a lease while its operation is still active", async () => {
+  const collection = memoryLocks();
+  let finish;
+  const waiting = new Promise(resolve => { finish = resolve; });
+  const active = withActivityLease({ collection, lockId: "leetcode-activity", token: "long", ownerId: "server-a", leaseMs: 200, heartbeatMs: 30 }, async () => waiting);
+  await new Promise(resolve => setTimeout(resolve, 250));
+  const contender = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "contender", ownerId: "server-b" });
+  assert.equal(contender.reason, "valid-lease");
+  finish("done");
+  await active;
+});
+
+test("legacy stale and malformed locks are safely recovered with compare-and-swap", async () => {
+  const collection = memoryLocks();
+  const logEvents = [];
+  collection.rows.set("leetcode-activity", { _id: "leetcode-activity", token: "legacy", expiresAt: new Date("2026-10-21T00:00:00Z") });
+  const recovered = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "replacement", ownerId: "server-new", now: new Date("2026-10-22T00:00:00Z"), log: event => logEvents.push(event) });
+  assert.equal(recovered.recovered, true);
+  assert.deepEqual(logEvents, ["recovered-expired-lease"]);
+  assert.equal(collection.rows.get("leetcode-activity").token, "replacement");
+});
+
+test("retry interval is calculated after the lock read, accounting for database latency", async () => {
+  const collection = memoryLocks();
+  let currentTime = new Date("2026-10-22T00:00:00Z");
+  collection.rows.set("leetcode-activity", {
+    _id: "leetcode-activity", token: "owner", ownerId: "server-a",
+    leaseUntil: new Date(currentTime.getTime() + 10_000), expiresAt: new Date(currentTime.getTime() + 10_000)
+  });
+  const findOne = collection.findOne.bind(collection);
+  collection.findOne = async filter => {
+    const value = await findOne(filter);
+    currentTime = new Date(currentTime.getTime() + 3_000);
+    return value;
+  };
+  const result = await acquireActivityLease(collection, {
+    lockId: "leetcode-activity", token: "requester", ownerId: "server-b", now: () => currentTime
+  });
+  assert.equal(result.reason, "valid-lease");
+  assert.equal(result.retryAfterSeconds, 7);
+});
+
+test("an old owner cannot release a lock reclaimed by another owner", async () => {
+  const collection = memoryLocks();
+  const oldLease = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "old-token", ownerId: "server-old" });
+  collection.rows.set("leetcode-activity", {
+    ...collection.rows.get("leetcode-activity"), token: "new-token", ownerId: "server-new"
+  });
+  assert.equal(await releaseActivityLease(oldLease), false);
+  assert.equal(collection.rows.get("leetcode-activity").token, "new-token");
+});
+
+test("concurrent scheduler and manual refreshes coordinate on the shared lock", async () => {
+  const collection = memoryLocks();
+  let finish;
+  const waiting = new Promise(resolve => { finish = resolve; });
+  const scheduler = withActivityLease({ collection, lockId: "leetcode-activity", token: "scheduled", ownerId: "server-a", heartbeatMs: 1000 }, async () => waiting);
+  await new Promise(resolve => setImmediate(resolve));
+  const manual = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "manual", ownerId: "server-a" });
+  assert.equal(manual.reason, "valid-lease");
+  finish("complete");
+  assert.equal((await scheduler).value, "complete");
+  const manualAfterCompletion = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "manual-2", ownerId: "server-a" });
+  assert.equal(manualAfterCompletion.acquired, true);
 });

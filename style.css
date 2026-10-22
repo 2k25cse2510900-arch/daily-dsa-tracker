@@ -2459,6 +2459,14 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
 .leetcode-activity-summary li small { grid-column: 1 / -1; color: #7e7488; }
 .leetcode-activity-summary .verified { color: #28734d; font-weight: 700; }
 .leetcode-activity-summary .unverified { color: #9a6324; font-weight: 700; }
+.leetcode-activity-summary .tracking-neutral { color: #5e6370; font-weight: 700; }
+.tracking-details { padding-top: 8px; border-top: 1px solid #e7e1ef; }
+.tracking-details > summary { width: fit-content; color: #59436c; font-weight: 800; cursor: pointer; }
+.tracking-details > summary:focus-visible { outline: 3px solid #9a76bd; outline-offset: 3px; border-radius: 3px; }
+.tracking-details > p, .tracking-limitations { margin: 8px 0; line-height: 1.55; }
+.tracking-details h4 { margin: 10px 0 6px; color: #44394f; font-size: 11px; }
+.tracking-detail-block { display: grid; gap: 5px; margin-top: 10px; padding: 9px; border-radius: 8px; background: #f2f7f4; }
+.tracking-detail-block > strong { color: #2d5741; }
 .leetcode-automation-status { display: grid; gap: 5px; padding: 9px; border-radius: 8px; background: #f2f7f4; color: #496457; }
 .leetcode-automation-status > strong { color: #2d5741; }
 .leetcode-activity-review-list { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
