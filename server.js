@@ -13,7 +13,17 @@ const helmet = require("helmet");
 const { applyEligibleDenseRanks } = require("./ranking");
 const { scoreWeek } = require("./scoring");
 const { safeMongoDiagnostic } = require("./diagnostics");
-const { createAdminOnly } = require("./admin-auth");
+const { createAdminOnly, createAdminLoginHandler, createLogoutHandler } = require("./admin-auth");
+const { validFirebaseUid, createMemberFirebaseLoginHandler, createMemberOnly } = require("./member-auth");
+const { normalizeMemberEmail } = require("./member-allowlist");
+const { approvedMemberForEmail, dashboardMemberMatchesApproved, approvedDashboardMemberForEmail, approvedIdentityConflictCategory } = require("./approved-member-mapping");
+const { createMemberEmailLinkHandler } = require("./member-email-link");
+const { requiredFirebaseClientConfig, createFirebaseTokenVerifier } = require("./firebase-auth");
+const { createMongoRateLimit } = require("./mongo-rate-limit");
+const { SESSION_TTL_SECONDS, createAdminSessionOptions } = require("./session-config");
+const { sameOriginMutationOnly } = require("./request-security");
+const { calculateTotalActiveDays, resolveTodayActivity, calculateTotalMemberPoints, publicSolvedStats, createMemberDashboardHandler } = require("./member-dashboard");
+const { createPersonalProfileResolver } = require("./member-profiles");
 const { REFRESH_INTERVAL_MS, REQUEST_GAP_MS, RECENT_SUBMISSION_LIMIT, profileForMember, fetchProfile, fetchRecentSubmissions, inspectMemberActivity, effectiveActivityDate, trackerPosition, publicRecord } = require("./leetcode");
 const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
 const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, ACTIVITY_LOCK_LEASE_MS, ACTIVITY_LOCK_HEARTBEAT_MS, acquireActivityLease, renewActivityLease, releaseActivityLease } = require("./activity-jobs");
@@ -36,8 +46,6 @@ const production = process.env.NODE_ENV === "production";
 const app = express();
 const mongo = createMongoClient();
 let db;
-let adminPasswordHash;
-let adminCredentialVersion;
 let mongoConnectPromise;
 let runtimeInitializationPromise;
 let leetcodeRefreshPromise;
@@ -101,15 +109,10 @@ function initializeRuntime() {
   if (!runtimeInitializationPromise) {
     let stage = "configuration-validation";
     runtimeInitializationPromise = (async () => {
-      const password = requireEnv("ADMIN_PASSWORD");
-      if (password.length < 14 || Buffer.byteLength(password, "utf8") > 72) throw new Error("ADMIN_PASSWORD must be 14–72 bytes.");
       const sessionSecret = requireEnv("SESSION_SECRET");
       if (sessionSecret.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters.");
-      if (/replace-with/i.test(password) || /replace-with/i.test(sessionSecret)) throw new Error("Replace the example credentials with private values before starting the server.");
+      if (/replace-with/i.test(sessionSecret)) throw new Error("Replace the example session secret with a private value before starting the server.");
 
-      stage = "admin-password-hashing";
-      adminPasswordHash = await bcrypt.hash(password, 12);
-      adminCredentialVersion = crypto.createHash("sha256").update(password).digest("hex");
       stage = "mongodb-connection";
       await connectMongo();
       db = mongo.db();
@@ -117,6 +120,10 @@ function initializeRuntime() {
       await Promise.all([
         db.collection("sessions").createIndex({ expires: 1 }, { expireAfterSeconds: 0 }),
         db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        db.collection("admins").createIndex({ email: 1 }, { unique: true }),
+        db.collection("memberAuthLinks").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true }),
+        db.collection("memberAuthLinks").createIndex({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: "string" } } }),
+        db.collection("memberProfiles").createIndex({ firebaseUid: 1 }, { unique: true }),
         db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }),
         db.collection("leetcodeSubmissions").createIndex({ memberId: 1, activityDate: 1 })
       ]);
@@ -145,11 +152,12 @@ function validState(value) {
   const ids = new Set();
   const names = new Set();
   for (const member of value.members) {
-    if (!member || Object.keys(member).some(key => !["id", "name", "role"].includes(key)) ||
+    if (!member || Object.keys(member).some(key => !["id", "name", "role", "email"].includes(key)) ||
         typeof member.id !== "string" || !/^[\w-]{1,100}$/.test(member.id) ||
         ids.has(member.id) || typeof member.name !== "string" || !member.name.trim() ||
         member.name.length > 60 || names.has(member.name.trim().toLocaleLowerCase()) ||
-        typeof member.role !== "string" || member.role.length > 80) return false;
+        typeof member.role !== "string" || member.role.length > 80 ||
+        (member.email !== undefined && (normalizeMemberEmail(member.email) !== member.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email)))) return false;
     ids.add(member.id);
     names.add(member.name.trim().toLocaleLowerCase());
   }
@@ -168,86 +176,270 @@ function validState(value) {
 }
 
 function audit(req, action, affected) {
-  db.collection("audit").insertOne({ at: new Date(), admin: "Krish", action, affected }).catch(() => {});
+  db.collection("audit").insertOne({ at: new Date(), admin: req.session?.adminEmail || "system", action, affected }).catch(() => {});
 }
 
 function isAdminSession(req) {
-  return req.session?.role === "admin" && req.session?.username === "Krish" && req.session?.credentialVersion === adminCredentialVersion;
+  return req.session?.role === "admin" && typeof req.session?.adminEmail === "string";
 }
 const adminOnly = createAdminOnly(isAdminSession);
-
-function mongoRateLimit(bucket, limit) {
-  return async (req, res, next) => {
-    try {
-      const windowNumber = Math.floor(Date.now() / RATE_WINDOW_MS);
-      const address = req.ip || req.socket.remoteAddress || "unknown";
-      const addressHash = crypto.createHmac("sha256", process.env.SESSION_SECRET).update(address).digest("hex");
-      const id = `${bucket}:${windowNumber}:${addressHash}`;
-      try {
-        await db.collection("rateLimits").updateOne({ _id: id }, { $setOnInsert: { count: 0, expiresAt: new Date((windowNumber + 1) * RATE_WINDOW_MS) } }, { upsert: true });
-      } catch (error) {
-        if (error.code !== 11000) throw error;
-      }
-      const increment = await db.collection("rateLimits").updateOne({ _id: id, count: { $lt: limit } }, { $inc: { count: 1 } });
-      if (!increment.matchedCount) {
-        res.setHeader("Retry-After", String(Math.max(1, Math.ceil(((windowNumber + 1) * RATE_WINDOW_MS - Date.now()) / 1000))));
-        return res.status(429).json({ error: "Too many attempts. Try again later." });
-      }
-      next();
-    } catch {
-      res.status(503).json({ error: "Security service is temporarily unavailable." });
-    }
-  };
+async function primaryAdminOnly(req, res, next) {
+  try {
+    const admin = await db.collection("admins").findOne({ _id: "primary", email: req.session.adminEmail }, { projection: { _id: 1 } });
+    if (!admin) return res.status(403).json({ error: "Primary administrator permission required." });
+    return next();
+  } catch {
+    return res.status(503).json({ error: "Administrator authorization is temporarily unavailable." });
+  }
 }
+async function dashboardViewer(req, res, next) {
+  if (isAdminSession(req)) return next();
+  return memberOnly(req, res, next);
+}
+
+async function findDashboardMemberById(memberId) {
+  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
+  return dashboard?.members?.find(member => member.id === memberId) || null;
+}
+
+async function findDashboardMemberByEmail(email) {
+  const normalizedEmail = normalizeMemberEmail(email);
+  if (!normalizedEmail) return null;
+  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
+  return dashboard?.members?.find(member => normalizeMemberEmail(member.email) === normalizedEmail) || null;
+}
+
+function identityConflict(memberId, category) {
+  // Do not include tokens, UIDs, emails, or request data in this diagnostic.
+  console.warn("[member-auth] identity conflict", { category, memberId });
+  const error = new Error("Identity mapping conflict.");
+  error.status = 409;
+  return error;
+}
+
+function missingApprovedMember() {
+  const error = new Error("The approved account has no matching existing member record.");
+  error.status = 404;
+  return error;
+}
+
+async function findAndLinkApprovedGroupMember(email, firebaseUid, photoUrl) {
+  const approved = approvedMemberForEmail(email);
+  if (!approved) return null;
+  const normalizedEmail = normalizeMemberEmail(email);
+  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
+  const member = approvedDashboardMemberForEmail(dashboard?.members || [], email);
+  if (!member) throw missingApprovedMember();
+  const emailMatches = (dashboard?.members || []).filter(candidate => normalizeMemberEmail(candidate.email) === normalizedEmail);
+  const [otherEmailLink, linkByUid, existingLink] = await Promise.all([
+    db.collection("memberAuthLinks").findOne({ email: normalizedEmail, _id: { $ne: member.id } }, { projection: { _id: 1 } }),
+    db.collection("memberAuthLinks").findOne({ firebaseUid, deactivatedAt: { $exists: false } }, { projection: { _id: 1 } }),
+    db.collection("memberAuthLinks").findOne({ _id: member.id })
+  ]);
+  const oldEmail = normalizeMemberEmail(member.email);
+  const conflictCategory = approvedIdentityConflictCategory({ member, email: normalizedEmail, emailMatches, otherEmailLink, linkByUid, existingLink, firebaseUid });
+  if (conflictCategory) throw identityConflict(member.id, conflictCategory);
+  if (!oldEmail) {
+    const linked = await db.collection("dashboard").updateOne({
+      _id: "shared",
+      members: { $elemMatch: { id: member.id, $or: [{ email: { $exists: false } }, { email: null }, { email: "" }] } }
+    }, { $set: { "members.$.email": normalizedEmail, updatedAt: new Date() } });
+    if (!linked.matchedCount) {
+      const refreshed = await findDashboardMemberById(member.id);
+      if (normalizeMemberEmail(refreshed?.email) !== normalizedEmail) throw identityConflict(member.id, "stored-email-mismatch");
+    }
+  }
+  const now = new Date();
+  const verifiedIdentity = { email: normalizedEmail, firebaseUid, lastVerifiedAt: now, linkedAt: existingLink?.linkedAt || now, sessionVersion: Number(existingLink?.sessionVersion) || 0 };
+  if (typeof photoUrl === "string" && photoUrl) verifiedIdentity.photoUrl = photoUrl;
+  try {
+    await db.collection("memberAuthLinks").updateOne({ _id: member.id }, { $set: verifiedIdentity, $unset: { deactivatedAt: "" } }, { upsert: true });
+  } catch (error) {
+    if (error?.code === 11000) throw identityConflict(member.id, "duplicate-auth-link");
+    throw error;
+  }
+  return { id: member.id, name: member.name, sessionVersion: verifiedIdentity.sessionVersion, created: false };
+}
+
+async function memberEmailIsAuthorized(email) {
+  return Boolean(approvedMemberForEmail(email));
+}
+
+async function findActiveMemberById(memberId, firebaseUid, sessionVersion = 0) {
+  const [member, link] = await Promise.all([
+    findDashboardMemberById(memberId),
+    db.collection("memberAuthLinks").findOne({ _id: memberId }, { projection: { firebaseUid: 1, deactivatedAt: 1, sessionVersion: 1 } })
+  ]);
+  if (member && link?.firebaseUid === firebaseUid && !link.deactivatedAt && (Number(link.sessionVersion) || 0) === (Number(sessionVersion) || 0)) {
+    return { id: member.id, name: member.name, email: member.email || link.email || null, role: member.role, photoUrl: link.photoUrl || null, leetCodeUsername: profileForMember(member)?.username || null, legacy: true, groupMember: true };
+  }
+  const profile = await db.collection("memberProfiles").findOne({ _id: memberId, firebaseUid, deactivatedAt: { $exists: false } });
+  if (!profile || (Number(profile.sessionVersion) || 0) !== (Number(sessionVersion) || 0)) return null;
+  return { id: profile._id, name: profile.displayName, email: profile.email || null, role: "Member", photoUrl: profile.photoUrl || null, leetCodeUsername: profile.leetCodeUsername || null, legacy: false, groupMember: false };
+}
+
+async function findActiveAdminMemberById(memberId, adminEmail) {
+  const member = await findDashboardMemberById(memberId);
+  if (!member || normalizeMemberEmail(member.email) !== normalizeMemberEmail(adminEmail)) return null;
+  return { id: member.id, name: member.name, email: member.email || null, role: member.role, photoUrl: null, leetCodeUsername: profileForMember(member)?.username || null, legacy: true, groupMember: true };
+}
+
+const memberOnly = createMemberOnly({ findActiveMemberById, findActiveAdminMemberById });
+const mongoRateLimit = createMongoRateLimit({ getCollection: () => db.collection("rateLimits"), secret: process.env.SESSION_SECRET, windowMs: RATE_WINDOW_MS });
+const memberLoginLimit = mongoRateLimit("member-login", 8);
+const resolvePersonalProfile = createPersonalProfileResolver({ collection: { updateOne: (...args) => db.collection("memberProfiles").updateOne(...args), findOne: (...args) => db.collection("memberProfiles").findOne(...args) } });
 
 app.disable("x-powered-by");
 app.set("trust proxy", production ? 1 : false);
-app.use(helmet({ contentSecurityPolicy: { directives: { "default-src": ["'self'"], "script-src": ["'self'"], "style-src": ["'self'", "'unsafe-inline'"], "img-src": ["'self'", "data:"], "connect-src": ["'self'"], "object-src": ["'none'"], "frame-ancestors": ["'none'"] } } }));
+app.use(helmet({ crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, contentSecurityPolicy: { directives: { "default-src": ["'self'"], "script-src": ["'self'", "https://www.gstatic.com", "https://apis.google.com"], "style-src": ["'self'", "'unsafe-inline'"], "img-src": ["'self'", "data:"], "connect-src": ["'self'", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://*.firebaseapp.com", "https://*.web.app"], "frame-src": ["https://accounts.google.com", "https://*.firebaseapp.com", "https://*.web.app"], "object-src": ["'none'"], "frame-ancestors": ["'none'"] } } }));
 app.use(express.json({ limit: "1mb", strict: true }));
 app.use("/api", (req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
 app.use(requireRuntime);
-app.use(session({
-  name: "dsa.sid",
+app.use(session(createAdminSessionOptions({
   secret: createSessionSecret(),
-  store: MongoStore.create({ client: mongo, collectionName: "sessions", ttl: 60 * 60 * 8, autoRemove: "disabled" }),
-  resave: false,
-  saveUninitialized: false,
-  rolling: true,
-  cookie: { httpOnly: true, secure: production, sameSite: "strict", maxAge: 8 * 60 * 60 * 1000, path: "/" }
-}));
+  store: MongoStore.create({ client: mongo, collectionName: "sessions", ttl: SESSION_TTL_SECONDS, autoRemove: "disabled" }),
+  production
+})));
 const loginLimit = mongoRateLimit("admin-login", 8);
 // SameSite cookies help prevent CSRF; reject cross-origin state-changing requests too.
-app.use("/api", (req, res, next) => {
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-    const origin = req.get("origin");
-    const fetchSite = req.get("sec-fetch-site");
-    if ((origin && origin !== `${req.protocol}://${req.get("host")}`) || fetchSite === "cross-site") {
-      return res.status(403).json({ error: "Cross-origin request rejected." });
-    }
+app.use("/api", sameOriginMutationOnly);
+
+app.get("/api/session", async (req, res) => {
+  if (isAdminSession(req)) {
+    const member = await findActiveAdminMemberById(req.session.memberId, req.session.adminEmail);
+    return res.json({ authenticated: true, role: "admin", member, pages: PAGES.map(page => ({ page, public: false })) });
   }
-  next();
+  if (req.session?.role === "member") {
+    const member = await findActiveMemberById(req.session.memberId, req.session.firebaseUid, req.session.memberSessionVersion);
+    if (member) return res.json({ authenticated: true, role: "member", member });
+    req.session.destroy(() => {});
+  }
+  res.json({ authenticated: false, role: null, pages: PAGES.map(page => ({ page, public: false })) });
 });
 
-app.get("/api/session", (req, res) => res.json({ authenticated: isAdminSession(req), username: isAdminSession(req) ? "Krish" : null, pages: PAGES.map(page => ({ page, public: true })) }));
+const adminLogin = createAdminLoginHandler({
+  findAdmin: email => db.collection("admins").findOne({ _id: "primary", email }),
+  comparePassword: (password, hash) => bcrypt.compare(password, hash),
+  dummyPasswordHash: () => "$2a$12$C6UzMDM.H6dfI/f/IKcEe.7le6Q5D3e6WbJ5nG3DqR3u8YrlAnHpe",
+  resolveMember: async email => findDashboardMemberByEmail(email)
+});
+app.post("/api/admin/login", loginLimit, adminLogin);
 
-app.post("/api/admin/login", loginLimit, async (req, res) => {
-  const username = typeof req.body?.username === "string" ? req.body.username : "";
-  const password = typeof req.body?.password === "string" ? req.body.password : "";
-  const valid = username.toLowerCase() === "krish" && Buffer.byteLength(password, "utf8") <= 72 && await bcrypt.compare(password, adminPasswordHash);
-  if (!valid) return res.status(401).json({ error: "Invalid username or password." });
-  req.session.regenerate(error => {
-    if (error) return res.status(500).json({ error: "Could not start a session." });
-    req.session.role = "admin";
-    req.session.username = "Krish";
-    req.session.credentialVersion = adminCredentialVersion;
-    req.session.save(err => err ? res.status(500).json({ error: "Could not start a session." }) : res.json({ authenticated: true, username: "Krish" }));
-  });
+const memberLogin = createMemberFirebaseLoginHandler({
+  verifyIdToken: createFirebaseTokenVerifier(),
+  isAuthorizedEmail: memberEmailIsAuthorized,
+  canRegister: () => process.env.MEMBER_SELF_REGISTRATION !== "false",
+  logStage: (stage, outcome) => console.info("[member-auth]", { stage, outcome }),
+  resolveMember: async ({ firebaseUid, email, displayName, photoUrl, groupAuthorized }) => {
+    if (groupAuthorized) {
+      const approvedMember = await findAndLinkApprovedGroupMember(email, firebaseUid, photoUrl);
+      if (approvedMember) return approvedMember;
+    }
+    const link = await db.collection("memberAuthLinks").findOne({ firebaseUid, deactivatedAt: { $exists: false } });
+    if (link) {
+      const member = await findDashboardMemberById(link._id);
+      if (!member) return null;
+      const verifiedIdentity = { email, lastVerifiedAt: new Date() };
+      if (typeof photoUrl === "string" && photoUrl) verifiedIdentity.photoUrl = photoUrl;
+      await db.collection("memberAuthLinks").updateOne({ _id: link._id, firebaseUid }, { $set: verifiedIdentity });
+      return { id: member.id, name: member.name, sessionVersion: link.sessionVersion, created: false };
+    }
+    const legacyMember = groupAuthorized ? await findDashboardMemberByEmail(email) : null;
+    if (legacyMember) {
+      const existingLink = await db.collection("memberAuthLinks").findOne({ _id: legacyMember.id });
+      if (existingLink?.firebaseUid && existingLink.firebaseUid !== firebaseUid) return null;
+      const now = new Date();
+      const verifiedIdentity = { firebaseUid, email, lastVerifiedAt: now, linkedAt: existingLink?.linkedAt || now, sessionVersion: Number(existingLink?.sessionVersion) || 0 };
+      if (typeof photoUrl === "string" && photoUrl) verifiedIdentity.photoUrl = photoUrl;
+      await db.collection("memberAuthLinks").updateOne({ _id: legacyMember.id }, { $set: verifiedIdentity, $unset: { deactivatedAt: "" } }, { upsert: true });
+      return { id: legacyMember.id, name: legacyMember.name, sessionVersion: verifiedIdentity.sessionVersion, created: false };
+    }
+    const id = `member-${crypto.createHash("sha256").update(firebaseUid).digest("hex").slice(0, 32)}`;
+    const { profile, created } = await resolvePersonalProfile({ id, firebaseUid, email, displayName, photoUrl });
+    return profile ? { id: profile._id, name: profile.displayName, sessionVersion: profile.sessionVersion, created } : null;
+  }
+});
+app.post("/api/member/login", memberLoginLimit, memberLogin);
+
+app.get("/api/profile/:memberId", async (req, res, next) => {
+  if (isAdminSession(req)) return next();
+  return memberOnly(req, res, next);
+}, async (req, res) => {
+  const memberId = req.params.memberId;
+  if (!/^[\w-]{1,100}$/.test(memberId)) return res.status(400).json({ error: "Profile not found." });
+  const isOwner = !isAdminSession(req) && req.member?.id === memberId;
+  const canViewGroupProfiles = !isAdminSession(req) && Boolean(req.member?.groupMember);
+  if (!isAdminSession(req) && !isOwner && !canViewGroupProfiles) return res.status(403).json({ error: "You can only view your own profile or a group member's public profile." });
+
+  try {
+    let member = await findDashboardMemberById(memberId);
+    let personal = null;
+    if (!member && isOwner) personal = await db.collection("memberProfiles").findOne({ _id: memberId, firebaseUid: req.session.firebaseUid, deactivatedAt: { $exists: false } });
+    if (!isAdminSession(req) && !isOwner && !member) return res.status(403).json({ error: "You can only view group member profiles." });
+    if (!member && !personal) return res.status(404).json({ error: "Profile not found." });
+    const username = member ? profileForMember(member)?.username || null : personal?.leetCodeUsername || null;
+    const profileRecord = username ? await db.collection("leetcodeProfiles").findOne({ _id: memberId, username }, { projection: { stats: 1, status: 1, lastFetchedAt: 1 } }) : null;
+    const rawStats = profileRecord?.status === "Success" ? profileRecord.stats : null;
+    const stats = publicSolvedStats(rawStats);
+    res.json({
+      id: memberId,
+      name: member?.name || personal?.displayName || "Member",
+      email: isAdminSession(req) || isOwner ? member?.email || personal?.email || null : null,
+      leetCodeUsername: username,
+      profileUrl: username ? `https://leetcode.com/u/${encodeURIComponent(username)}/` : null,
+      stats,
+      statsSource: stats ? "LeetCode public profile" : null,
+      statsUpdatedAt: stats ? profileRecord.lastFetchedAt || null : null,
+      statsUnavailable: Boolean(username && !stats)
+    });
+  } catch {
+    res.status(503).json({ error: "Profile data is temporarily unavailable." });
+  }
 });
 
-app.post("/api/logout", (req, res) => req.session.destroy(() => {
-  res.clearCookie("dsa.sid", { httpOnly: true, secure: production, sameSite: "strict", path: "/" });
-  res.json({ ok: true });
-}));
+app.get("/api/firebase-config", (req, res) => {
+  const config = requiredFirebaseClientConfig();
+  if (!config) return res.status(503).json({ error: "Google sign-in is not configured. Set FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID, and FIREBASE_APP_ID." });
+  res.json(config);
+});
+
+app.put("/api/admin/members/:memberId/firebase-link", adminOnly, async (req, res) => {
+  const memberId = req.params.memberId;
+  const firebaseUid = req.body?.firebaseUid;
+  if (!/^[\w-]{1,100}$/.test(memberId) || !validFirebaseUid(firebaseUid) || req.body?.identityVerified !== true) {
+    return res.status(400).json({ error: "Confirm the member's identity and provide a valid Firebase UID." });
+  }
+  if (!await findDashboardMemberById(memberId)) return res.status(404).json({ error: "Member not found." });
+  try {
+    const existing = await db.collection("memberAuthLinks").findOne({ firebaseUid });
+    if (existing && existing._id !== memberId) return res.status(409).json({ error: "This Google account is already linked to another member." });
+    await db.collection("memberAuthLinks").updateOne({ _id: memberId }, {
+      $set: { firebaseUid, linkedAt: new Date(), linkedBy: req.session.adminEmail },
+      $unset: { deactivatedAt: "" },
+      $inc: { sessionVersion: 1 }
+    }, { upsert: true });
+    audit(req, "member-firebase-linked", memberId);
+    res.json({ ok: true });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ error: "This Google account is already linked to another member." });
+    res.status(503).json({ error: "Member linking is temporarily unavailable." });
+  }
+});
+
+const memberEmailLink = createMemberEmailLinkHandler({
+  findDashboardMemberById,
+  findDashboardMemberByEmail,
+  findOtherAuthLinkByEmail: (email, memberId) => db.collection("memberAuthLinks").findOne({ email, _id: { $ne: memberId } }, { projection: { _id: 1 } }),
+  updateDashboardMemberEmail: async (memberId, email) => {
+    const result = await db.collection("dashboard").updateOne({ _id: "shared", "members.id": memberId }, { $set: { "members.$.email": email, updatedAt: new Date() } });
+    return result.matchedCount > 0;
+  },
+  updateAuthLinkEmail: (memberId, email) => db.collection("memberAuthLinks").updateOne({ _id: memberId }, { $set: { email } }),
+  audit
+});
+app.put("/api/admin/members/:memberId/email-link", adminOnly, primaryAdminOnly, memberEmailLink);
+
+app.post("/api/logout", createLogoutHandler({ secure: production }));
 
 // The complete tracker is reserved for admins; viewer routes below return page projections.
 app.get("/api/data", adminOnly, async (req, res) => {
@@ -255,13 +447,34 @@ app.get("/api/data", adminOnly, async (req, res) => {
   if (!document) return res.status(404).json({ error: "Shared dashboard data has not been initialized. An admin must import the existing backup." });
   const profiles = await db.collection("leetcodeProfiles").find({}).toArray();
   const cacheById = new Map(profiles.map(profile => [profile.memberId, profile]));
-  res.json({ members: document.members, weeks: document.weeks, currentWeek: document.currentWeek, leetcode: Object.fromEntries(document.members.map(member => {
+  const links = await db.collection("memberAuthLinks").find({ _id: { $in: document.members.map(member => member.id) } }, { projection: { deactivatedAt: 1 } }).toArray();
+  const linkById = new Map(links.map(link => [link._id, link]));
+  const memberFirebaseStatus = Object.fromEntries(document.members.map(member => [member.id, Boolean(linkById.get(member.id) && !linkById.get(member.id).deactivatedAt)]));
+  const members = document.members.map(({ id, name, role, email }) => ({ id, name, role, ...(email ? { email } : {}) }));
+  res.json({ members, weeks: document.weeks, currentWeek: document.currentWeek, memberFirebaseStatus, leetcode: Object.fromEntries(document.members.map(member => {
     const profile = profileForMember(member);
     return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
   }).filter(Boolean)) });
 });
 
-app.get("/api/page-data/:page", async (req, res) => {
+app.get("/api/member/shared-data", memberOnly, async (req, res) => {
+  if (!req.member.groupMember) return res.status(403).json({ error: "Group dashboard data is unavailable for this account." });
+  const document = await db.collection("dashboard").findOne({ _id: "shared" });
+  if (!document) return res.status(404).json({ error: "Shared dashboard data has not been initialized." });
+  const profiles = await db.collection("leetcodeProfiles").find({}).toArray();
+  const cacheById = new Map(profiles.map(profile => [profile.memberId, profile]));
+  res.json({
+    members: document.members.map(({ id, name, role }) => ({ id, name, role })),
+    weeks: document.weeks,
+    currentWeek: document.currentWeek,
+    leetcode: Object.fromEntries(document.members.map(member => {
+      const profile = profileForMember(member);
+      return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
+    }).filter(Boolean))
+  });
+});
+
+app.get("/api/page-data/:page", dashboardViewer, async (req, res) => {
   const page = req.params.page;
   if (!PAGES.includes(page)) return res.status(404).json({ error: "Page not found." });
   const weekNumber = Number(req.query.week);
@@ -316,7 +529,10 @@ app.get("/api/page-data/:page", async (req, res) => {
   if (page === "members") {
     const docs = await db.collection("leetcodeProfiles").find({}).toArray();
     const cacheById = new Map(docs.map(doc => [doc.memberId, doc]));
-    return res.json({ page, members, leetcode: Object.fromEntries(shared.members.map(member => {
+    const linkDocs = await db.collection("memberAuthLinks").find({ _id: { $in: shared.members.map(member => member.id) } }, { projection: { deactivatedAt: 1 } }).toArray();
+    const linkById = new Map(linkDocs.map(link => [link._id, link]));
+    const pageMembers = shared.members.map(({ id, name, role }) => ({ id, name, role, ...(isAdminSession(req) ? { firebaseLinked: Boolean(linkById.get(id) && !linkById.get(id).deactivatedAt) } : {}) }));
+    return res.json({ page, members: pageMembers, leetcode: Object.fromEntries(shared.members.map(member => {
       const profile = profileForMember(member);
       return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
     }).filter(Boolean)) });
@@ -336,11 +552,54 @@ app.get("/api/page-data/:page", async (req, res) => {
 
 app.post("/api/data", adminOnly, async (req, res) => {
   if (!validState(req.body)) return res.status(400).json({ error: "Dashboard data failed validation." });
-  await db.collection("dashboard").updateOne({ _id: "shared" }, { $set: { members: req.body.members, weeks: req.body.weeks, currentWeek: req.body.currentWeek, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+  const dashboard = db.collection("dashboard");
+  const previous = await dashboard.findOne({ _id: "shared" });
+  const existingMembers = new Map((previous?.members || []).map(member => [member.id, member]));
+  const incomingMembers = req.body.members.map(member => existingMembers.get(member.id)?.email ? { ...member, email: existingMembers.get(member.id).email } : member);
+  const removedIds = [...existingMembers.keys()].filter(id => !incomingMembers.some(member => member.id === id));
+  await dashboard.updateOne({ _id: "shared" }, { $set: { members: incomingMembers, weeks: req.body.weeks, currentWeek: req.body.currentWeek, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+  if (removedIds.length) await db.collection("memberAuthLinks").updateMany({ _id: { $in: removedIds } }, { $set: { deactivatedAt: new Date() }, $inc: { sessionVersion: 1 } });
   audit(req, "save-dashboard", "shared");
   res.json({ ok: true });
 });
 
+app.get("/api/member/progress", memberOnly, async (req, res) => {
+  const weekNumber = Number(req.query.week);
+  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > MAX_WEEKS) return res.status(400).json({ error: "Choose a valid week." });
+  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { weeks: 1 } });
+  const week = dashboard?.weeks?.[String(weekNumber)] || {};
+  const daily = Array.from({ length: 6 }, (_, slot) => STATUSES.has(week.daily?.[req.member.id]?.[slot]) ? week.daily[req.member.id][slot] : "blank");
+  const concepts = Array.from({ length: 2 }, (_, slot) => STATUSES.has(week.concepts?.[req.member.id]?.[slot]) ? week.concepts[req.member.id][slot] : "blank");
+  res.json({ member: { id: req.member.id, name: req.member.name, role: "Member" }, week: weekNumber, daily, concepts, scheduledSlots: scheduledSlots(weekNumber) });
+});
+
+app.get("/api/member/group", memberOnly, async (req, res) => {
+  if (!req.member.groupMember) return res.status(403).json({ error: "Group member profiles are unavailable for this account." });
+  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
+  const members = (dashboard?.members || []).map(member => ({
+    id: member.id,
+    name: member.name,
+    leetCodeUsername: profileForMember(member)?.username || null
+  }));
+  res.json({ members });
+});
+
+app.get("/api/member/dashboard", memberOnly, createMemberDashboardHandler({
+  loadMemberDashboard: async (memberId, member) => {
+    const username = member.leetCodeUsername || profileForMember(member)?.username || null;
+    const profileRecord = username ? await db.collection("leetcodeProfiles").findOne({ _id: memberId, username }, { projection: { stats: 1, status: 1 } }) : null;
+    return {
+      leetCodeUsername: username,
+      questionsSolved: profileRecord?.status === "Success" ? profileRecord.stats?.total : null,
+      easySolved: profileRecord?.status === "Success" ? profileRecord.stats?.easy : null,
+      mediumSolved: profileRecord?.status === "Success" ? profileRecord.stats?.medium : null,
+      hardSolved: profileRecord?.status === "Success" ? profileRecord.stats?.hard : null
+    };
+  }
+}));
+
+app.put("/api/member/profile", memberOnly, (_req, res) => res.status(403).json({ error: "Member Mode is read-only." }));
+app.post("/api/member/progress", memberOnly, (_req, res) => res.status(403).json({ error: "Member Mode is read-only." }));
 async function refreshLeetCodeProfiles({ force = false } = {}) {
   if (leetcodeRefreshPromise) return leetcodeRefreshPromise;
   if (!force && Date.now() - lastLeetcodeRefreshAt < REFRESH_INTERVAL_MS) return { skipped: true };
@@ -754,7 +1013,7 @@ function refreshLeetCodeActivity(date, position) {
       const lastSuccessfulAt = successfulLookups ? refreshedAt : prior?.lastSuccessfulAt || null;
       const activityResult = { _id: date, date, week: position.week, slot: position.slot, refreshedAt, lastSuccessfulAt, summary, statuses, lockRecovered: Boolean(lock.recovered) };
       await db.collection("leetcodeActivity").replaceOne({ _id: date }, activityResult, { upsert: true });
-      audit({ session: { username: "Krish" } }, "leetcode-activity-refresh", date);
+      audit({ session: { adminEmail: "system" } }, "leetcode-activity-refresh", date);
       lock.completed = true;
       return activityResult;
     } finally {
@@ -809,7 +1068,7 @@ app.post("/api/admin/leetcode/activity/finalize", adminOnly, async (req, res) =>
     if (status === "Not Submitted" && (existingAttempt || legacyVerified)) return res.status(409).json({ error: "A verified LeetCode attempt exists for this date. The tracker cannot be marked Not Submitted." });
     const decidedAt = new Date();
     let decision;
-    try { decision = manualFinalizationDecision(previousFinalization, memberId, status, req.session.username, decidedAt); }
+    try { decision = manualFinalizationDecision(previousFinalization, memberId, status, req.session.adminEmail, decidedAt); }
     catch (error) {
       if (error.message === "VERIFIED_DONE_PROTECTED") return res.status(409).json({ error: "An automatically verified Done status is protected." });
       return res.status(409).json({ error: "This member does not currently need manual review." });
@@ -828,11 +1087,11 @@ app.post("/api/admin/leetcode/activity/finalize", adminOnly, async (req, res) =>
       done, notSubmitted, needsReview,
       entriesUpdated: all.filter(item => item.updated).length,
       statuses,
-      decisions: [...(previousFinalization.decisions || []), { memberId, status, actor: req.session.username, at: decidedAt }]
+      decisions: [...(previousFinalization.decisions || []), { memberId, status, actor: req.session.adminEmail, at: decidedAt }]
     };
     await db.collection("leetcodeActivityJobs").updateOne({ _id: date }, { $set: { date, finalization, updatedAt: decidedAt } });
     audit(req, "leetcode-activity-manual-finalization", `${date}:${memberId}:${status}`);
-    console.info("[leetcode-activity] manual decision recorded", { activityDate: date, memberId, status, actor: req.session.username });
+    console.info("[leetcode-activity] manual decision recorded", { activityDate: date, memberId, status, actor: req.session.adminEmail });
     lock.completed = true;
     res.json({ date, finalization });
   } catch {
@@ -845,7 +1104,8 @@ app.post("/api/admin/leetcode/activity/finalize", adminOnly, async (req, res) =>
 
 app.post("/api/admin/import", adminOnly, async (req, res) => {
   if (!validState(req.body)) return res.status(400).json({ error: "Backup data failed validation." });
-  const result = await db.collection("dashboard").updateOne({ _id: "shared" }, { $setOnInsert: { members: req.body.members, weeks: req.body.weeks, currentWeek: req.body.currentWeek, createdAt: new Date() } }, { upsert: true });
+  const importedMembers = req.body.members.map(({ id, name, role }) => ({ id, name, role }));
+  const result = await db.collection("dashboard").updateOne({ _id: "shared" }, { $setOnInsert: { members: importedMembers, weeks: req.body.weeks, currentWeek: req.body.currentWeek, createdAt: new Date() } }, { upsert: true });
   if (!result.upsertedCount) return res.status(409).json({ error: "Shared data already exists. Use the authenticated admin save flow to update it." });
   audit(req, "import-initial-backup", "shared");
   res.status(201).json({ ok: true });
@@ -870,8 +1130,14 @@ function startLeetCodeActivityScheduler() {
 
 app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
 app.get("/index.html", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
+app.get("/profile/:memberId", (req, res) => {
+  if (!/^[\w-]{1,100}$/.test(req.params.memberId)) return res.status(404).send("Profile not found.");
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
 app.get("/activity-date.js", (req, res) => res.sendFile(path.join(__dirname, "activity-date.js")));
+app.get("/firebase-client.js", (req, res) => res.sendFile(path.join(__dirname, "firebase-client.js")));
 app.get("/script.js", (req, res) => res.sendFile(path.join(__dirname, "script.js")));
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);

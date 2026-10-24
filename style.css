@@ -895,6 +895,11 @@ table {
   box-shadow: var(--shadow);
 }
 
+.managed-member.is-managing {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .managed-member .member-info {
   flex: 1;
   min-width: 0;
@@ -2090,6 +2095,7 @@ table {
 .password-field { display: flex; gap: 7px; }
 .password-field input { flex: 1; min-width: 0; }
 .admin-mode-indicator { padding: 7px 10px; border-radius: 999px; color: #166534; background: #dcfce7; font-size: 11px; font-weight: 800; }
+.gate-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 
 /* Jewel arcade finish: rich layered surfaces, restrained ambient motion, readable contrast. */
 :root {
@@ -2313,6 +2319,55 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
 .security-dialog h2 { color: #342341; }
 .security-gate:not([hidden]) { color: #332340; background: radial-gradient(ellipse at 12% 12%, #dfc5edaa, transparent 35%), radial-gradient(ellipse at 90% 85%, #b6e0d6aa, transparent 38%), #f2edf5ef; backdrop-filter: blur(10px); }
 .security-gate:not([hidden]) strong { padding: 20px 26px; border: 1px solid #dbc8e3; border-radius: 15px; background: linear-gradient(145deg, #ffffffeb, #f3eaf6e8); box-shadow: 0 18px 45px #35213d21, inset 0 1px #fff; }
+
+.member-home { min-height: 100vh; padding: clamp(20px, 5vw, 64px); color: var(--ink); background: #f4f7fb; }
+.member-home-header { display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto 24px; }
+.member-home-identity { min-width: 180px; }
+.member-home-header h1 { margin: 6px 0 0; }
+.member-view-nav { display: flex; align-items: center; gap: 6px; padding: 5px; border: 1px solid #e1d7e8; border-radius: 11px; background: #fff; box-shadow: 0 4px 12px #35213d0d; }
+.member-view-button { padding: 9px 15px; border: 0; border-radius: 8px; color: #62566b; background: transparent; font: inherit; font-weight: 750; cursor: pointer; }
+.member-view-button:hover { color: #53326d; background: #f5f0f8; }
+.member-view-button[aria-pressed="true"] { color: #fff; background: linear-gradient(135deg, #634174, #3c2a4d); box-shadow: 0 3px 8px #35213d26; }
+.member-view-button:focus-visible { outline: 3px solid #8b5bb1; outline-offset: 3px; }
+.member-name-link { display: inline-flex; align-items: center; gap: 9px; margin-top: 7px; padding: 2px 0; border: 0; color: #53326d; background: transparent; font-size: 15px; font-weight: 800; text-align: left; }
+.member-name-link:hover { color: #7645a0; text-decoration: underline; text-underline-offset: 4px; }
+.member-name-link:focus-visible { border-radius: 5px; outline: 3px solid #8b5bb1; outline-offset: 4px; }
+.member-name-link-hint { color: var(--muted); font-size: 11px; font-weight: 650; }
+.member-welcome, .member-progress-grid > .panel { max-width: 1100px; margin: 0 auto 20px; padding: 24px; }
+.member-welcome h2, .member-progress-grid h2 { margin: 0 0 8px; }
+.member-welcome p, .member-progress-grid p { margin: 0; color: var(--muted); }
+.member-week-controls { display: flex; align-items: center; justify-content: center; gap: 18px; max-width: 1100px; margin: 0 auto 20px; }
+.member-progress-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 1100px; margin: 0 auto; }
+.member-personal-dashboard { max-width: 1100px; margin: 0 auto; }
+.member-dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.member-dashboard-heading h2 { margin: 0 0 4px; color: var(--ink); font-size: 21px; }
+.member-dashboard-heading p, .member-stat-detail { margin: 0; color: var(--muted); font-size: 12px; }
+.member-profile-identity { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; }
+.member-profile-photo { width: 64px; height: 64px; border: 2px solid #e2d6e9; border-radius: 50%; object-fit: cover; }
+.member-profile-initials { display: grid; width: 64px; height: 64px; place-items: center; border: 2px solid #e2d6e9; border-radius: 50%; color: #53326d; background: #f1e7f4; font-size: 20px; font-weight: 800; }
+.member-profile-initials[hidden], .member-dashboard-email[hidden] { display: none; }
+.member-group-status { margin: 0 0 18px; padding: 12px 14px; border: 1px solid #d9cede; border-radius: 10px; color: #53326d; background: #f7f2fa; font-size: 13px; }
+.member-leetcode-form { display: flex; align-items: end; gap: 10px; margin: 0 0 18px; }
+.member-leetcode-form label { display: grid; gap: 6px; color: #675773; font-size: 12px; font-weight: 700; }
+.member-leetcode-form input { width: min(300px, 70vw); padding: 9px 10px; border: 1px solid #d9cede; border-radius: 8px; font: inherit; }
+.member-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.member-stat-card { display: grid; align-content: start; gap: 12px; min-height: 150px; padding: 20px; border: 1px solid #e2d6e9; background: linear-gradient(145deg, #fff, #f7f2fa); box-shadow: 0 10px 26px rgba(15, 23, 42, .05); }
+.member-stat-label { color: #675773; font-size: 12px; font-weight: 700; }
+.member-stat-value { color: #342341; font-size: clamp(20px, 2.5vw, 29px); line-height: 1.2; overflow-wrap: anywhere; }
+.member-stat-detail { min-height: 1em; font-size: 11px; }
+.member-character-card { border-style: dashed; }
+.member-dashboard-message { margin: 0 0 12px; color: #9f3232; }
+.member-dashboard-message[hidden], #memberDashboardRetry[hidden] { display: none; }
+.member-progress-list { display: grid; gap: 10px; margin-top: 18px; }
+.member-progress-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.member-progress-item button { min-width: 116px; }
+.member-progress-item button[data-status="done"] { background: #d9f3e7; color: #146b4b; border-color: #a8dfc5; }
+.member-progress-item button:disabled { opacity: .55; cursor: not-allowed; }
+.member-role-label { max-width: 1100px; margin: 24px auto 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 900px) { .member-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .member-progress-grid { grid-template-columns: 1fr; } .member-home { padding: 18px; } }
+@media (max-width: 760px) { .member-home-header { flex-wrap: wrap; } .member-view-nav { order: 3; width: 100%; } .member-view-button { flex: 1; } }
+@media (max-width: 560px) { .member-home-header { align-items: flex-start; gap: 12px; } .member-name-link { align-items: flex-start; flex-direction: column; gap: 2px; } .member-dashboard-heading { align-items: flex-start; flex-direction: column; } .member-stat-grid { grid-template-columns: 1fr; } .member-stat-card { min-height: 120px; } }
 .app-footer { border-top-color: #d4c8dd; color: #857a91; }
 .toast { border: 1px solid #ffffff33; background: linear-gradient(135deg, #634174, #3c2a4d); box-shadow: 0 14px 36px #28163748, inset 0 1px #ffffff2b; }
 .toast.success { background: linear-gradient(135deg, #208b7c, #176b65); }
@@ -2446,6 +2501,31 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
 @media print {
   .ambient-code-scene { display: none !important; }
 }
+.member-profile-open { text-decoration: none; cursor: pointer; }
+.member-profile-open:hover { color: #6b4cb5; text-decoration: underline; }
+.member-avatar.member-profile-open { display: inline-flex; align-items: center; justify-content: center; }
+.leetcode-profile-page { min-height: 100vh; padding: clamp(20px, 5vw, 64px); color: #eef2f7; background: radial-gradient(ellipse at 15% 0, #26324a, transparent 42%), #101318; }
+.leetcode-profile-shell { width: min(900px, 100%); margin: 0 auto; }
+.leetcode-profile-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.leetcode-profile-back, .leetcode-profile-logout { padding: 9px 13px; border: 1px solid #333a46; border-radius: 9px; color: #d6dce6; background: #1b2028; font: inherit; text-decoration: none; cursor: pointer; }
+.leetcode-profile-back:hover, .leetcode-profile-logout:hover { border-color: #e9a23b; color: #ffc66d; }
+.leetcode-profile-card { padding: clamp(22px, 5vw, 42px); border: 1px solid #303641; border-radius: 18px; background: linear-gradient(145deg, #20252e, #171a20 75%); box-shadow: 0 24px 70px #0006; }
+.leetcode-profile-identity { display: flex; align-items: center; gap: 18px; padding-bottom: 28px; border-bottom: 1px solid #343a44; }
+.leetcode-profile-avatar { display: grid; width: 68px; height: 68px; flex: 0 0 68px; place-items: center; border: 2px solid #e9a23b; border-radius: 50%; color: #ffc66d; background: #322a1d; font-size: 24px; font-weight: 850; }
+.leetcode-profile-identity h1 { margin: 0; color: #f5f7fa; font-size: clamp(25px, 4vw, 34px); }
+.leetcode-profile-identity p { margin: 6px 0 0; color: #9ea8b7; font-size: 13px; overflow-wrap: anywhere; }
+.leetcode-profile-account { display: grid; justify-items: start; gap: 7px; margin: 25px 0; }
+.leetcode-profile-account > span, .leetcode-profile-stats article > span { color: #9ea8b7; font-size: 12px; }
+.leetcode-profile-account strong { color: #f2f4f7; font-size: 16px; }
+.leetcode-profile-account a { color: #f0ad4e; font-size: 13px; text-decoration: none; }
+.leetcode-profile-account a:hover { text-decoration: underline; }
+.leetcode-profile-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.leetcode-profile-stats article { display: grid; gap: 10px; min-height: 100px; align-content: center; padding: 16px; border: 1px solid #373d47; border-radius: 12px; background: #20252d; }
+.leetcode-profile-stats article:first-child { border-color: #725428; background: linear-gradient(145deg, #33291b, #25231f); }
+.leetcode-profile-stats article strong { color: #f5f6f8; font-size: clamp(22px, 4vw, 30px); font-variant-numeric: tabular-nums; }
+.leetcode-profile-source { display: block; margin-top: 16px; color: #8993a2; font-size: 11px; }
+.leetcode-profile-message { margin: 16px 0; color: #ffbd70; font-size: 13px; }
+@media (max-width: 620px) { .leetcode-profile-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .leetcode-activity-summary { display: grid; gap: 10px; margin: 14px 0; padding: 13px 15px; border: 1px solid #e7e1ef; border-radius: 12px; background: #fbfaff; color: #51475e; font-size: 11px; }
 .leetcode-activity-summary > strong { color: #382d48; }
 .leetcode-activity-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px; }
@@ -2478,3 +2558,41 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
 .leetcode-activity-panel .leetcode-activity-summary { flex: 1 1 auto; min-width: 0; }
 .leetcode-activity-panel #refreshLeetCodeActivityBtn { flex: 0 0 auto; margin-top: 14px; }
 @media (max-width: 760px) { .leetcode-activity-panel { flex-direction: column-reverse; } .leetcode-activity-panel #refreshLeetCodeActivityBtn { margin: 0; } }
+.account-profile-entry { display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 4px 12px 4px 5px; border: 1px solid #d9dfeb; border-radius: 999px; color: var(--ink); background: #fff; font: inherit; cursor: pointer; }
+.account-profile-entry:hover { border-color: #a78bfa; background: #faf8ff; }
+.account-profile-entry:focus-visible, .member-actions-trigger:focus-visible { outline: 3px solid #c4b5fd; outline-offset: 2px; }
+.account-profile-avatar { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #7252b8, #318e89); font-size: 11px; font-weight: 800; }
+.account-profile-name { font-size: 13px; font-weight: 750; }
+.member-actions-menu { position: relative; flex-shrink: 0; }
+.member-actions-trigger { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--ink); background: #fff; font-size: 11px; font-weight: 700; cursor: pointer; list-style: none; }
+.member-actions-trigger::-webkit-details-marker { display: none; }
+.managed-member.is-managing .member-actions-menu { flex: 1 0 100%; display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.member-actions-menu.is-open .member-actions { position: static; display: flex; flex-wrap: wrap; gap: 7px; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: #fff; box-shadow: 0 8px 18px #102a4317; }
+.member-actions-menu.is-open .member-actions .btn { flex: 1 1 180px; min-width: 0; }
+.member-actions-menu .member-actions[hidden] { display: none; }
+.member-email-confirmation { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: #fff; }
+.member-email-confirmation span { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; overflow-wrap: anywhere; }
+.member-link-status { color: var(--muted); font-size: 10px; }
+.managed-member .member-name-profile { color: inherit; text-decoration: none; }
+.managed-member .member-name-profile:hover { color: #7252b8; text-decoration: underline; }
+@media (max-width: 620px) { .account-profile-entry { min-height: 38px; padding-right: 9px; } .account-profile-name { font-size: 12px; } }
+@media (max-width: 620px) { .managed-member.is-managing .member-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .member-actions-menu.is-open .member-actions .btn { width: 100%; } }
+.topbar-heading { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.topbar-page-heading { min-width: 0; }
+.topbar-heading .account-profile-entry { flex-shrink: 0; }
+.member-leetcode-id { display: block; width: fit-content; margin-top: 4px; color: #5268a0; font-size: 11px; font-weight: 650; text-decoration: none; }
+.member-leetcode-id:hover { text-decoration: underline; }
+.member-leetcode-id.unavailable { color: var(--muted); font-weight: 500; }
+.member-peer-list { margin-top: 18px; }
+.member-peer-list-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.member-peer-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.member-peer-row .member-peer-name { flex: 1 1 auto; min-width: 0; color: var(--ink); font-size: 12px; font-weight: 750; text-decoration: none; }
+.member-peer-row .member-peer-name:hover { text-decoration: underline; }
+.member-peer-row .member-leetcode-id { flex: 0 1 auto; overflow-wrap: anywhere; }
+.member-peer-empty { color: var(--muted); font-size: 12px; }
+@media (max-width: 850px) { .topbar-heading { flex-wrap: wrap; } }
+@media (max-width: 620px) { .topbar-heading { gap: 10px; } .member-peer-list-items { grid-template-columns: 1fr; } .member-peer-row { flex-wrap: wrap; } }
+.member-session-actions { display: flex; align-items: center; gap: 8px; }
+.member-mode-indicator { padding: 6px 9px; border: 1px solid #b9d8ce; border-radius: 999px; color: #17624f; background: #edf8f3; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.member-progress-readonly { color: var(--muted); font-size: 11px; font-weight: 650; }
+@media (max-width: 720px) { .member-session-actions { flex-wrap: wrap; justify-content: center; } }

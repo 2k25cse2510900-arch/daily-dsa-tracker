@@ -3,14 +3,24 @@
   "version": "1.0.0",
   "private": true,
   "description": "DSA dashboard with server-side admin authorization",
-  "scripts": { "start": "node server.js", "dev": "node --watch server.js", "vercel-build": "node scripts/prepare-vercel-assets.js", "test": "node --test" },
-  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "vercel-build": "node scripts/prepare-vercel-assets.js",
+    "diagnose-mongodb": "node scripts/diagnose-mongodb.js",
+    "provision-admin": "node scripts/provision-admin.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20 <21 || >=22 <23"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "connect-mongo": "^5.1.0",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-session": "^1.18.1",
+    "firebase-admin": "^13.5.0",
     "helmet": "^8.0.0",
     "mongodb": "^6.12.0"
   }

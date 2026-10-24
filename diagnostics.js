@@ -6,11 +6,19 @@ const SAFE_CODE = /^[A-Za-z0-9_-]{1,40}$/;
 function errorChain(error) {
   const chain = [];
   const seen = new Set();
-  let current = error;
-  while (current && typeof current === "object" && chain.length < 5 && !seen.has(current)) {
+  const pending = [error];
+  while (pending.length && chain.length < 12) {
+    const current = pending.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
     chain.push(current);
     seen.add(current);
-    current = current.cause;
+    if (current.cause) pending.push(current.cause);
+    const servers = current.reason?.servers;
+    if (servers && typeof servers.values === "function") {
+      for (const server of servers.values()) {
+        if (server?.error) pending.push(server.error);
+      }
+    }
   }
   return chain;
 }
@@ -24,11 +32,11 @@ function classifyMongoError(error) {
   if (codes.some(code => code === 18 || code === "AuthenticationFailed")) return "authentication-failure";
   if (codes.some(code => typeof code === "string" && /^(EAI_AGAIN|ENOTFOUND|ENODATA|ESERVFAIL)$/.test(code))) return "dns-failure";
   if (names.some(name => /TLS|Certificate/i.test(name)) ||
-      codes.some(code => typeof code === "string" && /^(ERR_TLS|CERT_|UNABLE_TO_VERIFY_LEAF_SIGNATURE)/.test(code))) return "tls-error";
-  if (names.includes("MongoServerSelectionError")) return "server-selection-timeout";
-  if (codes.some(code => code === "ETIMEDOUT") || names.includes("MongoNetworkTimeoutError")) return "network-timeout";
+      codes.some(code => typeof code === "string" && /^(ERR_TLS|ERR_SSL|CERT_|UNABLE_TO_VERIFY_LEAF_SIGNATURE)/.test(code))) return "tls-error";
+  if (codes.some(code => code === "ETIMEDOUT" || code === "ETIMEOUT") || names.includes("MongoNetworkTimeoutError")) return "network-timeout";
   if (codes.some(code => typeof code === "string" && /^(ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE)$/.test(code)) ||
       names.includes("MongoNetworkError")) return "network-error";
+  if (names.includes("MongoServerSelectionError")) return "server-selection-timeout";
   return "mongodb-error";
 }
 

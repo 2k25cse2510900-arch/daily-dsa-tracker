@@ -70,14 +70,23 @@
         </svg>
       </div>
       <header class="topbar">
-        <div>
-          <div class="eyebrow">DSA COMMUNITY / ADMIN</div>
-          <h1 id="pageTitle">Overview</h1>
+        <div class="topbar-heading">
+          <button class="account-profile-entry" id="adminPersonalProfileBtn" type="button" hidden aria-label="Open personal profile">
+            <span class="account-profile-avatar" id="adminProfileAvatar" aria-hidden="true">M</span>
+            <span class="account-profile-name" id="adminProfileName">Member</span>
+          </button>
+          <div class="topbar-page-heading">
+            <div class="eyebrow" id="dashboardModeHeading">DSA COMMUNITY</div>
+            <h1 id="pageTitle">Overview</h1>
+          </div>
         </div>
 
         <div class="top-actions">
           <button class="btn btn-light" id="loginBtn" type="button">Admin login</button>
           <span id="adminModeIndicator" class="admin-mode-indicator" hidden>Admin Mode</span>
+          <span id="memberModeIndicator" class="admin-mode-indicator" hidden>Member Mode · Read only</span>
+          <button class="btn btn-light admin-only" id="adminSwitchMemberBtn" type="button" hidden>Switch to Member Mode</button>
+          <button class="btn btn-light" id="memberSwitchAdminBtn" type="button" hidden>Switch to Admin Mode</button>
           <button class="btn btn-light" id="logoutBtn" type="button" hidden>Log out</button>
           <button class="btn btn-light admin-only" id="backupBtn" type="button" hidden>Backup</button>
           <button class="btn btn-primary" id="exportBtn" type="button">Export PDF</button>
@@ -287,7 +296,6 @@
             <span class="tiny-tag" id="memberCountTag">8 MEMBERS</span>
           </div>
 
-          <div class="leetcode-heading"><div><strong>LeetCode profiles</strong><small>Refreshes periodically; use Refresh now for an admin update.</small></div><button id="leetcodeRefreshBtn" class="btn btn-secondary admin-only" type="button" hidden>Refresh now</button></div>
           <div id="memberManager" class="member-manager"></div>
         </section>
       </section>
@@ -336,15 +344,77 @@
 
       <footer class="app-footer">
         <span>DSA Admin Dashboard</span>
-        <span>Shared MongoDB dashboard · Public read access</span>
+          <span>Shared group dashboard · Admin edits only</span>
       </footer>
     </main>
   </div>
 
+  <main id="memberHome" class="member-home" hidden>
+    <header class="member-home-header">
+      <div class="member-home-identity"><span class="eyebrow">DSA COMMUNITY / MEMBER MODE</span><h1 id="memberViewTitle">My profile</h1><button class="member-name-link" id="memberDashboardOpen" type="button" aria-controls="memberPersonalDashboard" aria-expanded="true"><span id="memberWelcomeName">Member</span><span class="member-name-link-hint">Personal profile</span></button></div>
+      <nav class="member-view-nav" aria-label="Member navigation">
+        <button class="member-view-button" id="memberDashboardNav" type="button" aria-controls="memberPersonalDashboard" aria-pressed="true">My Profile</button>
+        <button class="member-view-button" id="memberProgressNav" type="button" aria-controls="memberProgressView" aria-pressed="false">My Progress</button>
+      </nav>
+      <div class="member-session-actions"><span class="member-mode-indicator">Member Mode</span><button class="btn btn-light" id="memberLogoutBtn" type="button">Log out</button></div>
+    </header>
+    <div id="memberProgressView" hidden>
+      <section class="panel member-welcome"><h2>Weekly progress</h2><p>Read-only view of your daily submissions and weekly concepts.</p></section>
+      <div class="member-week-controls"><button class="btn btn-light" id="memberPreviousWeek" type="button">Previous week</button><strong id="memberWeekLabel">Week 1</strong><button class="btn btn-light" id="memberNextWeek" type="button">Next week</button></div>
+      <div class="member-progress-grid">
+        <section class="panel"><h2>Daily submissions</h2><p>Mark each scheduled day you completed.</p><div id="memberDailyProgress" class="member-progress-list"></div></section>
+        <section class="panel"><h2>Weekly concepts</h2><p>Mark each weekly concept proof you completed.</p><div id="memberConceptProgress" class="member-progress-list"></div></section>
+      </div>
+    </div>
+    <section id="memberPersonalDashboard" class="member-personal-dashboard" aria-labelledby="memberPersonalDashboardTitle">
+      <div class="member-dashboard-heading"><div><h2 id="memberPersonalDashboardTitle">My profile</h2><p>Your verified identity and mapped LeetCode results.</p></div></div>
+      <p id="memberDashboardMessage" class="member-dashboard-message" role="status" hidden></p>
+      <button class="btn btn-light" id="memberDashboardRetry" type="button" hidden>Try again</button>
+      <div class="member-profile-identity"><img id="memberProfilePhoto" class="member-profile-photo" alt="" hidden><span id="memberProfileInitials" class="member-profile-initials" aria-hidden="true">M</span><div><span class="member-stat-label">Member</span><strong id="memberDashboardName" class="member-stat-value">Loading…</strong><span id="memberDashboardEmail" class="member-stat-detail"></span></div></div>
+      <p id="memberGroupStatus" class="member-group-status" role="status"></p>
+      <form id="memberLeetCodeForm" class="member-leetcode-form"><label for="memberLeetCodeUsername">LeetCode username<input id="memberLeetCodeUsername" maxlength="64" autocomplete="off" placeholder="Not linked yet"></label><button class="btn btn-light" type="submit">Save</button></form>
+      <div class="member-stat-grid" aria-live="polite">
+        <article class="panel member-stat-card"><span class="member-stat-label">Total solved</span><strong id="memberDashboardSolved" class="member-stat-value">Loading…</strong></article>
+        <article class="panel member-stat-card"><span class="member-stat-label">Easy solved</span><strong id="memberDashboardEasy" class="member-stat-value">Loading…</strong></article>
+        <article class="panel member-stat-card"><span class="member-stat-label">Medium solved</span><strong id="memberDashboardMedium" class="member-stat-value">Loading…</strong></article>
+        <article class="panel member-stat-card"><span class="member-stat-label">Hard solved</span><strong id="memberDashboardHard" class="member-stat-value">Loading…</strong></article>
+      </div>
+      <section class="panel member-peer-list" aria-labelledby="memberPeerListTitle">
+        <div class="panel-heading"><div><h2 id="memberPeerListTitle">Group members</h2><p>Open a member profile or LeetCode account.</p></div></div>
+        <div id="memberPeerList" class="member-peer-list-items" aria-live="polite"></div>
+      </section>
+    </section>
+  </main>
+
+  <main id="profileRoutePage" class="leetcode-profile-page" hidden>
+    <div class="leetcode-profile-shell">
+      <div class="leetcode-profile-toolbar"><a id="profileBackToDashboard" class="leetcode-profile-back" href="/">&#8592; Back to Dashboard</a></div>
+      <section class="leetcode-profile-card" aria-labelledby="routeProfileName">
+        <div class="leetcode-profile-identity">
+          <span id="routeProfileAvatar" class="leetcode-profile-avatar" aria-hidden="true">K</span>
+          <div><h1 id="routeProfileName">Loading profileâ€¦</h1><p id="routeProfileEmail" hidden></p></div>
+        </div>
+        <div class="leetcode-profile-account">
+          <span>LeetCode username</span>
+          <strong id="routeProfileUsername">Not linked</strong>
+          <a id="routeProfileLink" href="https://leetcode.com/" target="_blank" rel="noopener noreferrer" hidden>Open public profile</a>
+        </div>
+        <p id="routeProfileMessage" class="leetcode-profile-message" role="status" hidden></p>
+        <div class="leetcode-profile-stats" aria-label="LeetCode questions solved">
+          <article><span>Total solved</span><strong id="routeProfileTotal">â€”</strong></article>
+          <article><span>Easy</span><strong id="routeProfileEasy">â€”</strong></article>
+          <article><span>Medium</span><strong id="routeProfileMedium">â€”</strong></article>
+          <article><span>Hard</span><strong id="routeProfileHard">â€”</strong></article>
+        </div>
+        <small id="routeProfileSource" class="leetcode-profile-source"></small>
+      </section>
+    </div>
+  </main>
+
   <dialog id="loginDialog" class="security-dialog">
     <form id="loginForm">
       <h2>Admin login</h2><p>Sign in to manage shared dashboard data.</p>
-      <label>Username<input name="username" autocomplete="username" value="Krish" required></label>
+      <label>Admin email<input name="email" type="email" autocomplete="username" maxlength="254" required></label>
       <label>Password
         <span class="password-field"><input id="adminPassword" name="password" type="password" maxlength="72" autocomplete="current-password" required><button id="togglePassword" class="btn btn-light" type="button" aria-label="Show password" aria-pressed="false">Show</button></span>
       </label>
@@ -352,10 +422,29 @@
       <div id="loginError" class="security-error" role="alert" aria-live="polite"></div>
     </form>
   </dialog>
-  <div id="securityGate" class="security-gate" hidden>Connecting to the secure shared dashboard…</div>  <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+  <dialog id="memberLoginDialog" class="security-dialog">
+    <section>
+      <h2>Member login</h2><p>Sign in with your verified Google account to open the shared group dashboard.</p>
+      <div class="dialog-actions"><button class="btn btn-light" id="cancelMemberLogin" type="button">Cancel</button><button class="btn btn-primary" id="memberGoogleLogin" type="button">Continue with Google</button></div>
+      <div id="memberLoginError" class="security-error" role="alert" aria-live="polite"></div>
+    </section>
+  </dialog>
+  <dialog id="memberEmailDialog" class="security-dialog member-email-dialog">
+    <form id="memberEmailForm">
+      <h2>Update sign-in email</h2>
+      <p>Update only the verified Google email for this existing member. Their member ID, Firebase link, LeetCode profile, and tracker history will remain unchanged.</p>
+      <p class="member-email-confirmation"><strong id="memberEmailMemberName"></strong><span id="memberEmailMemberId"></span></p>
+      <label>Approved verified Google email<input id="memberEmailInput" name="email" type="email" autocomplete="email" maxlength="254" required></label>
+      <div class="dialog-actions"><button class="btn btn-light" id="cancelMemberEmail" type="button">Cancel</button><button class="btn btn-primary" id="saveMemberEmail" type="submit">Confirm update</button></div>
+      <div id="memberEmailError" class="security-error" role="alert" aria-live="polite"></div>
+    </form>
+  </dialog>
+  <div id="securityGate" class="security-gate"><strong>Checking your secure session…</strong><div class="gate-actions"><button class="btn btn-primary" id="gateAdminLogin" type="button">Admin Login</button><button class="btn btn-light" id="gateMemberLogin" type="button">Member Login</button></div></div>
+  <input type="file" id="restoreFile" accept=".json,application/json" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="activity-date.js"></script>
+  <script src="firebase-client.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

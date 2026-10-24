@@ -3,5 +3,14 @@
 .env.*
 !.env.example
 node_modules/
+*firebase-adminsdk*.json
+*firebase*adminsdk*.json
+*serviceAccount*.json
+*service-account*.json
+*service_account*.json
+*service*account*.json
+*.pem
+*.p12
+*.key
 .DS_Store
 npm-debug.log*

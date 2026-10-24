@@ -1236,78 +1236,157 @@ function renderPreview() {
 
 /* -------------------- MEMBERS MANAGEMENT -------------------- */
 
+function closeMemberActionMenus(container) {
+  container.querySelectorAll(".member-actions-menu.is-open").forEach(menu => {
+    menu.classList.remove("is-open");
+    menu.closest(".managed-member")?.classList.remove("is-managing");
+    const actions = menu.querySelector(".member-actions");
+    const trigger = menu.querySelector("[data-member-menu]");
+    if (actions) actions.hidden = true;
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+  });
+}
+
 function renderMembers() {
   const container = $("memberManager");
   $("memberCountTag").textContent = `${state.members.length} MEMBER${state.members.length === 1 ? "" : "S"}`;
 
   if (!state.members.length) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <strong>No members registered</strong>
-        Use the form above to add a member.
-      </div>
-    `;
+    container.innerHTML = `<div class="empty-state"><strong>No members registered</strong>Use the form above to add a member.</div>`;
     return;
   }
 
-  container.innerHTML = state.members.map((member, index) => {
-    const profile = leetcodeProfiles[member.id];
-    const stats = isAdmin ? memberStats(member.id) : null;
-    const consistency = stats ? consistencyPresentation(stats.percent) : null;
-    const progressMarkup = stats ? `
-      <div class="member-progress ${consistency.tone}" role="progressbar" aria-label="${stats.overallDone} of ${stats.possible} weekly tasks complete" aria-valuemin="0" aria-valuemax="${stats.possible}" aria-valuenow="${stats.overallDone}">
-        <span>${stats.overallDone}/${stats.possible}</span>
-        <div class="member-progress-track ${consistency.tone}"><i style="width:${consistency.progress}%"></i></div>
-        ${perfectBadgeMarkup(consistency)}
-      </div>` : "";
-    return `
-      <article class="managed-member">
-        <span class="member-avatar">${escapeHTML(getInitials(member.name))}</span>
-        <div class="member-info">
-          <strong>${escapeHTML(member.name)}</strong>
-          <small>${escapeHTML(member.role || `Member ${index + 1}`)}</small>
-          ${profile ? `<a class="leetcode-link" href="${escapeHTML(profile.profileUrl)}" target="_blank" rel="noopener noreferrer">LeetCode · ${escapeHTML(profile.username)}</a><div class="leetcode-stats">${profile.stats ? `<span><b>${profile.stats.total}</b> solved</span><span>Easy ${profile.stats.easy}</span><span>Medium ${profile.stats.medium}</span><span>Hard ${profile.stats.hard}</span>` : `<span>Statistics unavailable</span>`}</div><small class="leetcode-fetch ${profile.status === "Success" ? "success" : "unavailable"}">${escapeHTML(profile.status)}${profile.stale ? " · cached data may be stale" : ""}${profile.lastFetchedAt ? ` · Updated ${escapeHTML(new Date(profile.lastFetchedAt).toLocaleString())}` : ""}</small>` : `<small class="leetcode-fetch">LeetCode profile not mapped</small>`}
+  container.innerHTML = state.members.map((member, index) => `
+    <article class="managed-member">
+      <a class="member-avatar member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}" aria-label="Open ${escapeHTML(member.name)}'s profile">${escapeHTML(getInitials(member.name))}</a>
+      <div class="member-info">
+        <strong><a class="member-name-profile member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}">${escapeHTML(member.name)}</a></strong>
+        ${leetcodeProfiles[member.id]?.username ? `<a class="member-leetcode-id" href="${escapeHTML(leetcodeProfiles[member.id].profileUrl || `https://leetcode.com/u/${encodeURIComponent(leetcodeProfiles[member.id].username)}/`)}" target="_blank" rel="noopener noreferrer">${escapeHTML(leetcodeProfiles[member.id].username)}</a>` : `<small class="member-leetcode-id unavailable">Not linked</small>`}
+      </div>
+      <div class="member-actions-menu" ${isAdmin ? "" : "hidden"}>
+        <button class="member-actions-trigger" type="button" data-member-menu="${escapeHTML(member.id)}" aria-expanded="false" aria-controls="member-actions-${escapeHTML(member.id)}">Manage</button>
+        <div class="member-actions" id="member-actions-${escapeHTML(member.id)}" hidden>
+          <button class="icon-btn" type="button" data-member-action="rename" data-member-id="${escapeHTML(member.id)}" aria-label="Rename ${escapeHTML(member.name)}" title="Rename">${iconMarkup("edit")}</button>
+          <button class="icon-btn danger" type="button" data-member-action="remove" data-member-id="${escapeHTML(member.id)}" aria-label="Remove ${escapeHTML(member.name)}" title="Remove">${iconMarkup("remove")}</button>
+          <button class="btn btn-light" type="button" data-member-action="firebase-link" data-member-id="${escapeHTML(member.id)}">${memberFirebaseStatus[member.id] ? "Update Google link" : "Link Google account"}</button>
+          <button class="btn btn-light" type="button" data-member-action="email-link" data-member-id="${escapeHTML(member.id)}">${member.email ? "Update sign-in email" : "Set sign-in email"}</button>
         </div>
-        ${progressMarkup}
-        <div class="member-actions">
-          <button class="icon-btn" type="button"
-            data-member-action="rename" data-member-id="${member.id}"
-            aria-label="Rename ${escapeHTML(member.name)}" title="Rename">${iconMarkup("edit")}</button>
-          <button class="icon-btn danger" type="button"
-            data-member-action="remove" data-member-id="${member.id}"
-            aria-label="Remove ${escapeHTML(member.name)}" title="Remove">${iconMarkup("remove")}</button>
-        </div>
-      </article>`;
-  }).join("");
+      </div>
+    </article>`).join("");
 
-  const refreshButton = $("leetcodeRefreshBtn");
-  if (refreshButton && !refreshButton.dataset.bound) {
-    refreshButton.dataset.bound = "true";
-    refreshButton.addEventListener("click", async () => {
-      refreshButton.disabled = true;
-      refreshButton.textContent = "Refreshing…";
-      try {
-        const result = await apiRequest("/api/admin/leetcode/refresh", { method: "POST" });
-        await loadSharedData();
-        const unavailable = result.results?.filter(item => item.status !== "Success").length || 0;
-        showToast(`Fetched ${result.results?.length || 0} profiles${unavailable ? `; ${unavailable} unavailable` : ""}.`, unavailable ? "error" : "success");
-      } catch (error) { showToast(error.message, "error"); }
-      finally { refreshButton.disabled = false; refreshButton.textContent = "Refresh now"; }
+  if (!container.dataset.memberManagerBound) {
+    container.addEventListener("click", event => {
+    const menuTrigger = event.target.closest("[data-member-menu]");
+    if (menuTrigger) {
+      event.preventDefault();
+      event.stopPropagation();
+      const menu = menuTrigger.closest(".member-actions-menu");
+      const actions = menu?.querySelector(".member-actions");
+      if (!menu || !actions) return;
+      const opening = actions.hidden;
+      closeMemberActionMenus(container);
+      actions.hidden = !opening;
+      menu.classList.toggle("is-open", opening);
+      menu.closest(".managed-member")?.classList.toggle("is-managing", opening);
+      menuTrigger.setAttribute("aria-expanded", String(opening));
+      return;
+    }
+    const button = event.target.closest("[data-member-action]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const member = state.members.find(item => item.id === button.dataset.memberId);
+    if (!member) return showToast("That member is no longer available. Refresh and try again.", "error");
+    closeMemberActionMenus(container);
+    if (button.dataset.memberAction === "rename") renameMember(member);
+    if (button.dataset.memberAction === "remove") removeMember(member);
+    if (button.dataset.memberAction === "firebase-link") updateMemberFirebaseLink(member);
+    if (button.dataset.memberAction === "email-link") openMemberEmailDialog(member);
     });
+    document.addEventListener("click", event => {
+      if (!container.contains(event.target)) closeMemberActionMenus(container);
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") closeMemberActionMenus(container);
+    });
+    container.dataset.memberManagerBound = "true";
   }
-
-  container.querySelectorAll("[data-member-action]").forEach(button => {
-    button.addEventListener("click", () => {
-      const memberId = button.dataset.memberId;
-      const action = button.dataset.memberAction;
-      const member = state.members.find(item => item.id === memberId);
-
-      if (!member) return;
-
-      if (action === "rename") renameMember(member);
-      if (action === "remove") removeMember(member);
+  container.querySelectorAll("[data-open-profile]").forEach(link => {
+    link.addEventListener("click", event => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (isAdmin || (isMember && link.dataset.openProfile === memberProfile?.id)) openProfileRoute(link.dataset.openProfile, true);
     });
   });
+}
+
+async function loadGroupMemberList() {
+  const container = $("memberPeerList");
+  if (!container || !memberProfile?.groupMember) return;
+  try {
+    const { members = [] } = await apiRequest("/api/member/group");
+    container.innerHTML = members.map(member => `
+      <article class="member-peer-row">
+        <a class="member-avatar member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}" aria-label="Open ${escapeHTML(member.name)}'s profile">${escapeHTML(getInitials(member.name))}</a>
+        <a class="member-peer-name member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}">${escapeHTML(member.name)}</a>
+        ${member.leetCodeUsername ? `<a class="member-leetcode-id" href="https://leetcode.com/u/${encodeURIComponent(member.leetCodeUsername)}/" target="_blank" rel="noopener noreferrer">${escapeHTML(member.leetCodeUsername)}</a>` : `<span class="member-leetcode-id unavailable">Not linked</span>`}
+      </article>`).join("") || `<p class="member-peer-empty">No group members are available.</p>`;
+    container.querySelectorAll("[data-open-profile]").forEach(link => link.addEventListener("click", event => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      openProfileRoute(link.dataset.openProfile, true);
+    }));
+  } catch {
+    container.innerHTML = `<p class="member-peer-empty">Group members could not be loaded.</p>`;
+  }
+}
+async function updateMemberFirebaseLink(member) {
+  if (!confirm(`Confirm that you have verified ${member.name}'s identity and their Firebase UID before linking this Google account.`)) return;
+  const firebaseUid = prompt("Enter the Firebase UID shown to the member after Google sign-in:");
+  if (firebaseUid === null) return;
+  try {
+    await apiRequest(`/api/admin/members/${encodeURIComponent(member.id)}/firebase-link`, {
+      method: "PUT",
+      body: JSON.stringify({ firebaseUid, identityVerified: true })
+    });
+    memberFirebaseStatus[member.id] = true;
+    showToast("Google account linked.", "success");
+    renderMembers();
+  } catch (error) {
+    showToast(error.message || "The Google account could not be linked.", "error");
+  }
+}
+
+let memberEmailTarget = null;
+
+function openMemberEmailDialog(member) {
+  if (!isAdmin) return showToast("Administrator permission is required.", "error");
+  memberEmailTarget = member;
+  $("memberEmailMemberName").textContent = member.name;
+  $("memberEmailMemberId").textContent = member.id;
+  $("memberEmailInput").value = member.email || "";
+  $("memberEmailError").textContent = "";
+  $("memberEmailDialog").showModal();
+  $("memberEmailInput").focus();
+}
+
+async function updateMemberEmailLink(email) {
+  const member = memberEmailTarget;
+  if (!member || !isAdmin) return showToast("Administrator permission is required.", "error");
+  try {
+    await apiRequest(`/api/admin/members/${encodeURIComponent(member.id)}/email-link`, {
+      method: "PUT",
+      body: JSON.stringify({ email })
+    });
+    member.email = email.trim().toLowerCase();
+    showToast("Sign-in email linked. The member can now sign in with that verified Google account.", "success");
+    $("memberEmailDialog").close();
+    memberEmailTarget = null;
+    renderMembers();
+  } catch (error) {
+    $("memberEmailError").textContent = error.message || "The email could not be updated.";
+    showToast(error.message || "The email could not be updated.", "error");
+  }
 }
 
 function renameMember(member) {
@@ -1818,6 +1897,11 @@ function renderAll() {
 /* -------------------- INITIALIZE APP -------------------- */
 
 let isAdmin = false;
+let isMember = false;
+let memberProfile = null;
+let memberProgress = null;
+let memberWeek = 1;
+let memberFirebaseStatus = {};
 let sharedReady = false;
 let activePage = "overview";
 let viewerPageData = null;
@@ -1825,21 +1909,26 @@ let leetcodeProfiles = {};
 let localSnapshot = null;
 let sessionExpiryTimer = null;
 let sessionExpiresAt = 0;
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function expireLocalSession() {
+  clearTimeout(sessionExpiryTimer);
   sessionExpiresAt = 0;
   isAdmin = false;
+  isMember = false;
+  memberProfile = null;
+  memberProgress = null;
   sharedReady = false;
+  memberFirebaseStatus = {};
   clearViewerData();
-  $("securityGate").hidden = true;
   setRoleUI();
-  showToast("Your session expired. Sign in again to edit the dashboard.", "error");
+  setSecurityGate("Your secure session expired. Sign in again to continue.", false, true);
 }
 
 function resetSessionExpiry() {
   clearTimeout(sessionExpiryTimer);
-  sessionExpiresAt = Date.now() + 8 * 60 * 60 * 1000;
-  sessionExpiryTimer = setTimeout(expireLocalSession, 8 * 60 * 60 * 1000);
+  sessionExpiresAt = Date.now() + SESSION_MAX_AGE_MS;
+  sessionExpiryTimer = setTimeout(expireLocalSession, SESSION_MAX_AGE_MS);
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -1848,24 +1937,41 @@ document.addEventListener("visibilitychange", () => {
 
 async function apiRequest(url, options = {}) {
   const response = await fetch(url, { credentials: "same-origin", ...options, headers: { ...(options.headers || {}), ...(options.body ? { "Content-Type": "application/json" } : {}) } });
-  resetSessionExpiry();
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && isAdmin) expireLocalSession();
+    const path = new URL(url, location.href).pathname;
+    const isLoginAttempt = path === "/api/admin/login" || path === "/api/member/login";
+    if (response.status === 401 && !isLoginAttempt && (isAdmin || isMember)) expireLocalSession();
     throw Object.assign(new Error(body.error || "Request failed."), { status: response.status, body });
   }
+  if (isAdmin || isMember) resetSessionExpiry();
   return body;
 }
 
 function setRoleUI() {
-  $("loginBtn").hidden = isAdmin;
-  $("logoutBtn").hidden = !isAdmin;
+  const authenticated = isAdmin || isMember;
+  if (isMember && memberProfile) $("memberWelcomeName").textContent = memberProfile.name;
+  $("loginBtn").hidden = authenticated;
+  $("logoutBtn").hidden = !authenticated;
   $("adminModeIndicator").hidden = !isAdmin;
+  $("memberModeIndicator").hidden = !isMember;
+  $("dashboardModeHeading").textContent = `DSA COMMUNITY / ${isAdmin ? "ADMIN" : isMember ? "MEMBER" : "DASHBOARD"}`;
+  $("adminSwitchMemberBtn").hidden = !isAdmin;
+  $("memberSwitchAdminBtn").hidden = !isMember;
+  $("adminPersonalProfileBtn").hidden = !(authenticated && memberProfile?.id);
+  if (authenticated && memberProfile?.name) {
+    const displayName = memberProfile.name.replace(/\s*\(ADMIN\)\s*$/i, "").trim();
+    $("adminProfileName").textContent = displayName;
+    $("adminProfileAvatar").textContent = getInitials(displayName);
+    $("adminPersonalProfileBtn").setAttribute("aria-label", `Open ${displayName}'s profile`);
+  }
+  document.querySelector(".app-shell").hidden = !authenticated;
+  $("memberHome").hidden = true;
   document.querySelectorAll(".admin-only").forEach(control => { control.hidden = !isAdmin; });
   $("addMemberForm").hidden = !isAdmin;
+  $("memberLeetCodeForm").hidden = true;
   document.querySelectorAll(".bulk-actions, #clearDailyBtn, #clearConceptsBtn, #markAllDoneBtn, #markAllBlankBtn").forEach(control => { control.hidden = !isAdmin; });
   document.querySelectorAll("#dailyTable button, #conceptTable button, #addMemberForm input, #addMemberForm button, #clearDailyBtn, #clearConceptsBtn, #markAllDoneBtn, #markAllBlankBtn").forEach(control => { control.disabled = !isAdmin; });
-  document.querySelectorAll("[data-member-action]").forEach(control => { control.hidden = !isAdmin; });
   if (!isAdmin) {
     $("restoreAction")?.setAttribute("hidden", "");
   } else {
@@ -1873,10 +1979,28 @@ function setRoleUI() {
   }
 }
 
-function setSecurityGate(message, canImport = false) {
+function bindGateLoginButton(button) {
+  if (!button) return;
+  button.addEventListener("click", () => $("loginBtn").click());
+}
+
+function bindGateMemberLoginButton(button) {
+  if (!button) return;
+  button.addEventListener("click", openMemberLoginDialog);
+}
+
+function setSecurityGate(message, canImport = false, canSignIn = false) {
   const gate = $("securityGate");
   gate.hidden = false;
   gate.innerHTML = `<strong>${escapeHTML(message)}</strong>${canImport ? '<button class="btn btn-primary" id="importLocalDataBtn" type="button">Import this browser’s existing data</button>' : ""}`;
+  if (canSignIn) {
+    const actions = document.createElement("div");
+    actions.className = "gate-actions";
+      actions.innerHTML = '<button class="btn btn-primary" id="gateAdminLogin" type="button">Admin Login</button><button class="btn btn-light" id="gateMemberLogin" type="button">Member Login</button>';
+    gate.append(actions);
+    bindGateLoginButton($("gateAdminLogin"));
+      bindGateMemberLoginButton($("gateMemberLogin"));
+  }
   if (canImport) $("importLocalDataBtn").addEventListener("click", async () => {
     try {
       const backup = { ...localSnapshot, currentWeek: Number(localSnapshot.currentWeek) || 1 };
@@ -1892,14 +2016,174 @@ function setSecurityGate(message, canImport = false) {
 }
 
 async function loadSharedData() {
-  const data = await apiRequest("/api/data");
+  const data = await apiRequest(isAdmin ? "/api/data" : "/api/member/shared-data");
   leetcodeProfiles = data.leetcode || {};
+  memberFirebaseStatus = data.memberFirebaseStatus || {};
   state = { members: data.members, weeks: data.weeks, currentWeek: data.currentWeek };
   currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek;
   state.currentWeek = currentWeek;
   sharedReady = true;
   ensureAllData();
   renderAll();
+}
+
+function renderMemberProgress() {
+  if (!memberProfile || !memberProgress) return;
+  $("memberWelcomeName").textContent = memberProfile.name;
+  $("memberWeekLabel").textContent = `Week ${memberProgress.week}`;
+  const scheduled = new Set(memberProgress.scheduledSlots || []);
+  const dailyLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  $("memberDailyProgress").innerHTML = memberProgress.daily.map((status, slot) => {
+    const available = scheduled.has(slot);
+    const label = dailyLabels[slot];
+    return `<div class="member-progress-item"><span>${label}</span><span class="member-progress-readonly">${available ? (status === "done" ? "Completed" : status === "absent" ? "Missed" : "Not marked") : "Not scheduled"}</span></div>`;
+  }).join("");
+  $("memberConceptProgress").innerHTML = memberProgress.concepts.map((status, slot) => {
+    const available = scheduled.size > 0;
+    return `<div class="member-progress-item"><span>Concept ${slot + 1}</span><span class="member-progress-readonly">${available ? (status === "done" ? "Completed" : status === "absent" ? "Missed" : "Not marked") : "Not scheduled"}</span></div>`;
+  }).join("");
+  $("memberPreviousWeek").disabled = memberWeek <= 1;
+  $("memberNextWeek").disabled = memberWeek >= MAX_WEEKS;
+}
+
+function setMemberDashboardLoading() {
+  $("memberDashboardName").textContent = memberProfile?.name || "Not available yet";
+  $("memberDashboardSolved").textContent = "Loading…";
+  $("memberDashboardEasy").textContent = "Loading…";
+  $("memberDashboardMedium").textContent = "Loading…";
+  $("memberDashboardHard").textContent = "Loading…";
+  $("memberDashboardMessage").hidden = true;
+  $("memberDashboardRetry").hidden = true;
+}
+
+async function loadMemberPersonalDashboard() {
+  setMemberDashboardLoading();
+  try {
+    const data = await apiRequest("/api/member/dashboard");
+    $("memberDashboardName").textContent = data.memberName || memberProfile?.name || "Not available yet";
+    $("memberDashboardEmail").textContent = data.memberEmail || "";
+    $("memberDashboardEmail").hidden = !data.memberEmail;
+    const initials = (data.memberName || memberProfile?.name || "M").trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+    $("memberProfileInitials").textContent = initials || "M";
+    $("memberProfileInitials").hidden = Boolean(data.photoUrl);
+    $("memberGroupStatus").textContent = data.groupMember
+      ? "You are a member of the private DSA group."
+      : "Your personal profile is ready. You are not yet a member of a group; group access requires an invitation from a group administrator.";
+    $("memberProgressNav").hidden = !data.groupMember;
+    $("memberLeetCodeUsername").value = data.leetCodeUsername || "";
+    $("memberDashboardSolved").textContent = Number.isSafeInteger(data.questionsSolved) ? data.questionsSolved.toLocaleString() : "Not available yet";
+    $("memberDashboardEasy").textContent = Number.isSafeInteger(data.easySolved) ? data.easySolved.toLocaleString() : "Not available yet";
+    $("memberDashboardMedium").textContent = Number.isSafeInteger(data.mediumSolved) ? data.mediumSolved.toLocaleString() : "Not available yet";
+    $("memberDashboardHard").textContent = Number.isSafeInteger(data.hardSolved) ? data.hardSolved.toLocaleString() : "Not available yet";
+    const photo = $("memberProfilePhoto");
+    photo.hidden = !data.photoUrl;
+    photo.src = data.photoUrl || "";
+  } catch (error) {
+    $("memberDashboardSolved").textContent = "Not available yet";
+    $("memberDashboardEasy").textContent = "Not available yet";
+    $("memberDashboardMedium").textContent = "Not available yet";
+    $("memberDashboardHard").textContent = "Not available yet";
+    $("memberDashboardMessage").textContent = error.message || "Personal dashboard could not be loaded.";
+    $("memberDashboardMessage").hidden = false;
+    $("memberDashboardRetry").hidden = false;
+  }
+}
+
+function showMemberPersonalDashboard() {
+  if (!isMember) return;
+  $("memberProgressView").hidden = true;
+  $("memberPersonalDashboard").hidden = false;
+  $("memberViewTitle").textContent = "My profile";
+  $("memberDashboardOpen").setAttribute("aria-expanded", "true");
+  $("memberDashboardNav").setAttribute("aria-pressed", "true");
+  $("memberProgressNav").setAttribute("aria-pressed", "false");
+  loadMemberPersonalDashboard();
+}
+
+function showMemberProgressView() {
+  if (!memberProfile?.groupMember) return;
+  $("memberPersonalDashboard").hidden = true;
+  $("memberProgressView").hidden = false;
+  $("memberViewTitle").textContent = "My progress";
+  $("memberDashboardOpen").setAttribute("aria-expanded", "false");
+  $("memberDashboardNav").setAttribute("aria-pressed", "false");
+  $("memberProgressNav").setAttribute("aria-pressed", "true");
+}
+
+function initializeMemberDashboardNavigation() {
+  $("memberDashboardOpen").addEventListener("click", showMemberPersonalDashboard);
+  $("memberDashboardNav").addEventListener("click", showMemberPersonalDashboard);
+  $("memberProgressNav").addEventListener("click", async () => {
+    showMemberProgressView();
+    try { await loadMemberProgress(memberWeek); } catch (error) { showToast(error.message, "error"); }
+  });
+}
+
+async function openProfileRoute(memberId, pushHistory = false) {
+  if (!/^[\w-]{1,100}$/.test(memberId || "") || (!isAdmin && !isMember)) return;
+  const route = `/profile/${encodeURIComponent(memberId)}`;
+  if (pushHistory && location.pathname !== route) history.pushState({}, "", route);
+  document.querySelector(".app-shell").hidden = true;
+  $("memberHome").hidden = true;
+  $("profileRoutePage").hidden = false;
+  $("routeProfileName").textContent = "Loading profile…";
+  $("routeProfileSource").textContent = "Loading statistics…";
+  $("routeProfileUsername").textContent = "Not linked";
+  $("routeProfileLink").hidden = true;
+  $("routeProfileMessage").hidden = true;
+  ["routeProfileTotal", "routeProfileEasy", "routeProfileMedium", "routeProfileHard"].forEach(id => { $(id).textContent = "—"; });
+  try {
+    const data = await apiRequest(`/api/profile/${encodeURIComponent(memberId)}`);
+    const displayName = (data.name || "Member").replace(/\s*\(ADMIN\)\s*$/i, "").trim();
+    $("routeProfileName").textContent = displayName;
+    $("routeProfileAvatar").textContent = getInitials(displayName);
+    $("routeProfileUsername").textContent = data.leetCodeUsername || "Not linked";
+    if (data.profileUrl) {
+      $("routeProfileLink").href = data.profileUrl;
+      $("routeProfileLink").hidden = false;
+    }
+    if (data.stats) {
+      $("routeProfileTotal").textContent = data.stats.total.toLocaleString();
+      $("routeProfileEasy").textContent = data.stats.easy.toLocaleString();
+      $("routeProfileMedium").textContent = data.stats.medium.toLocaleString();
+      $("routeProfileHard").textContent = data.stats.hard.toLocaleString();
+      const updated = data.statsUpdatedAt ? ` · Updated ${new Date(data.statsUpdatedAt).toLocaleString()}` : "";
+      $("routeProfileSource").textContent = `${data.statsSource || "LeetCode public profile"}${updated}`;
+    } else {
+      $("routeProfileSource").textContent = "LeetCode statistics are unavailable until the public profile can be verified.";
+    }
+  } catch (error) {
+    $("routeProfileName").textContent = "Profile unavailable";
+    $("routeProfileSource").textContent = "Profile statistics could not be loaded.";
+    $("routeProfileMessage").textContent = error.message || "Profile data could not be loaded.";
+    $("routeProfileMessage").hidden = false;
+  }
+}
+
+function restoreDashboardRoute() {
+  $("profileRoutePage").hidden = true;
+  setRoleUI();
+  if (isAdmin || isMember) showPage("overview");
+}
+
+async function loadMemberProgress(week = memberWeek) {
+  memberWeek = Math.max(1, Math.min(MAX_WEEKS, week));
+  memberProgress = await apiRequest(`/api/member/progress?week=${memberWeek}`);
+  memberWeek = memberProgress.week;
+  renderMemberProgress();
+}
+
+async function updateMemberProgress(button) {
+  if (!isAdmin || button.disabled) return;
+  button.disabled = true;
+  const status = button.dataset.status === "done" ? "blank" : "done";
+  try {
+    await apiRequest("/api/member/progress", { method: "POST", body: JSON.stringify({ week: memberWeek, kind: button.dataset.memberProgressKind, slot: Number(button.dataset.memberProgressSlot), status }) });
+    await loadMemberProgress(memberWeek);
+  } catch (error) {
+    showToast(error.message, "error");
+    button.disabled = false;
+  }
 }
 
 function clearViewerData() {
@@ -1964,7 +2248,7 @@ async function navigatePage(page) {
     setRoleUI();
     return true;
   } catch (error) {
-    setSecurityGate(error.message);
+      setSecurityGate(error.message, false, !isAdmin);
     return false;
   }
 }
@@ -1973,6 +2257,94 @@ function initializeSecurityControls() {
   const dialog = $("loginDialog");
   const formElement = $("loginForm");
   $("loginBtn").addEventListener("click", () => { $("loginError").textContent = ""; dialog.showModal(); });
+  bindGateMemberLoginButton($("gateMemberLogin"));
+  $("cancelMemberLogin").addEventListener("click", () => $("memberLoginDialog").close());
+  $("cancelMemberEmail").addEventListener("click", () => { memberEmailTarget = null; $("memberEmailDialog").close(); });
+  $("memberEmailForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const email = $("memberEmailInput").value.trim();
+    const submit = $("saveMemberEmail");
+    $("memberEmailError").textContent = "";
+    if (!email) { $("memberEmailError").textContent = "Enter the approved verified Google email."; return; }
+    submit.disabled = true;
+    await updateMemberEmailLink(email);
+    submit.disabled = false;
+  });
+  $("memberGoogleLogin").addEventListener("click", async () => {
+    const submit = $("memberGoogleLogin");
+    let google;
+    let authStage = "firebase-popup-and-id-token";
+    submit.disabled = true;
+    submit.textContent = "Connecting…";
+    $("memberLoginError").textContent = "";
+    try {
+      google = await window.memberFirebaseAuth.signIn();
+      authStage = "backend-verification-and-profile-registration";
+      console.info("[member-auth]", { stage: authStage, outcome: "started" });
+      await apiRequest("/api/member/login", { method: "POST", body: JSON.stringify({ idToken: google.idToken }) });
+      console.info("[member-auth]", { stage: authStage, outcome: "passed" });
+      authStage = "session-confirmation";
+      const sessionData = await apiRequest("/api/session");
+      if (sessionData.role !== "member") throw new Error("Member Login did not start a member-only session.");
+      console.info("[member-auth]", { stage: authStage, outcome: "passed" });
+      isAdmin = false;
+      isMember = sessionData.role === "member";
+      memberProfile = sessionData.member || null;
+      memberWeek = weekForDate(selectedCalendarDate) || 1;
+      resetSessionExpiry();
+      setRoleUI();
+      $("memberLoginDialog").close();
+      $("securityGate").hidden = true;
+      if (isMember && memberProfile) {
+        await loadSharedData();
+        const requestedProfile = location.pathname.match(/^\/profile\/([\w-]{1,100})\/?$/);
+        if (requestedProfile) await openProfileRoute(requestedProfile[1]);
+        else showPage("overview");
+        $("securityGate").hidden = true;
+      }
+    } catch (error) {
+      console.warn("[member-auth]", { stage: authStage, outcome: "failed", code: error?.code || "request-error", status: Number.isInteger(error?.status) ? error.status : undefined });
+      if (window.memberFirebaseAuth) await window.memberFirebaseAuth.signOut().catch(() => {});
+      $("memberLoginError").textContent = error.message;
+    }
+    finally { submit.disabled = false; submit.textContent = "Continue with Google"; }
+  });
+  $("memberLoginDialog").addEventListener("close", () => { $("memberLoginError").textContent = ""; });
+  $("memberPreviousWeek").addEventListener("click", () => { if (memberWeek > 1) loadMemberProgress(memberWeek - 1).catch(error => showToast(error.message, "error")); });
+  $("memberNextWeek").addEventListener("click", () => { if (memberWeek < MAX_WEEKS) loadMemberProgress(memberWeek + 1).catch(error => showToast(error.message, "error")); });
+  $("memberDashboardRetry").addEventListener("click", loadMemberPersonalDashboard);
+  $("memberLeetCodeForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const username = $("memberLeetCodeUsername").value.trim();
+    if (!username) return showToast("Enter your LeetCode username.", "error");
+    try {
+      await apiRequest("/api/member/profile", { method: "PUT", body: JSON.stringify({ leetCodeUsername: username }) });
+      await loadMemberPersonalDashboard();
+      showToast("LeetCode profile linked.");
+    } catch (error) { showToast(error.message, "error"); }
+  });
+  $("memberLogoutBtn").addEventListener("click", logoutCurrentSession);
+  $("adminSwitchMemberBtn").addEventListener("click", openMemberLoginDialog);
+  $("memberSwitchAdminBtn").addEventListener("click", () => {
+    const emailField = formElement.elements.namedItem("email");
+    if (emailField && memberProfile?.email) emailField.value = memberProfile.email;
+    $("loginError").textContent = "";
+    dialog.showModal();
+  });
+  $("adminPersonalProfileBtn").addEventListener("click", () => {
+    if (memberProfile?.id) openProfileRoute(memberProfile.id, true);
+  });
+  $("profileBackToDashboard").addEventListener("click", event => {
+    event.preventDefault();
+    history.replaceState({}, "", "/");
+    restoreDashboardRoute();
+  });
+  window.addEventListener("popstate", () => {
+    const match = location.pathname.match(/^\/profile\/([\w-]{1,100})\/?$/);
+    if (match) openProfileRoute(match[1]);
+    else restoreDashboardRoute();
+  });
+  bindGateLoginButton($("gateAdminLogin"));
   $("cancelLogin").addEventListener("click", () => dialog.close());
   $("togglePassword").addEventListener("click", event => {
     const input = $("adminPassword");
@@ -1991,8 +2363,11 @@ function initializeSecurityControls() {
     submit.textContent = "Verifying…";
     $("loginError").textContent = "";
     try {
-      await apiRequest("/api/admin/login", { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password") }) });
+      const login = await apiRequest("/api/admin/login", { method: "POST", body: JSON.stringify({ email: form.get("email"), password: form.get("password") }) });
       isAdmin = true;
+      isMember = false;
+      memberProfile = login.member || null;
+      resetSessionExpiry();
       setRoleUI();
       formElement.reset();
       $("adminPassword").type = "password";
@@ -2000,45 +2375,72 @@ function initializeSecurityControls() {
       $("loginDialog").close();
       try {
         await loadSharedData();
-        showToast("Signed in as Krish.");
+        $("securityGate").hidden = true;
+        showToast("Admin Mode is active.");
       } catch (error) {
-        if (error.status !== 404) throw error;
-        localSnapshot = loadState();
-        state = localSnapshot;
-        currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek || 1;
-        state.currentWeek = currentWeek;
-        ensureAllData();
-        $("loginDialog").close();
-        renderAll();
-        setSecurityGate("Shared data is not initialized. Import this browser's existing data to preserve it.", true);
+        if (error.status === 404) {
+          localSnapshot = loadState();
+          state = localSnapshot;
+          currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek || 1;
+          state.currentWeek = currentWeek;
+          ensureAllData();
+          renderAll();
+          setSecurityGate("Shared data is not initialized. Import this browser's existing data to preserve it.", true);
+        } else if (!isAdmin) {
+          setSecurityGate("Your admin session expired. Sign in again to continue.", false, true);
+        } else {
+          setSecurityGate(error.message);
+        }
       }
     } catch (error) { $("loginError").textContent = error.message; }
     finally { submit.disabled = false; submit.textContent = "Login & Continue"; }
   });
-  $("logoutBtn").addEventListener("click", async () => {
+  $("logoutBtn").addEventListener("click", logoutCurrentSession);
+}
+
+function openMemberLoginDialog() {
+  $("memberLoginError").textContent = "";
+  $("memberLoginDialog").showModal();
+}
+
+async function logoutCurrentSession() {
+  try {
     await apiRequest("/api/logout", { method: "POST", body: "{}" });
+    if (isMember && window.memberFirebaseAuth) await window.memberFirebaseAuth.signOut().catch(() => {});
     isAdmin = false;
+    isMember = false;
+    memberProfile = null;
+    memberProgress = null;
     sharedReady = false;
     window.location.reload();
-  });
+  } catch (error) { showToast(error.message, "error"); }
 }
 
 async function initializeApp() {
+  // Bind this view independently of the broader security-control setup so a
+  // member's navigation does not depend on unrelated login controls binding.
+  initializeMemberDashboardNavigation();
   // Do not inherit a restored scroll offset when the dashboard first opens.
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  $("securityGate").hidden = false;
   window.scrollTo(0, 0);
   const initialWeek = weekForDate(selectedCalendarDate);
   if (initialWeek) { currentWeek = initialWeek; state.currentWeek = initialWeek; }
   initializePhaseTracker();
   initializeLeetCodeActivityControls();
   initializeSecurityControls();
+  const profileRoute = location.pathname.match(/^\/profile\/([\w-]{1,100})\/?$/);
   try {
     const session = await apiRequest("/api/session");
-    isAdmin = session.authenticated;
+    isAdmin = session.role === "admin";
+    isMember = session.role === "member";
+    memberProfile = session.member || null;
+    if (isAdmin || isMember) resetSessionExpiry();
     setRoleUI();
     if (isAdmin) try {
       await loadSharedData();
       $("securityGate").hidden = true;
+      if (profileRoute) await openProfileRoute(profileRoute[1]);
     } catch (error) {
       if (error.status === 404) {
         localSnapshot = loadState();
@@ -2051,13 +2453,17 @@ async function initializeApp() {
       } else {
         setSecurityGate(error.message);
       }
+    } else if (isMember) {
+      $("securityGate").hidden = true;
+      await loadSharedData();
+      if (profileRoute) await openProfileRoute(profileRoute[1]);
+      else showPage("overview");
     } else {
       state = { members: [], weeks: {}, currentWeek };
-      const loaded = await navigatePage("overview");
-      if (loaded) $("securityGate").hidden = true;
+      setSecurityGate("Choose an account type to sign in.", false, true);
     }
   } catch (error) {
-    setSecurityGate("Secure server unavailable. Start the dashboard server; local-only mode is disabled.");
+    setSecurityGate("Secure server unavailable. Start the dashboard server; local-only mode is disabled.", false, true);
     console.error("Dashboard security initialization failed:", error.message);
   }
 }
