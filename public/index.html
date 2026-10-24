@@ -412,11 +412,11 @@
   </main>
 
   <dialog id="loginDialog" class="security-dialog">
-    <form id="loginForm">
+    <form id="loginForm" autocomplete="off">
       <h2>Admin login</h2><p>Sign in to manage shared dashboard data.</p>
-      <label>Admin email<input name="email" type="email" autocomplete="username" maxlength="254" required></label>
+      <label>Admin email<input name="email" type="email" autocomplete="off" maxlength="254" required></label>
       <label>Password
-        <span class="password-field"><input id="adminPassword" name="password" type="password" maxlength="72" autocomplete="current-password" required><button id="togglePassword" class="btn btn-light" type="button" aria-label="Show password" aria-pressed="false">Show</button></span>
+        <span class="password-field"><input id="adminPassword" name="password" type="password" maxlength="72" autocomplete="new-password" required><button id="togglePassword" class="btn btn-light" type="button" aria-label="Show password" aria-pressed="false">Show</button></span>
       </label>
       <div class="dialog-actions"><button class="btn btn-light" id="cancelLogin" type="button">Cancel</button><button class="btn btn-primary" id="loginSubmit" type="submit">Login &amp; Continue</button></div>
       <div id="loginError" class="security-error" role="alert" aria-live="polite"></div>

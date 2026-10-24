@@ -2256,7 +2256,21 @@ async function navigatePage(page) {
 function initializeSecurityControls() {
   const dialog = $("loginDialog");
   const formElement = $("loginForm");
-  $("loginBtn").addEventListener("click", () => { $("loginError").textContent = ""; dialog.showModal(); });
+  const resetAdminLoginForm = () => {
+    formElement.reset();
+    const passwordInput = $("adminPassword");
+    passwordInput.value = "";
+    passwordInput.type = "password";
+    $("togglePassword").textContent = "Show";
+    $("togglePassword").setAttribute("aria-label", "Show password");
+    $("togglePassword").setAttribute("aria-pressed", "false");
+    $("loginError").textContent = "";
+  };
+  const openAdminLoginDialog = () => {
+    resetAdminLoginForm();
+    dialog.showModal();
+  };
+  $("loginBtn").addEventListener("click", openAdminLoginDialog);
   bindGateMemberLoginButton($("gateMemberLogin"));
   $("cancelMemberLogin").addEventListener("click", () => $("memberLoginDialog").close());
   $("cancelMemberEmail").addEventListener("click", () => { memberEmailTarget = null; $("memberEmailDialog").close(); });
@@ -2325,12 +2339,7 @@ function initializeSecurityControls() {
   });
   $("memberLogoutBtn").addEventListener("click", logoutCurrentSession);
   $("adminSwitchMemberBtn").addEventListener("click", openMemberLoginDialog);
-  $("memberSwitchAdminBtn").addEventListener("click", () => {
-    const emailField = formElement.elements.namedItem("email");
-    if (emailField && memberProfile?.email) emailField.value = memberProfile.email;
-    $("loginError").textContent = "";
-    dialog.showModal();
-  });
+  $("memberSwitchAdminBtn").addEventListener("click", openAdminLoginDialog);
   $("adminPersonalProfileBtn").addEventListener("click", () => {
     if (memberProfile?.id) openProfileRoute(memberProfile.id, true);
   });
@@ -2346,6 +2355,7 @@ function initializeSecurityControls() {
   });
   bindGateLoginButton($("gateAdminLogin"));
   $("cancelLogin").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", resetAdminLoginForm);
   $("togglePassword").addEventListener("click", event => {
     const input = $("adminPassword");
     const showing = input.type === "password";
@@ -2369,9 +2379,6 @@ function initializeSecurityControls() {
       memberProfile = login.member || null;
       resetSessionExpiry();
       setRoleUI();
-      formElement.reset();
-      $("adminPassword").type = "password";
-      $("togglePassword").textContent = "Show";
       $("loginDialog").close();
       try {
         await loadSharedData();

@@ -14,7 +14,7 @@ test("frontend keeps session role distinct from the linked member profile and ex
   assert.match(script, /isMember = session\.role === "member";/);
   assert.match(script, /isMember = sessionData\.role === "member";/);
   assert.match(script, /adminSwitchMemberBtn"\)\.addEventListener\("click", openMemberLoginDialog\)/);
-  assert.match(script, /memberSwitchAdminBtn"\)\.addEventListener\("click"/);
+  assert.match(script, /memberSwitchAdminBtn"\)\.addEventListener\("click", openAdminLoginDialog\)/);
   assert.match(html, /id="adminSwitchMemberBtn"/);
   assert.match(html, /id="memberSwitchAdminBtn"/);
   assert.match(html, /Member Mode/);
@@ -22,6 +22,19 @@ test("frontend keeps session role distinct from the linked member profile and ex
   assert.match(script, /\$\("memberHome"\)\.hidden = true/);
   assert.match(script, /apiRequest\(isAdmin \? "\/api\/data" : "\/api\/member\/shared-data"\)/);
   assert.match(script, /if \(requestedProfile\) await openProfileRoute\(requestedProfile\[1\]\);\s*else showPage\("overview"\)/);
+});
+
+test("admin login is cleared before display and opts out of credential autofill", () => {
+  const script = fs.readFileSync(path.join(root, "script.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(html, /<form id="loginForm" autocomplete="off">/);
+  assert.match(html, /id="adminPassword"[^>]*autocomplete="new-password"/);
+  assert.match(script, /const resetAdminLoginForm = \(\) => \{/);
+  assert.match(script, /passwordInput\.value = ""/);
+  assert.match(script, /dialog\.addEventListener\("close", resetAdminLoginForm\)/);
+  assert.doesNotMatch(script, /memberProfile\?\.email\) emailField\.value/);
+  assert.doesNotMatch(script, /localStorage\.(?:getItem|setItem)\([^\n]*password/i);
+  assert.doesNotMatch(script, /sessionStorage\.(?:getItem|setItem)\([^\n]*password/i);
 });
 
 test("member shared dashboard uses safe read-only data and page reads while writes stay admin-only", () => {
