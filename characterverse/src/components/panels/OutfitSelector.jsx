@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Check, Eye, Crown, Shield, Swords, RotateCcw } from 'lucide-react';
+import { Sparkles, Check, Eye, Crown, Shield, Swords, RotateCcw, Lock, Coins } from 'lucide-react';
 import { useStudio } from '../../context/StudioContext';
 import { getRarityConfig } from '../../config/rarity';
 
@@ -9,7 +9,7 @@ const OUTFIT_ICON_MAP = {
   'outfit-royal': Crown,
 };
 
-function OutfitCard({ outfit, isEquipped, isPreviewing, onPreview, onEquip }) {
+function OutfitCard({ outfit, isEquipped, isUnlocked, isLocked, isPreviewing, onPreview, onEquip, onUnlock }) {
   const rarity = getRarityConfig(outfit.rarity);
   const Icon = OUTFIT_ICON_MAP[outfit.id] || Sparkles;
 
@@ -22,6 +22,8 @@ function OutfitCard({ outfit, isEquipped, isPreviewing, onPreview, onEquip }) {
           ? 'bg-gradient-to-b from-[#fbf8fe] to-[#f4edf8] border-[#7544ae] ring-2 ring-[#7544ae]/40 shadow-sm'
           : isEquipped
           ? 'bg-emerald-50 border-emerald-300'
+          : isLocked
+          ? 'bg-slate-50/80 border-slate-200 hover:border-amber-300'
           : 'bg-white border-[#dbcee2] hover:bg-[#f8f4fb] hover:border-[#ba9fcb]',
       ].join(' ')}
       style={isPreviewing ? { boxShadow: `0 0 16px -4px ${rarity.glowColor}` } : {}}
@@ -39,21 +41,31 @@ function OutfitCard({ outfit, isEquipped, isPreviewing, onPreview, onEquip }) {
           </span>
         </div>
 
-        {isEquipped ? (
-          <span className="flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full">
-            <Check className="w-2.5 h-2.5" />
-            EQUIPPED
-          </span>
-        ) : isPreviewing ? (
-          <span className="flex items-center gap-1 text-[10px] font-bold bg-[#f4edf8] text-[#7544ae] border border-[#dbcee2] px-2 py-0.5 rounded-full animate-pulse">
-            <Eye className="w-2.5 h-2.5" />
-            PREVIEWING
-          </span>
-        ) : (
-          <span className="text-[10px] font-bold text-[#766c83] bg-[#f3edf7] px-2 py-0.5 rounded-md border border-[#dbcee2]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md">
             {outfit.price}
           </span>
-        )}
+          {isEquipped ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full">
+              <Check className="w-2.5 h-2.5" />
+              EQUIPPED
+            </span>
+          ) : isLocked ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-slate-200/80 text-slate-700 border border-slate-300 px-2 py-0.5 rounded-full">
+              <Lock className="w-2.5 h-2.5" />
+              LOCKED
+            </span>
+          ) : isPreviewing ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold bg-[#f4edf8] text-[#7544ae] border border-[#dbcee2] px-2 py-0.5 rounded-full animate-pulse">
+              <Eye className="w-2.5 h-2.5" />
+              PREVIEWING
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+              UNLOCKED
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Outfit Title & Icon Header */}
@@ -132,6 +144,18 @@ function OutfitCard({ outfit, isEquipped, isPreviewing, onPreview, onEquip }) {
             <Check className="w-3.5 h-3.5" />
             <span>Equipped</span>
           </div>
+        ) : isLocked ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnlock();
+            }}
+            className="flex-1 py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:brightness-105 active:scale-95 text-white text-xs font-black shadow-md transition-all flex items-center justify-center gap-1.5 border border-amber-400/30"
+            title={`Unlock ${outfit.name} for ${outfit.priceCoins} coins`}
+          >
+            <Coins className="w-3.5 h-3.5" />
+            <span>Unlock ({outfit.priceCoins} Coins)</span>
+          </button>
         ) : (
           <button
             onClick={(e) => {
@@ -153,10 +177,12 @@ function OutfitCard({ outfit, isEquipped, isPreviewing, onPreview, onEquip }) {
 export default function OutfitSelector() {
   const {
     outfits,
+    ownedOutfitIds = ['outfit-default'],
     equippedOutfits,
     previewOutfitId,
     previewOutfit,
     equipOutfit,
+    unlockOutfit,
     clearOutfitPreview,
     selectedCharacterId,
     selectedCharacter,
@@ -164,6 +190,7 @@ export default function OutfitSelector() {
 
   const activeEquippedOutfitId = equippedOutfits[selectedCharacterId] || 'outfit-default';
   const previewingOutfit = outfits.find((o) => o.id === previewOutfitId);
+  const isPreviewingUnlocked = previewingOutfit ? Boolean(previewingOutfit.isFree || ownedOutfitIds.includes(previewingOutfit.id)) : false;
 
   return (
     <div className="space-y-4">
@@ -197,15 +224,26 @@ export default function OutfitSelector() {
             <div className="text-xs truncate">
               <span className="text-[#766c83]">Previewing: </span>
               <span className="font-bold text-[#261b35]">{previewingOutfit.name}</span>
+              <span className="text-[11px] text-[#766c83] ml-1.5">({previewingOutfit.price})</span>
             </div>
           </div>
-          <button
-            onClick={() => equipOutfit(previewingOutfit)}
-            className="flex-shrink-0 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white text-[11px] font-bold px-3 py-1 rounded-lg shadow-sm transition-all flex items-center gap-1 border border-emerald-400/30"
-          >
-            <Check className="w-3 h-3" />
-            <span>Equip Now</span>
-          </button>
+          {isPreviewingUnlocked ? (
+            <button
+              onClick={() => equipOutfit(previewingOutfit)}
+              className="flex-shrink-0 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white text-[11px] font-bold px-3 py-1 rounded-lg shadow-sm transition-all flex items-center gap-1 border border-emerald-400/30"
+            >
+              <Check className="w-3 h-3" />
+              <span>Equip Now</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => unlockOutfit(previewingOutfit.id)}
+              className="flex-shrink-0 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:brightness-105 text-white text-[11px] font-black px-3 py-1 rounded-lg shadow-sm transition-all flex items-center gap-1 border border-amber-400/40"
+            >
+              <Coins className="w-3 h-3" />
+              <span>Unlock ({previewingOutfit.priceCoins} Coins)</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -214,15 +252,20 @@ export default function OutfitSelector() {
         {outfits.map((outfit) => {
           const isEquipped = activeEquippedOutfitId === outfit.id;
           const isPreviewing = previewOutfitId === outfit.id;
+          const isUnlocked = Boolean(outfit.isFree || ownedOutfitIds.includes(outfit.id));
+          const isLocked = !isUnlocked;
 
           return (
             <OutfitCard
               key={outfit.id}
               outfit={outfit}
               isEquipped={isEquipped}
+              isUnlocked={isUnlocked}
+              isLocked={isLocked}
               isPreviewing={isPreviewing}
               onPreview={() => previewOutfit(outfit)}
               onEquip={() => equipOutfit(outfit)}
+              onUnlock={() => unlockOutfit(outfit.id)}
             />
           );
         })}

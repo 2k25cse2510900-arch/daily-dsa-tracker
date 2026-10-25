@@ -9,6 +9,11 @@ const CHARACTER_PRICES = Object.freeze({
   "nebula-nova": 2000
 });
 const OUTFIT_IDS = new Set(["outfit-default", "outfit-warrior", "outfit-royal"]);
+const OUTFIT_PRICES = Object.freeze({
+  "outfit-default": 0,
+  "outfit-warrior": 250,
+  "outfit-royal": 500
+});
 const COSMETIC_IDS = new Set([
   "head-blitz-visor", "head-headphones-dj", "head-crown-astral", "head-halo-nova", "head-cyber-horns", "head-space-helmet",
   "face-cyber-visor", "face-punk-goggles", "face-rebel-shades", "face-ninja-mask", "face-cyber-plate",
@@ -36,7 +41,7 @@ function starterProfile(memberId, now = new Date()) {
     inventory: {
       characters: [DEFAULT_CHARACTER_ID],
       cosmetics: [...COSMETIC_IDS],
-      outfits: [...OUTFIT_IDS],
+      outfits: ["outfit-default"],
       vehicles: [],
       vehicleUpgrades: []
     },
@@ -187,6 +192,51 @@ async function purchase(collection, memberId, kind, itemId, now = new Date(), le
     return { error: "INSUFFICIENT_COINS" };
   }
 
+  if (kind === "outfit") {
+    const price = OUTFIT_PRICES[itemId];
+    if (!OUTFIT_IDS.has(itemId) || itemId === "outfit-default" || !Number.isSafeInteger(price)) {
+      return { error: "UNKNOWN_ITEM" };
+    }
+    await ensureProfile(collection, memberId, now);
+    const transactionId = `characterverse:purchase:${memberId}:${kind}:${itemId}`;
+    const ledgerEntry = {
+      _id: transactionId, transactionId, memberId, transactionType: "purchase",
+      category: kind, amount: -price, sourceId: itemId, reason: `Purchased outfit ${itemId}`,
+      status: "pending", createdAt: now
+    };
+    if (ledger) await ledger.updateOne({ _id: transactionId }, { $setOnInsert: ledgerEntry }, { upsert: true });
+    const filter = { _id: memberId, "wallet.coins": { $gte: price }, "inventory.outfits": { $ne: itemId } };
+
+    const existing = await collection.findOne({ _id: memberId });
+    const selectedCharId = existing?.appearance?.selectedCharacterId || DEFAULT_CHARACTER_ID;
+
+    const result = await collection.findOneAndUpdate(
+      filter,
+      {
+        $inc: { "wallet.coins": -price },
+        $addToSet: { "inventory.outfits": itemId, walletTransactionKeys: transactionId },
+        $set: { [`appearance.equippedOutfits.${selectedCharId}`]: itemId, updatedAt: now }
+      },
+      { returnDocument: "after" }
+    );
+    if (result) {
+      if (ledger) {
+        await ledger.updateOne({ _id: transactionId }, { $set: { status: "applied", appliedAt: now } });
+      }
+      return { profile: result };
+    }
+    const current = await collection.findOne({ _id: memberId }, { projection: { wallet: 1, inventory: 1, walletTransactionKeys: 1, appearance: 1 } });
+    if (current?.inventory?.outfits?.includes(itemId)) {
+      if (ledger && current.walletTransactionKeys?.includes(transactionId)) {
+        await ledger.updateOne({ _id: transactionId }, { $set: { status: "applied", appliedAt: now } });
+        return { profile: current };
+      }
+      return { error: "ALREADY_OWNED" };
+    }
+    if (ledger) await ledger.deleteOne({ _id: transactionId, status: "pending" });
+    return { error: "INSUFFICIENT_COINS" };
+  }
+
   const vehicle = kind === "vehicle" ? VEHICLES[itemId] : Object.values(VEHICLES).find(candidate => candidate.upgradeId === itemId);
   const price = kind === "vehicle" ? vehicle?.price : vehicle?.upgradePrice;
   const inventoryField = kind === "vehicle" ? "inventory.vehicles" : "inventory.vehicleUpgrades";
@@ -238,4 +288,4 @@ async function purchase(collection, memberId, kind, itemId, now = new Date(), le
   return { error: "INSUFFICIENT_COINS" };
 }
 
-module.exports = { STARTER_COINS, VEHICLES, CHARACTER_PRICES, starterProfile, publicProfile, ensureProfile, validateAppearance, saveAppearance, purchase };
+module.exports = { STARTER_COINS, VEHICLES, CHARACTER_PRICES, OUTFIT_PRICES, starterProfile, publicProfile, ensureProfile, validateAppearance, saveAppearance, purchase };

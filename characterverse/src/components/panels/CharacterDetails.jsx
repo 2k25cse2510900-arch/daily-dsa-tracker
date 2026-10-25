@@ -102,10 +102,12 @@ export default function CharacterDetails() {
     setActiveTab,
     setActiveWardrobeCategory,
     outfits,
+    ownedOutfitIds = ['outfit-default'],
     equippedOutfits,
     previewOutfitId,
     previewOutfit,
     equipOutfit,
+    unlockOutfit,
     clearOutfitPreview,
   } = useStudio();
 
@@ -192,13 +194,13 @@ export default function CharacterDetails() {
           <p className="text-[11px] text-[#766c83] mt-2 italic">{selectedCharacter.quote}</p>
         </div>
 
-        {/* 3 Coordinated Outfits Selector */}
+        {/* Hero Outfit Section */}
         <div className="bg-[#fbf9fc] rounded-2xl p-3 border border-[#dbcee2] space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <h3 className="text-[11px] font-bold text-[#261b35] uppercase tracking-wider">
-                Hero Outfits (3 Available)
+                Hero Outfit (3 Options)
               </h3>
             </div>
             {previewOutfitId ? (
@@ -211,7 +213,7 @@ export default function CharacterDetails() {
                 <span>Revert</span>
               </button>
             ) : (
-              <span className="text-[10px] text-[#766c83] font-medium">1-Click Select</span>
+              <span className="text-[10px] text-[#766c83] font-medium">Select &amp; Unlock</span>
             )}
           </div>
 
@@ -220,6 +222,8 @@ export default function CharacterDetails() {
             {outfits?.map((outfit) => {
               const isOutfitEquipped = activeEquippedOutfitId === outfit.id;
               const isOutfitPreviewing = previewOutfitId === outfit.id;
+              const isOutfitUnlocked = Boolean(outfit.isFree || ownedOutfitIds.includes(outfit.id));
+              const isOutfitLocked = !isOutfitUnlocked;
               const Icon = OUTFIT_ICON_MAP[outfit.id] || Sparkles;
 
               return (
@@ -227,14 +231,16 @@ export default function CharacterDetails() {
                   key={outfit.id}
                   onClick={() => previewOutfit(outfit)}
                   className={[
-                    'p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-between gap-1.5 relative overflow-hidden group select-none',
+                    'p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-between gap-1.5 relative overflow-hidden group select-none',
                     isOutfitPreviewing
                       ? 'bg-gradient-to-b from-[#fbf8fe] to-[#f4edf8] border-[#7544ae] ring-2 ring-[#7544ae]/50 shadow-sm scale-[1.02]'
                       : isOutfitEquipped
                       ? 'bg-emerald-50 border-emerald-300 shadow-xs'
+                      : isOutfitLocked
+                      ? 'bg-slate-50 border-slate-200 hover:border-amber-300'
                       : 'bg-white border-[#dbcee2] hover:bg-[#f8f4fb] hover:border-[#ba9fcb]',
                   ].join(' ')}
-                  title={`${outfit.name}: Click to Preview on 3D turntable`}
+                  title={`${outfit.name}: Click to Preview in 3D`}
                 >
                   {/* Top: Icon + Name */}
                   <div
@@ -248,7 +254,12 @@ export default function CharacterDetails() {
                   </div>
 
                   <span className="text-[11px] font-bold text-[#261b35] block truncate w-full leading-tight">
-                    {outfit.name.replace(' (free)', '')}
+                    {outfit.name}
+                  </span>
+
+                  {/* Price */}
+                  <span className="text-[9.5px] font-bold text-amber-900 bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 rounded-md">
+                    {outfit.price}
                   </span>
 
                   {/* Color dots preview */}
@@ -262,51 +273,100 @@ export default function CharacterDetails() {
                     ))}
                   </div>
 
-                  {/* Status Indicator / Badge */}
+                  {/* Status Badge */}
                   {isOutfitEquipped ? (
-                    <span className="w-full text-[8.5px] font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 py-0.5 rounded-md uppercase tracking-wider flex items-center justify-center gap-0.5">
-                      <Check className="w-2.5 h-2.5" />
+                    <span className="w-full text-[8px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 py-0.5 rounded-md uppercase tracking-wider flex items-center justify-center gap-0.5">
+                      <Check className="w-2 h-2" />
                       EQUIPPED
                     </span>
-                  ) : isOutfitPreviewing ? (
-                    <span className="w-full text-[8.5px] font-extrabold text-[#7544ae] bg-[#f4edf8] border border-[#dbcee2] py-0.5 rounded-md uppercase tracking-wider flex items-center justify-center gap-0.5">
-                      <Eye className="w-2.5 h-2.5" />
-                      PREVIEW
+                  ) : isOutfitLocked ? (
+                    <span className="w-full text-[8px] font-black text-slate-600 bg-slate-200/80 border border-slate-300 py-0.5 rounded-md uppercase tracking-wider flex items-center justify-center gap-0.5">
+                      <Lock className="w-2 h-2" />
+                      LOCKED
                     </span>
                   ) : (
-                    <span className="w-full text-[9px] font-bold text-[#766c83] bg-[#f3edf7] border border-[#dbcee2] py-0.5 rounded-md">
-                      {outfit.price}
+                    <span className="w-full text-[8px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 py-0.5 rounded-md uppercase tracking-wider flex items-center justify-center gap-0.5">
+                      UNLOCKED
                     </span>
+                  )}
+
+                  {/* Direct Card Action Button */}
+                  {isOutfitEquipped ? (
+                    <div className="w-full py-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-center gap-0.5">
+                      ✓ Active
+                    </div>
+                  ) : isOutfitLocked ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        unlockOutfit(outfit.id);
+                      }}
+                      className="w-full py-1 text-[9px] font-black text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:brightness-105 active:scale-95 rounded-lg shadow-xs flex items-center justify-center gap-0.5"
+                      title={`Unlock ${outfit.name} for ${outfit.priceCoins} coins`}
+                    >
+                      <Coins className="w-2.5 h-2.5" />
+                      Unlock
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        equipOutfit(outfit);
+                      }}
+                      className="w-full py-1 text-[9px] font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 active:scale-95 rounded-lg shadow-xs flex items-center justify-center gap-0.5"
+                      title={`Equip ${outfit.name} outfit`}
+                    >
+                      <Check className="w-2.5 h-2.5" />
+                      Equip
+                    </button>
                   )}
                 </div>
               );
             })}
           </div>
 
-          {/* Action Row below cards: Instant Equip or Status */}
+          {/* Action Row below cards: Preview Banner or Status */}
           {previewOutfitId ? (
             (() => {
               const previewed = outfits?.find((o) => o.id === previewOutfitId);
               if (!previewed) return null;
+              const isPrevUnlocked = Boolean(previewed.isFree || ownedOutfitIds.includes(previewed.id));
+              const isPrevEquipped = activeEquippedOutfitId === previewed.id;
+
               return (
                 <div className="space-y-1.5 pt-0.5">
-                  <button
-                    onClick={() => equipOutfit(previewed)}
-                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 active:scale-98 text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition-all flex items-center justify-center gap-1.5 border border-emerald-400/30"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Equip {previewed.name.replace(' (free)', '')} Outfit</span>
-                  </button>
+                  {isPrevEquipped ? (
+                    <div className="w-full py-2 px-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{previewed.name} Outfit is Equipped</span>
+                    </div>
+                  ) : isPrevUnlocked ? (
+                    <button
+                      onClick={() => equipOutfit(previewed)}
+                      className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 active:scale-98 text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition-all flex items-center justify-center gap-1.5 border border-emerald-400/30"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Equip {previewed.name} Outfit (Free)</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => unlockOutfit(previewed.id)}
+                      className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:brightness-105 active:scale-98 text-white text-xs font-black shadow-md shadow-amber-950/20 transition-all flex items-center justify-center gap-1.5 border border-amber-400/40"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Unlock {previewed.name} Outfit ({previewed.priceCoins} Coins)</span>
+                    </button>
+                  )}
                   <p className="text-[10px] text-[#766c83] text-center">
-                    Previewing gear on 3D turntable. Click above to permanently equip.
+                    Previewing {previewed.name} on 3D turntable.
                   </p>
                 </div>
               );
             })()
           ) : (
             <div className="flex items-center justify-between text-[10px] text-[#766c83] bg-[#f8f4fb] px-2.5 py-1.5 rounded-xl border border-[#dbcee2]">
-              <span>Current: <strong className="text-[#261b35] capitalize">{activeEquippedOutfitId?.replace('outfit-', '') || 'Custom'}</strong></span>
-              <span className="text-[#766c83]">Click any outfit to test in 3D</span>
+              <span>Current Outfit: <strong className="text-[#261b35] capitalize">{activeEquippedOutfitId?.replace('outfit-', '') || 'Default'}</strong></span>
+              <span className="text-[#766c83]">Click outfit to preview in 3D</span>
             </div>
           )}
         </div>

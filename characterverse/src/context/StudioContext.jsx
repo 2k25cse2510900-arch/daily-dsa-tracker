@@ -431,6 +431,10 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   const equipOutfit = (outfit) => {
     if (!outfit) return;
+    if (!outfit.isFree && !ownedOutfitIds.includes(outfit.id)) {
+      showToast(`Unlock ${outfit.name} (${outfit.priceCoins} coins) before equipping!`, 'error');
+      return;
+    }
     setEquippedOutfits((prev) => ({
       ...prev,
       [selectedCharacterId]: outfit.id,
@@ -453,6 +457,33 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     }));
     setPreviewOutfitId(null);
     showToast(`Equipped ${outfit.name} outfit!`, 'success');
+  };
+
+  const unlockOutfit = async (outfitId) => {
+    const outfit = OUTFITS.find((o) => o.id === outfitId);
+    if (!outfit) {
+      showToast('Unknown outfit.', 'error');
+      return;
+    }
+    if (outfit.isFree || ownedOutfitIds.includes(outfitId)) {
+      showToast(`You already own the ${outfit.name} outfit!`, 'info');
+      return;
+    }
+    const price = outfit.priceCoins || (outfitId === 'outfit-warrior' ? 250 : outfitId === 'outfit-royal' ? 500 : 0);
+    if (coins < price) {
+      showToast(`Insufficient coins! You need ${price} coins for ${outfit.name} (have ${coins.toLocaleString()}).`, 'error');
+      return;
+    }
+    try {
+      const updatedProfile = await characterVerseRequest(`/api/characterverse/me/purchases/outfit/${encodeURIComponent(outfitId)}`, {
+        method: 'POST',
+        body: '{}',
+      });
+      applyServerProfile(updatedProfile);
+      showToast(`Unlocked the ${outfit.name} outfit for ${price} coins!`, 'success');
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
   };
 
   const clearOutfitPreview = () => {
@@ -778,6 +809,7 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
         previewOutfitId,
         previewOutfit,
         equipOutfit,
+        unlockOutfit,
         clearOutfitPreview,
 
         // Color Customizer

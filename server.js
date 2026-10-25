@@ -661,7 +661,7 @@ app.put("/api/characterverse/me/appearance", memberOnly, async (req, res) => {
 
 app.post("/api/characterverse/me/purchases/:kind/:itemId", memberOnly, async (req, res) => {
   const { kind, itemId } = req.params;
-  if (!["vehicle", "upgrade", "character"].includes(kind) || !/^[a-z0-9-]{1,80}$/.test(itemId)) return res.status(400).json({ error: "Unknown CharacterVerse item." });
+  if (!["vehicle", "upgrade", "character", "outfit"].includes(kind) || !/^[a-z0-9-]{1,80}$/.test(itemId)) return res.status(400).json({ error: "Unknown CharacterVerse item." });
   try {
     const result = await purchaseCharacterVerseItem(db.collection("characterVerseProfiles"), req.member.id, kind, itemId, new Date(), db.collection("characterVerseRewardLedger"));
     if (result.error === "UNKNOWN_ITEM") return res.status(404).json({ error: "CharacterVerse item was not found." });

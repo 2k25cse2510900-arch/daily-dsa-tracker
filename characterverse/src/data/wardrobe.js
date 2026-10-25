@@ -25,10 +25,12 @@ export const WARDROBE_CATEGORIES = [
 export const OUTFITS = [
   {
     id: 'outfit-default',
-    name: 'Default (free)',
+    name: 'Default',
     badge: 'Standard',
     rarity: 'COMMON',
     price: 'Free',
+    priceCoins: 0,
+    isFree: true,
     description: 'Original tournament battle gear with factory textures.',
     equipment: {
       head: null,
@@ -52,7 +54,9 @@ export const OUTFITS = [
     name: 'Warrior',
     badge: 'Combat Set',
     rarity: 'EPIC',
-    price: 'Unlocked',
+    price: '250 Coins',
+    priceCoins: 250,
+    isFree: false,
     description: 'Crimson battle armor, twin plasma cyber-horns, heavy titan cuirass, and twin crossed katanas.',
     equipment: {
       head: 'head-cyber-horns',
@@ -76,7 +80,9 @@ export const OUTFITS = [
     name: 'Royal',
     badge: 'Regalia Set',
     rarity: 'LEGENDARY',
-    price: 'Unlocked',
+    price: '500 Coins',
+    priceCoins: 500,
+    isFree: false,
     description: 'Astral golden spiked crown, ceremonial champion satin cape, star reactor core, and sunforged gold armor.',
     equipment: {
       head: 'head-crown-astral',
