@@ -383,7 +383,13 @@ app.get("/api/profile/:memberId", async (req, res, next) => {
     const profileRecord = username ? await db.collection("leetcodeProfiles").findOne({ _id: memberId, username }, { projection: { stats: 1, status: 1, lastFetchedAt: 1 } }) : null;
     const rawStats = profileRecord?.status === "Success" ? profileRecord.stats : null;
     const stats = publicSolvedStats(rawStats);
-    const cvDoc = await db.collection("characterVerseProfiles").findOne({ _id: memberId }, { projection: { appearance: 1 } });
+    // Character appearance is account-private. A group member may read another
+    // member's public progress profile, but never their saved CharacterVerse
+    // customization.
+    const mayViewCharacterAppearance = req.session?.memberId === memberId;
+    const cvDoc = mayViewCharacterAppearance
+      ? await ensureCharacterVerseProfile(db.collection("characterVerseProfiles"), memberId)
+      : null;
     res.json({
       id: memberId,
       name: member?.name || personal?.displayName || "Member",
@@ -1171,15 +1177,19 @@ function startLeetCodeActivityScheduler() {
 // CharacterVerse is a separately built client application. Its assets remain
 // public, while its entry document and every data operation require a member
 // session. The API remains the authorization boundary.
-app.use("/characterverse", express.static(path.join(__dirname, "characterverse", "dist"), { index: false, maxAge: production ? "1h" : 0 }));
+// Render deploys tracked source files, not ignored Vite output directories.
+// `vercel-build` synchronizes those artifacts into public/ for every host.
+const characterVersePublicDir = path.join(__dirname, "public", "characterverse");
+const characterVerseEmbedPublicDir = path.join(__dirname, "public", "characterverse-embed");
+app.use("/characterverse", express.static(characterVersePublicDir, { index: false, maxAge: production ? "1h" : 0 }));
 app.get(["/characterverse", "/characterverse/"], memberOnly, (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.sendFile(path.join(__dirname, "characterverse", "dist", "index.html"));
+  res.sendFile(path.join(characterVersePublicDir, "index.html"));
 });
 // The member dashboard mounts this bundle directly in a Shadow DOM. Keeping
 // the assets separate preserves CharacterVerse's standalone development build
 // without exposing it as a second member-facing route.
-app.use("/characterverse-embed", express.static(path.join(__dirname, "characterverse", "dist-embed"), { index: false, maxAge: production ? "1h" : 0 }));
+app.use("/characterverse-embed", express.static(characterVerseEmbedPublicDir, { index: false, maxAge: production ? "1h" : 0 }));
 
 app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
 app.get("/index.html", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });

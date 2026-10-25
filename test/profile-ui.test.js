@@ -39,3 +39,16 @@ test("profile route presents four fetched-or-unavailable statistics and a dashbo
   assert.match(script, /LeetCode statistics are unavailable/);
   assert.match(script, /history\.replaceState\(\{\}, "", "\/"\)/);
 });
+
+test("self profile opens CharacterVerse at its canonical route and surfaces actual viewer failures", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const script = fs.readFileSync(path.join(root, "script.js"), "utf8");
+
+  assert.match(html, /id="routeProfileCharacterMount"/);
+  assert.match(html, /id="routeProfileCharacterStatus"/);
+  assert.doesNotMatch(html, /3D hero preview|🛡️/);
+  assert.match(script, /characterBtn\.href = `\/characterverse\/\?returnTo=/);
+  assert.match(script, /Loading your saved 3D character model/);
+  assert.match(script, /The 3D character model could not load:/);
+  assert.match(script, /!data\.characterVerse\?\.appearance/);
+});

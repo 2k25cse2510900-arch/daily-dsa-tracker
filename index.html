@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#102a43">
   <meta name="description" content="DSA group daily submissions and weekly concept tracker">
   <title>DSA Admin Dashboard</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div class="app-shell">
@@ -474,9 +474,8 @@
           <div class="leetcode-profile-portrait-col">
             <div class="leetcode-profile-portrait-stage">
               <div id="routeProfileCharacterMount" class="leetcode-profile-character-mount" aria-label="3D Character Avatar"></div>
-              <div id="routeProfileCharacterFallback" class="portrait-stage-fallback" hidden>
-                <div class="portrait-fallback-icon">🛡️</div>
-                <p class="portrait-fallback-text">3D hero preview</p>
+              <div id="routeProfileCharacterFallback" class="portrait-stage-fallback" hidden role="status">
+                <p id="routeProfileCharacterStatus" class="portrait-fallback-text">Character model is loading...</p>
               </div>
             </div>
           </div>
@@ -517,9 +516,9 @@
   <input type="file" id="restoreFile" accept=".json,application/json" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="activity-date.js"></script>
-  <script src="firebase-client.js"></script>
+  <script src="/activity-date.js"></script>
+  <script src="/firebase-client.js"></script>
   <script src="/characterverse-embed/characterverse-embed.js"></script>
-  <script src="script.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>

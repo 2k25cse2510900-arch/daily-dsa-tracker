@@ -57,8 +57,8 @@ test("disabled self-registration rejects a verified email outside the configured
 
 test("Firebase client facade loads synchronously before member handlers and uses modular SDK APIs", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
-  const facadeScript = html.indexOf('<script src="firebase-client.js"></script>');
-  const handlersScript = html.indexOf('<script src="script.js"></script>');
+  const facadeScript = html.indexOf('<script src="/firebase-client.js"></script>');
+  const handlersScript = html.indexOf('<script src="/script.js"></script>');
   const clientSource = fs.readFileSync(path.join(__dirname, "..", "firebase-client.js"), "utf8");
   assert.notEqual(facadeScript, -1);
   assert.ok(facadeScript < handlersScript);

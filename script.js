@@ -2280,6 +2280,12 @@ async function openProfileRoute(memberId, pushHistory = false) {
   const routeFallback = $("routeProfileAvatar");
   routeFallback.hidden = false;
   const characterBtn = $("routeProfileCharacterBtn");
+  const portraitFallback = $("routeProfileCharacterFallback");
+  const portraitStatus = $("routeProfileCharacterStatus");
+  const showPortraitStatus = message => {
+    if (portraitStatus) portraitStatus.textContent = message;
+    if (portraitFallback) portraitFallback.hidden = false;
+  };
   if (characterBtn) characterBtn.hidden = true;
   try {
     const data = await apiRequest(`/api/profile/${encodeURIComponent(memberId)}`);
@@ -2303,11 +2309,14 @@ async function openProfileRoute(memberId, pushHistory = false) {
     }
     const isSelf = isMember && memberProfile?.id === memberId;
     if (isSelf && characterBtn) {
-      characterBtn.href = `/characterverse?returnTo=${encodeURIComponent('/profile/' + memberId)}`;
+      characterBtn.href = `/characterverse/?returnTo=${encodeURIComponent('/profile/' + memberId)}`;
       characterBtn.hidden = false;
     }
-    const portraitFallback = $("routeProfileCharacterFallback");
-    if (portraitFallback) portraitFallback.hidden = false;
+    if (!data.characterVerse?.appearance) {
+      showPortraitStatus("Character preview is available only to the profile owner.");
+      return;
+    }
+    showPortraitStatus("Loading your saved 3D character model...");
     if (window.CharacterVerseEmbed?.mountCharacterAvatar && routeMount) {
       try {
         routeAvatarInstance = window.CharacterVerseEmbed.mountCharacterAvatar(routeMount, {
@@ -2317,13 +2326,15 @@ async function openProfileRoute(memberId, pushHistory = false) {
           onReady: () => {
             if (portraitFallback) portraitFallback.hidden = true;
           },
-          onError: () => {
-            if (portraitFallback) portraitFallback.hidden = false;
+          onError: (error) => {
+            showPortraitStatus(`The 3D character model could not load: ${error?.message || "unknown viewer error"}`);
           }
         });
       } catch {
-        if (portraitFallback) portraitFallback.hidden = false;
+        showPortraitStatus("The 3D character viewer could not start. Reload the profile and try again.");
       }
+    } else {
+      showPortraitStatus("The 3D character viewer bundle is unavailable. Reload the profile and try again.");
     }
   } catch (error) {
     $("routeProfileName").textContent = "Profile unavailable";
