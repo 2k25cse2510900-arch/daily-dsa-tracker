@@ -13,7 +13,7 @@ export const BRANDING = {
     coins: {
       name: "Gold Coins",
       short: "Coins",
-      amount: 3250,
+      amount: 0,
       icon: "Coins",
     },
     gems: {

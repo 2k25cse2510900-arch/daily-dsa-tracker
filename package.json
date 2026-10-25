@@ -8,6 +8,7 @@
     "dev": "node --watch server.js",
     "vercel-build": "npm --prefix characterverse run build && npm --prefix characterverse run build:embed && node scripts/prepare-vercel-assets.js",
     "diagnose-mongodb": "node scripts/diagnose-mongodb.js",
+    "characterverse:rewards:report": "node scripts/characterverse-rewards-report.js",
     "provision-admin": "node scripts/provision-admin.js",
     "test": "node --test",
     "characterverse:dev": "npm --prefix characterverse run dev",

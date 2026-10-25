@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Sparkles, Zap, ArrowRight, Check, Eye } from 'lucide-react';
+import { Search, Sparkles, Zap, ArrowRight, Check, Eye, Lock } from 'lucide-react';
 import { useStudio } from '../../context/StudioContext';
 import { getRarityConfig } from '../../config/rarity';
 
@@ -10,6 +10,8 @@ export default function CharacterRosterView() {
     selectCharacter,
     equippedCharacterId,
     equipCurrentCharacter,
+    ownedCharacterIds = ['buster-blitz'],
+    unlockCharacter,
     setActiveTab,
     showToast,
   } = useStudio();
@@ -91,6 +93,7 @@ export default function CharacterRosterView() {
           const rarity = getRarityConfig(char.rarity);
           const isSelected = selectedCharacterId === char.id;
           const isEquipped = equippedCharacterId === char.id;
+          const isOwned = ownedCharacterIds.includes(char.id);
 
           return (
             <div
@@ -106,12 +109,20 @@ export default function CharacterRosterView() {
               {/* Card top banner: badge & hero title */}
               <div>
                 <div className="flex items-center justify-between gap-2 mb-4">
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-lg border ${rarity.badgeClass}`}
-                  >
-                    <span className="w-2 h-2 rounded-full" style={{ background: rarity.accentHex }} />
-                    {rarity.label.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-lg border ${rarity.badgeClass}`}
+                    >
+                      <span className="w-2 h-2 rounded-full" style={{ background: rarity.accentHex }} />
+                      {rarity.label.toUpperCase()}
+                    </span>
+                    {!isOwned && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-lg">
+                        <Lock className="w-3 h-3 text-amber-600" />
+                        2,000 Coins
+                      </span>
+                    )}
+                  </div>
 
                   {isEquipped && (
                     <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 px-2.5 py-1 rounded-lg">
@@ -170,13 +181,22 @@ export default function CharacterRosterView() {
               </div>
 
               {/* Card Action Buttons */}
-              <div className="pt-2 flex items-center gap-2">
+              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                {!isOwned && (
+                  <button
+                    onClick={() => unlockCharacter(char.id)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-white transition-all shadow-md hover:brightness-105 active:scale-95 bg-gradient-to-r from-amber-600 via-[#7544ae] to-[#542b82]"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Unlock (2,000 Coins)</span>
+                  </button>
+                )}
                 <button
                   onClick={() => handleCustomize(char.id)}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold text-white transition-all shadow-md hover:brightness-105 active:scale-95 bg-gradient-to-r from-[#7544ae] to-[#542b82]"
                 >
                   <Eye className="w-3.5 h-3.5" />
-                  <span>Customize in 3D</span>
+                  <span>{isOwned ? "Customize in 3D" : "Inspect in 3D"}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>

@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Star, Zap, Shield, Shirt, Footprints, Eye, Smile, Crown,
-  Sparkles, ChevronRight, Info, Palette, Check, RotateCcw, Swords, Gauge
+  Sparkles, ChevronRight, Info, Palette, Check, RotateCcw, Swords, Gauge, Lock, Coins
 } from 'lucide-react';
 import { useStudio } from '../../context/StudioContext';
 import { getRarityConfig } from '../../config/rarity';
@@ -95,6 +95,9 @@ export default function CharacterDetails() {
     selectedCharacter,
     equippedCharacterId,
     equipCurrentCharacter,
+    unlockCharacter,
+    ownedCharacterIds = ['buster-blitz'],
+    coins,
     selectCharacter,
     setActiveTab,
     setActiveWardrobeCategory,
@@ -116,6 +119,7 @@ export default function CharacterDetails() {
 
   const rarity = getRarityConfig(selectedCharacter.rarity);
   const isEquipped = equippedCharacterId === selectedCharacter.id;
+  const isOwned = ownedCharacterIds.includes(selectedCharacter.id);
   const { attributes, colors, equippedItems } = effectiveCharacter;
   const activeEquippedOutfitId = equippedOutfits?.[selectedCharacter.id] || 'outfit-default';
 
@@ -374,7 +378,18 @@ export default function CharacterDetails() {
 
       {/* Action footer */}
       <div className="flex-shrink-0 px-4 pb-4 pt-2 space-y-2 border-t border-[#dbcee2]">
-        {isEquipped ? (
+        {!isOwned ? (
+          <button
+            onClick={() => unlockCharacter(selectedCharacter.id)}
+            className="w-full rounded-xl py-2.5 text-sm font-bold transition-all duration-200 text-white relative overflow-hidden group shadow-md bg-gradient-to-r from-amber-600 via-[#7544ae] to-[#542b82] hover:brightness-105 active:scale-95 flex items-center justify-center gap-2"
+          >
+            <Lock className="w-4 h-4 text-amber-300" />
+            <span>Unlock {selectedCharacter.name}</span>
+            <span className="bg-amber-400/20 text-amber-200 border border-amber-300/30 px-2 py-0.5 rounded-lg text-xs font-black">
+              2,000 Coins
+            </span>
+          </button>
+        ) : isEquipped ? (
           <div className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-sm font-bold rounded-xl py-2.5 text-center shadow-xs">
             ✓ Currently Active Match Hero
           </div>

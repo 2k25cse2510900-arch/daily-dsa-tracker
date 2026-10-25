@@ -86,6 +86,8 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   // ─── Virtual Coins & Vehicle System ───
   const [coins, setCoins] = useState(BRANDING.currencies.coins.amount);
+  const [rewardHistory, setRewardHistory] = useState([]);
+  const [walletTotals, setWalletTotals] = useState({ earned: 0, spent: 0 });
   const [ownedVehicles, setOwnedVehicles] = useState(EMPTY_OWNED_VEHICLES);
   const [ownedVehicleUpgrades, setOwnedVehicleUpgrades] = useState(EMPTY_OWNED_UPGRADES);
   const [equippedVehicleId, setEquippedVehicleId] = useState(null);
@@ -120,7 +122,7 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   const applyServerProfile = (profile) => {
     const appearance = profile.appearance || {};
-    setCoins(profile.wallet?.coins ?? BRANDING.currencies.coins.amount);
+    setCoins(profile.wallet?.coins ?? 0);
     setOwnedCharacterIds(profile.inventory?.characters || ['buster-blitz']);
     setOwnedCosmeticIds(profile.inventory?.cosmetics || []);
     setOwnedOutfitIds(profile.inventory?.outfits || ['outfit-default']);
@@ -140,6 +142,9 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     characterVerseRequest('/api/characterverse/me')
       .then((profile) => { if (active) { applyServerProfile(profile); setProfileReady(true); } })
       .catch((error) => { if (active) showToast(error.message, 'error'); });
+    characterVerseRequest('/api/characterverse/me/rewards')
+      .then((wallet) => { if (active) { setCoins(wallet.balance); setRewardHistory(Array.isArray(wallet.history) ? wallet.history : []); setWalletTotals({ earned: wallet.totalEarned || 0, spent: wallet.totalSpent || 0 }); } })
+      .catch(() => { /* Profile remains usable when reward history is temporarily unavailable. */ });
     return () => { active = false; };
   }, []);
 
@@ -212,6 +217,25 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     }
     setEquippedCharacterId(selectedCharacterId);
     showToast(`Equipped ${selectedCharacter.name} as active hero!`, 'success');
+  };
+
+  const unlockCharacter = async (characterId) => {
+    const char = getCharacterById(characterId);
+    if (!char) return;
+    if (ownedCharacterIds.includes(characterId)) {
+      showToast(`You already own ${char.name}!`, 'info');
+      return;
+    }
+    try {
+      const updated = await characterVerseRequest(`/api/characterverse/me/purchases/character/${encodeURIComponent(characterId)}`, {
+        method: 'POST',
+        body: '{}',
+      });
+      applyServerProfile(updated);
+      showToast(`Unlocked and equipped ${char.name}!`, 'success');
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
   };
 
   const triggerCameraReset = () => {
@@ -709,6 +733,7 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
         equippedCharacter,
         selectCharacter,
         equipCurrentCharacter,
+        unlockCharacter,
 
         // Navigation & Studio State
         activeTab,
@@ -764,6 +789,8 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
         // Vehicles & Store
         vehicles: VEHICLES,
         coins,
+        rewardHistory,
+        walletTotals,
         ownedVehicles,
         ownedVehicleUpgrades,
         equippedVehicleId,

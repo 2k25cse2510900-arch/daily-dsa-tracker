@@ -47,6 +47,7 @@ test("self profile opens CharacterVerse at its canonical route and surfaces actu
   assert.match(html, /id="routeProfileCharacterMount"/);
   assert.match(html, /id="routeProfileCharacterStatus"/);
   assert.doesNotMatch(html, /3D hero preview|🛡️/);
+  assert.match(script, /const isSelf = \(isAdmin \|\| isMember\) && Boolean\(memberProfile\?\.id\) && memberProfile\.id === memberId;/);
   assert.match(script, /characterBtn\.href = `\/characterverse\/\?returnTo=/);
   assert.match(script, /Loading your saved 3D character model/);
   assert.match(script, /The 3D character model could not load:/);

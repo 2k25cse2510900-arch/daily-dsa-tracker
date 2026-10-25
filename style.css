@@ -2935,4 +2935,5 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  pointer-events: none;
 }

@@ -16,7 +16,7 @@ function InventoryGroup({ icon: Icon, title, detail, children }) {
 }
 
 export default function InventoryView() {
-  const { coins, ownedCosmeticIds, ownedOutfitIds, ownedVehicles, ownedVehicleUpgrades, vehicles, setActiveTab } = useStudio();
+  const { coins, rewardHistory, walletTotals, ownedCosmeticIds, ownedOutfitIds, ownedVehicles, ownedVehicleUpgrades, vehicles, setActiveTab } = useStudio();
   const cosmetics = WARDROBE_CATALOG.filter((item) => ownedCosmeticIds.includes(item.id));
   const rides = vehicles.filter((vehicle) => ownedVehicles[vehicle.id]);
   const upgrades = vehicles.filter((vehicle) => ownedVehicleUpgrades[vehicle.upgradeEffect.id]);
@@ -44,6 +44,11 @@ export default function InventoryView() {
             <p className="m-0 text-xs leading-relaxed text-[#766c83]">Coins, vehicle ownership, upgrades, and equipped loadouts come from your authenticated CharacterVerse profile. Browser storage is not used as authority.</p>
           </InventoryGroup>
         </div>
+        <section className="rounded-2xl border border-[#dbcee2] bg-white p-4 shadow-xs">
+          <div className="flex items-center gap-3 mb-3"><span className="w-9 h-9 rounded-xl grid place-items-center bg-amber-50 text-amber-700"><Coins className="w-4 h-4" /></span><div><h2 className="m-0 text-sm font-black text-[#261b35]">Reward history</h2><p className="m-0 text-[11px] text-[#766c83]">Verified DSA rewards credited by the server.</p></div></div>
+          <p className="mb-3 text-xs text-[#766c83]">Earned: <strong className="text-emerald-700">{walletTotals.earned}</strong> · Spent: <strong className="text-rose-700">{walletTotals.spent}</strong></p>
+          {rewardHistory.length ? <div className="divide-y divide-[#eee6f2]">{rewardHistory.map((reward) => <div key={reward.eventKey} className="flex items-center justify-between gap-3 py-2 text-xs"><div><p className="m-0 font-bold text-[#261b35]">{reward.reason}</p><p className="m-0 mt-0.5 text-[#766c83]">{reward.applicableDate || reward.applicablePeriod || 'Verified transaction'}</p></div><span className={`font-black ${reward.amount >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{reward.amount >= 0 ? '+' : ''}{reward.amount} coins</span></div>)}</div> : <p className="m-0 text-xs text-[#766c83]">No credited wallet transactions yet.</p>}
+        </section>
       </div>
     </main>
   );

@@ -53,6 +53,35 @@ test("Express CSP permits Firebase Google popup auth and preserves protections",
   }
 });
 
+test("root dashboard shell remains available when MongoDB is not ready", async () => {
+  const server = await listen(dashboardApp);
+  try {
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const unavailable = await fetch(`${origin}/api/session`);
+    assert.equal(unavailable.status, 503);
+    assert.deepEqual(await unavailable.json(), {
+      error: "Dashboard services are temporarily unavailable. Check server configuration and database connectivity."
+    });
+
+    for (const route of ["/", "/index.html"]) {
+      const response = await fetch(`${origin}${route}`, { redirect: "manual" });
+      assert.equal(response.status, 200, route);
+      assert.match(response.headers.get("content-type") || "", /^text\/html\b/i, route);
+      assert.equal(response.headers.get("location"), null, route);
+      assert.equal(response.headers.get("cache-control"), "no-store", route);
+      assert.match(await response.text(), /<!DOCTYPE html>/i, route);
+    }
+  } finally {
+    await close(server);
+  }
+});
+
+test("API routes retain the runtime readiness guard", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.match(source, /app\.use\("\/api", requireRuntime\)/);
+  assert.doesNotMatch(source, /app\.use\(requireRuntime\)/);
+});
+
 test("Vercel CSP preserves Firebase Google popup authentication", () => {
   const config = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "vercel.json"), "utf8"));
   const headers = config.headers.flatMap(item => item.headers);

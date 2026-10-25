@@ -166,6 +166,12 @@ export default function CharacterAvatar({
       return;
     }
 
+    if (profilePreview) {
+      // In profile preview mode, never fall back to fetching the viewer's personal appearance.
+      setCharacterData(resolveCharacterDataFromAppearance(null));
+      return;
+    }
+
     let active = true;
     fetch('/api/characterverse/me', { credentials: 'same-origin' })
       .then((res) => {
@@ -187,7 +193,7 @@ export default function CharacterAvatar({
     return () => {
       active = false;
     };
-  }, [appearance]);
+  }, [appearance, profilePreview]);
 
   if (hasError || !characterData) {
     return null;

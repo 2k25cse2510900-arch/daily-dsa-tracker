@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { classifyMongoError, safeMongoDiagnostic } = require("../diagnostics");
+const { classifyMongoError, safeMongoDiagnostic, safeMongoMessage } = require("../diagnostics");
 
 test("classifies common MongoDB connection failures from safe identifiers", () => {
   const serverTimeout = Object.assign(new Error("timeout"), { code: "ETIMEDOUT" });
@@ -39,6 +39,11 @@ test("includes only sanitized identifiers and category, never error messages", (
   });
   assert.equal(JSON.stringify(diagnostic).includes("password"), false);
   assert.equal(JSON.stringify(diagnostic).includes("example.test"), false);
+});
+
+test("sanitizes connection strings while retaining MongoDB index validation text", () => {
+  assert.equal(safeMongoMessage(new Error("The field 'unique' is not valid for an _id index specification.")), "The field 'unique' is not valid for an _id index specification.");
+  assert.equal(safeMongoMessage(new Error("failed mongodb+srv://user:password@example.test/db?token=nope")), "failed [REDACTED_MONGODB_URI]");
 });
 
 test("classifies nested DNS causes without exposing their messages", () => {

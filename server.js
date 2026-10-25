@@ -12,7 +12,8 @@ const bcrypt = require("bcryptjs");
 const helmet = require("helmet");
 const { applyEligibleDenseRanks } = require("./ranking");
 const { scoreWeek } = require("./scoring");
-const { safeMongoDiagnostic } = require("./diagnostics");
+const { safeMongoDiagnostic, safeMongoMessage } = require("./diagnostics");
+const { createRequiredIndexes } = require("./mongo-indexes");
 const { createAdminOnly, createAdminLoginHandler, createLogoutHandler } = require("./admin-auth");
 const { validFirebaseUid, createMemberFirebaseLoginHandler, createMemberOnly } = require("./member-auth");
 const { normalizeMemberEmail } = require("./member-allowlist");
@@ -25,22 +26,14 @@ const { sameOriginMutationOnly } = require("./request-security");
 const { calculateTotalActiveDays, resolveTodayActivity, calculateTotalMemberPoints, publicSolvedStats, createMemberDashboardHandler } = require("./member-dashboard");
 const { createPersonalProfileResolver } = require("./member-profiles");
 const { publicProfile: publicCharacterVerseProfile, ensureProfile: ensureCharacterVerseProfile, saveAppearance: saveCharacterVerseAppearance, purchase: purchaseCharacterVerseItem } = require("./characterverse-profiles");
+const { awardTrustedDaily, publicLedgerEntry } = require("./characterverse-rewards");
 const { REFRESH_INTERVAL_MS, REQUEST_GAP_MS, RECENT_SUBMISSION_LIMIT, profileForMember, fetchProfile, fetchRecentSubmissions, inspectMemberActivity, effectiveActivityDate, trackerPosition, publicRecord } = require("./leetcode");
 const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
+const { MAX_WEEKS, scheduledSlots } = require("./tracker-calendar");
 const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, ACTIVITY_LOCK_LEASE_MS, ACTIVITY_LOCK_HEARTBEAT_MS, acquireActivityLease, renewActivityLease, releaseActivityLease } = require("./activity-jobs");
 
 const PAGES = ["overview", "daily", "concepts", "members", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
-const MAX_WEEKS = 27;
-const WEEK_ONE_MONDAY = Date.UTC(2026, 6, 27);
-function scheduledSlots(weekNumber) {
-  if (weekNumber <= 13) return [0, 1, 2, 3, 4, 5];
-  return Array.from({ length: 6 }, (_, index) => index).filter(index => {
-    const date = new Date(WEEK_ONE_MONDAY + ((weekNumber - 1) * 7 + index) * 86400000);
-    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-    return date.getUTCDay() !== 0 && ((value >= "2026-10-12" && value <= "2026-10-28") || (value >= "2026-12-14" && value <= "2027-01-16"));
-  });
-}
 const PORT = Number(process.env.PORT) || 3000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const production = process.env.NODE_ENV === "production";
@@ -49,11 +42,14 @@ const mongo = createMongoClient();
 let db;
 let mongoConnectPromise;
 let runtimeInitializationPromise;
+let runtimeInitializationFailure;
+let runtimeRetryAfter = 0;
 let leetcodeRefreshPromise;
 let leetcodeActivityCyclePromise;
 let lastLeetcodeRefreshAt = 0;
 const leetcodeActivityRefreshes = new Map();
 const activityLockOwnerId = `${process.pid}:${crypto.randomUUID()}`;
+const RUNTIME_RETRY_DELAY_MS = 5000;
 
 function requireEnv(name) {
   if (!process.env[name]) throw new Error(`Missing required environment variable: ${name}`);
@@ -73,7 +69,12 @@ function logInitializationFailure(stage, error) {
   const fields = stage === "mongodb-connection"
     ? (error?.mongoDiagnostic || safeMongoDiagnostic(error))
     : { ...safeMongoDiagnostic(error), category: "initialization-error" };
-  console.error("[dashboard-init] initialization failed", { stage, ...fields });
+  const indexOperation = error?.indexOperation;
+  console.error("[dashboard-init] initialization failed", {
+    stage, ...fields,
+    message: safeMongoMessage(error),
+    ...(indexOperation ? { indexOperation } : {})
+  });
 }
 
 function createSessionSecret() {
@@ -107,6 +108,9 @@ function connectMongo() {
 }
 
 function initializeRuntime() {
+  if (!runtimeInitializationPromise && runtimeInitializationFailure && Date.now() < runtimeRetryAfter) {
+    return Promise.reject(runtimeInitializationFailure);
+  }
   if (!runtimeInitializationPromise) {
     let stage = "configuration-validation";
     runtimeInitializationPromise = (async () => {
@@ -118,19 +122,13 @@ function initializeRuntime() {
       await connectMongo();
       db = mongo.db();
       stage = "mongodb-index-creation";
-      await Promise.all([
-        db.collection("sessions").createIndex({ expires: 1 }, { expireAfterSeconds: 0 }),
-        db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-        db.collection("admins").createIndex({ email: 1 }, { unique: true }),
-        db.collection("memberAuthLinks").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true }),
-        db.collection("memberAuthLinks").createIndex({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: "string" } } }),
-        db.collection("memberProfiles").createIndex({ firebaseUid: 1 }, { unique: true }),
-        db.collection("characterVerseProfiles").createIndex({ updatedAt: 1 }),
-        db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }),
-        db.collection("leetcodeSubmissions").createIndex({ memberId: 1, activityDate: 1 })
-      ]);
+      await createRequiredIndexes(db);
+      runtimeInitializationFailure = undefined;
+      runtimeRetryAfter = 0;
     })().catch(error => {
       runtimeInitializationPromise = undefined;
+      runtimeInitializationFailure = error;
+      runtimeRetryAfter = Date.now() + RUNTIME_RETRY_DELAY_MS;
       logInitializationFailure(stage, error);
       throw error;
     });
@@ -296,7 +294,22 @@ app.set("trust proxy", production ? 1 : false);
 app.use(helmet({ crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, contentSecurityPolicy: { directives: { "default-src": ["'self'"], "script-src": ["'self'", "https://www.gstatic.com", "https://apis.google.com"], "style-src": ["'self'", "'unsafe-inline'"], "img-src": ["'self'", "data:", "blob:"], "connect-src": ["'self'", "blob:", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://*.firebaseapp.com", "https://*.web.app"], "frame-src": ["https://accounts.google.com", "https://*.firebaseapp.com", "https://*.web.app"], "object-src": ["'none'"], "frame-ancestors": ["'none'"] } } }));
 app.use(express.json({ limit: "1mb", strict: true }));
 app.use("/api", (req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
-app.use(requireRuntime);
+// The public dashboard shell must not depend on either database readiness or
+// session-store availability. It loads its protected data through /api.
+const dashboardIndex = path.join(__dirname, "index.html");
+function sendDashboardShell(_req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(dashboardIndex);
+}
+app.get(["/", "/index.html"], sendDashboardShell);
+app.get("/profile/:memberId", (req, res) => {
+  if (!/^[\w-]{1,100}$/.test(req.params.memberId)) return res.status(404).send("Profile not found.");
+  return sendDashboardShell(req, res);
+});
+app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
+app.get("/activity-date.js", (req, res) => res.sendFile(path.join(__dirname, "activity-date.js")));
+app.get("/firebase-client.js", (req, res) => res.sendFile(path.join(__dirname, "firebase-client.js")));
+app.get("/script.js", (req, res) => res.sendFile(path.join(__dirname, "script.js")));
 app.use(session(createAdminSessionOptions({
   secret: createSessionSecret(),
   store: MongoStore.create({ client: mongo, collectionName: "sessions", ttl: SESSION_TTL_SECONDS, autoRemove: "disabled" }),
@@ -304,6 +317,9 @@ app.use(session(createAdminSessionOptions({
 })));
 const loginLimit = mongoRateLimit("admin-login", 8);
 // SameSite cookies help prevent CSRF; reject cross-origin state-changing requests too.
+// Static dashboard documents are intentionally available during a dependency
+// outage; their data requests remain readiness-gated below.
+app.use("/api", requireRuntime);
 app.use("/api", sameOriginMutationOnly);
 
 app.get("/api/session", async (req, res) => {
@@ -383,13 +399,12 @@ app.get("/api/profile/:memberId", async (req, res, next) => {
     const profileRecord = username ? await db.collection("leetcodeProfiles").findOne({ _id: memberId, username }, { projection: { stats: 1, status: 1, lastFetchedAt: 1 } }) : null;
     const rawStats = profileRecord?.status === "Success" ? profileRecord.stats : null;
     const stats = publicSolvedStats(rawStats);
-    // Character appearance is account-private. A group member may read another
-    // member's public progress profile, but never their saved CharacterVerse
-    // customization.
-    const mayViewCharacterAppearance = req.session?.memberId === memberId;
-    const cvDoc = mayViewCharacterAppearance
-      ? await ensureCharacterVerseProfile(db.collection("characterVerseProfiles"), memberId)
-      : null;
+    let cvDoc = null;
+    try {
+      cvDoc = await ensureCharacterVerseProfile(db.collection("characterVerseProfiles"), memberId);
+    } catch {
+      cvDoc = null;
+    }
     res.json({
       id: memberId,
       name: member?.name || personal?.displayName || "Member",
@@ -619,6 +634,21 @@ app.get("/api/characterverse/me", memberOnly, async (req, res) => {
   }
 });
 
+app.get("/api/characterverse/me/rewards", memberOnly, async (req, res) => {
+  try {
+    const [profile, entries] = await Promise.all([
+      ensureCharacterVerseProfile(db.collection("characterVerseProfiles"), req.member.id),
+      db.collection("characterVerseRewardLedger").find({ memberId: req.member.id, status: "applied" }).sort({ appliedAt: -1, createdAt: -1 }).limit(100).toArray()
+    ]);
+    const history = entries.map(publicLedgerEntry);
+    const totalEarned = entries.filter(entry => entry.transactionType === "reward").reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+    const totalSpent = entries.filter(entry => entry.transactionType === "purchase").reduce((sum, entry) => sum + Math.abs(Number(entry.amount) || 0), 0);
+    res.json({ balance: profile.wallet?.coins ?? 0, totalEarned, totalSpent, history });
+  } catch {
+    res.status(503).json({ error: "CharacterVerse reward history is temporarily unavailable." });
+  }
+});
+
 app.put("/api/characterverse/me/appearance", memberOnly, async (req, res) => {
   try {
     const result = await saveCharacterVerseAppearance(db.collection("characterVerseProfiles"), req.member.id, req.body);
@@ -631,9 +661,9 @@ app.put("/api/characterverse/me/appearance", memberOnly, async (req, res) => {
 
 app.post("/api/characterverse/me/purchases/:kind/:itemId", memberOnly, async (req, res) => {
   const { kind, itemId } = req.params;
-  if (!["vehicle", "upgrade"].includes(kind) || !/^[a-z0-9-]{1,80}$/.test(itemId)) return res.status(400).json({ error: "Unknown CharacterVerse item." });
+  if (!["vehicle", "upgrade", "character"].includes(kind) || !/^[a-z0-9-]{1,80}$/.test(itemId)) return res.status(400).json({ error: "Unknown CharacterVerse item." });
   try {
-    const result = await purchaseCharacterVerseItem(db.collection("characterVerseProfiles"), req.member.id, kind, itemId);
+    const result = await purchaseCharacterVerseItem(db.collection("characterVerseProfiles"), req.member.id, kind, itemId, new Date(), db.collection("characterVerseRewardLedger"));
     if (result.error === "UNKNOWN_ITEM") return res.status(404).json({ error: "CharacterVerse item was not found." });
     if (result.error === "ALREADY_OWNED") return res.status(409).json({ error: "You already own this item." });
     if (result.error === "REQUIRES_VEHICLE") return res.status(409).json({ error: "Unlock the matching vehicle before its upgrade." });
@@ -732,12 +762,18 @@ async function setVerifiedDailyDone(memberId, week, slot) {
     if (Array.isArray(saved) && saved.length === 6 && saved.every(value => STATUSES.has(value))) current = saved;
     else if (saved === undefined) current = Array(6).fill("blank");
     else throw new Error("INVALID_DAILY_TRACKER");
-    if (current[slot] === "done") return false;
+    if (current[slot] === "done") {
+      await awardTrustedDaily({ db, memberId, week, slot, scheduledSlots, ensureProfile: ensureCharacterVerseProfile });
+      return false;
+    }
     const updated = current.slice();
     updated[slot] = "done";
     const filter = saved === undefined ? { [field]: { $exists: false } } : { [field]: saved };
     const result = await db.collection("dashboard").updateOne({ _id: "shared", ...filter }, { $set: { [field]: updated, updatedAt: new Date() } });
-    if (result.modifiedCount === 1) return true;
+    if (result.modifiedCount === 1) {
+      await awardTrustedDaily({ db, memberId, week, slot, scheduledSlots, ensureProfile: ensureCharacterVerseProfile });
+      return true;
+    }
   }
   throw new Error("DAILY_TRACKER_CHANGED_CONCURRENTLY");
 }
@@ -1182,7 +1218,7 @@ function startLeetCodeActivityScheduler() {
 const characterVersePublicDir = path.join(__dirname, "public", "characterverse");
 const characterVerseEmbedPublicDir = path.join(__dirname, "public", "characterverse-embed");
 app.use("/characterverse", express.static(characterVersePublicDir, { index: false, maxAge: production ? "1h" : 0 }));
-app.get(["/characterverse", "/characterverse/"], memberOnly, (_req, res) => {
+app.get(["/characterverse", "/characterverse/"], requireRuntime, memberOnly, (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(characterVersePublicDir, "index.html"));
 });
@@ -1191,17 +1227,6 @@ app.get(["/characterverse", "/characterverse/"], memberOnly, (_req, res) => {
 // without exposing it as a second member-facing route.
 app.use("/characterverse-embed", express.static(characterVerseEmbedPublicDir, { index: false, maxAge: production ? "1h" : 0 }));
 
-app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
-app.get("/index.html", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
-app.get("/profile/:memberId", (req, res) => {
-  if (!/^[\w-]{1,100}$/.test(req.params.memberId)) return res.status(404).send("Profile not found.");
-  res.setHeader("Cache-Control", "no-store");
-  res.sendFile(path.join(__dirname, "index.html"));
-});
-app.get("/style.css", (req, res) => res.sendFile(path.join(__dirname, "style.css")));
-app.get("/activity-date.js", (req, res) => res.sendFile(path.join(__dirname, "activity-date.js")));
-app.get("/firebase-client.js", (req, res) => res.sendFile(path.join(__dirname, "firebase-client.js")));
-app.get("/script.js", (req, res) => res.sendFile(path.join(__dirname, "script.js")));
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
   res.status(error.status || 500).json({ error: error.status === 413 ? "Request too large." : "Request could not be completed." });

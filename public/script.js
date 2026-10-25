@@ -2307,16 +2307,22 @@ async function openProfileRoute(memberId, pushHistory = false) {
     } else {
       $("routeProfileSource").textContent = "LeetCode statistics are unavailable until the public profile can be verified.";
     }
-    const isSelf = isMember && memberProfile?.id === memberId;
-    if (isSelf && characterBtn) {
-      characterBtn.href = `/characterverse/?returnTo=${encodeURIComponent('/profile/' + memberId)}`;
-      characterBtn.hidden = false;
+    const isSelf = (isAdmin || isMember) && Boolean(memberProfile?.id) && memberProfile.id === memberId;
+    if (characterBtn) {
+      if (isSelf) {
+        characterBtn.href = `/characterverse/?returnTo=${encodeURIComponent('/profile/' + memberId)}`;
+        characterBtn.hidden = false;
+        characterBtn.removeAttribute("hidden");
+      } else {
+        characterBtn.hidden = true;
+        characterBtn.setAttribute("hidden", "");
+      }
     }
     if (!data.characterVerse?.appearance) {
-      showPortraitStatus("Character preview is available only to the profile owner.");
+      showPortraitStatus("Character model is temporarily unavailable.");
       return;
     }
-    showPortraitStatus("Loading your saved 3D character model...");
+    showPortraitStatus(isSelf ? "Loading your saved 3D character model..." : "Loading 3D character model...");
     if (window.CharacterVerseEmbed?.mountCharacterAvatar && routeMount) {
       try {
         routeAvatarInstance = window.CharacterVerseEmbed.mountCharacterAvatar(routeMount, {

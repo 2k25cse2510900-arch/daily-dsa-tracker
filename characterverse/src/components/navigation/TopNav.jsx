@@ -34,6 +34,52 @@ export default function TopNav() {
     return null;
   });
 
+  const [ownerName, setOwnerName] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    const targetMemberId = (() => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const ret = validateReturnPath(params.get('returnTo'));
+        if (ret) {
+          const match = ret.match(/^\/profile\/([\w-]{1,100})/);
+          if (match) return match[1];
+        }
+      }
+      return null;
+    })();
+
+    if (targetMemberId) {
+      fetch(`/api/profile/${encodeURIComponent(targetMemberId)}`, { credentials: 'same-origin' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (active && data?.name) {
+            setOwnerName(data.name.replace(/\s*\(ADMIN\)\s*$/i, '').trim());
+          }
+        })
+        .catch(() => {});
+    } else {
+      fetch('/api/session', { credentials: 'same-origin' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((session) => {
+          if (active && session?.member?.name) {
+            setOwnerName(session.member.name.replace(/\s*\(ADMIN\)\s*$/i, '').trim());
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => { active = false; };
+  }, [returnUrl]);
+
+  const ownerInitials = (() => {
+    if (!ownerName) return playerProfile.avatarBadge;
+    const parts = ownerName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  })();
+
   useEffect(() => {
     if (returnUrl) return; // Already resolved from query param — don't overwrite
     fetch('/api/session', { credentials: 'same-origin' })
@@ -83,6 +129,19 @@ export default function TopNav() {
           </span>
         </div>
       </div>
+
+      {/* ── Character Owner Badge ── */}
+      {ownerName && (
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#fbf4fd] to-[#f4edf8] text-[#542b82] border border-[#dbcee2] shadow-xs select-none flex-shrink-0"
+          title={`Character Owner: ${ownerName}`}
+        >
+          <User className="w-3.5 h-3.5 text-[#7544ae] flex-shrink-0" />
+          <span className="text-xs font-black tracking-wide truncate max-w-[120px] sm:max-w-[180px]">
+            {ownerName}
+          </span>
+        </div>
+      )}
 
       {/* ── Navigation Tabs (scrollable, min-width 0 to avoid pushing the Back button off screen) ── */}
       <nav className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar py-1 flex-1" aria-label="Main navigation">
@@ -178,11 +237,11 @@ export default function TopNav() {
           title="Player Profile"
         >
           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#7544ae] to-[#542b82] flex items-center justify-center text-[10px] font-black text-white shadow-xs">
-            {playerProfile.avatarBadge}
+            {ownerInitials}
           </div>
           <div className="hidden lg:block leading-none">
             <span className="text-xs font-bold text-[#261b35] block truncate max-w-[90px]">
-              {playerProfile.username}
+              {ownerName || playerProfile.username}
             </span>
             <span className="text-[9px] font-semibold text-[#7544ae] block mt-0.5">
               LVL {playerProfile.level}

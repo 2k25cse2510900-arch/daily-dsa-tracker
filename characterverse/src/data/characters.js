@@ -112,9 +112,9 @@ export const CHARACTERS = [
 
     // Prepared Phase 3 Shop metadata
     shopData: {
-      owned: true,
-      price: 2500,
-      currency: "gems",
+      owned: false,
+      price: 2000,
+      currency: "coins",
       featured: true,
     },
   },

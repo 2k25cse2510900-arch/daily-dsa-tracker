@@ -1,11 +1,11 @@
 import React from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, Lock } from 'lucide-react';
 import { useStudio } from '../../context/StudioContext';
 import { getRarityConfig } from '../../config/rarity';
 
 const RARITY_FILTERS = ['ALL', 'COMMON', 'RARE', 'EPIC', 'LEGENDARY'];
 
-function CharacterCard({ character, isSelected, isEquipped, onClick }) {
+function CharacterCard({ character, isSelected, isEquipped, isOwned = true, onClick }) {
   const rarity = getRarityConfig(character.rarity);
 
   return (
@@ -43,11 +43,16 @@ function CharacterCard({ character, isSelected, isEquipped, onClick }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="font-bold text-sm text-[#261b35] truncate">{character.name}</span>
-            {isEquipped && (
+            {isEquipped ? (
               <span className="flex-shrink-0 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded-full">
                 ACTIVE
               </span>
-            )}
+            ) : !isOwned ? (
+              <span className="flex-shrink-0 text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                <Lock className="w-2.5 h-2.5 text-amber-600" />
+                2,000
+              </span>
+            ) : null}
           </div>
           <p className="text-[11px] text-[#766c83] truncate mt-0.5">{character.role}</p>
           {/* Rarity badge */}
@@ -71,6 +76,7 @@ export default function CharacterCollection() {
     filteredCharacters,
     selectedCharacterId,
     equippedCharacterId,
+    ownedCharacterIds = ['buster-blitz'],
     selectCharacter,
     searchQuery,
     setSearchQuery,
@@ -156,6 +162,7 @@ export default function CharacterCollection() {
               character={char}
               isSelected={selectedCharacterId === char.id}
               isEquipped={equippedCharacterId === char.id}
+              isOwned={ownedCharacterIds.includes(char.id)}
               onClick={() => selectCharacter(char.id)}
             />
           ))

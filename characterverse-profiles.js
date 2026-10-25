@@ -2,9 +2,12 @@
 
 // This catalog is deliberately server-owned for the Phase 1 purchasable items.
 // Client catalog data is presentation only and must never decide a price or grant.
-const STARTER_COINS = 3250;
+const STARTER_COINS = 0;
 const DEFAULT_CHARACTER_ID = "buster-blitz";
 const CHARACTER_IDS = new Set(["buster-blitz", "nebula-nova"]);
+const CHARACTER_PRICES = Object.freeze({
+  "nebula-nova": 2000
+});
 const OUTFIT_IDS = new Set(["outfit-default", "outfit-warrior", "outfit-royal"]);
 const COSMETIC_IDS = new Set([
   "head-blitz-visor", "head-headphones-dj", "head-crown-astral", "head-halo-nova", "head-cyber-horns", "head-space-helmet",
@@ -16,9 +19,9 @@ const COSMETIC_IDS = new Set([
   "effect-cyan-sparks", "effect-solar-flare", "effect-lightning-storm"
 ]);
 const VEHICLES = Object.freeze({
-  "vehicle-bike": { price: 350, upgradeId: "bike-sparks", upgradePrice: 250 },
-  "vehicle-car": { price: 800, upgradeId: "car-coins", upgradePrice: 450 },
-  "vehicle-rocket": { price: 1500, upgradeId: "rocket-warp", upgradePrice: 650 }
+  "vehicle-bike": { baselinePrice: 40, price: 400, upgradeId: "bike-sparks", upgradeBaselinePrice: 25, upgradePrice: 250 },
+  "vehicle-car": { baselinePrice: 90, price: 900, upgradeId: "car-coins", upgradeBaselinePrice: 50, upgradePrice: 500 },
+  "vehicle-rocket": { baselinePrice: 150, price: 1500, upgradeId: "rocket-warp", upgradeBaselinePrice: 75, upgradePrice: 750 }
 });
 const EQUIPMENT_SLOTS = new Set(["head", "face", "upperBody", "lowerBody", "footwear", "backAccessory", "effect"]);
 const COLOR_KEYS = new Set(["baseColor", "accentColor", "secondaryColor", "glowColor"]);
@@ -27,7 +30,7 @@ function starterProfile(memberId, now = new Date()) {
   return {
     _id: memberId,
     schemaVersion: 1,
-    wallet: { coins: STARTER_COINS },
+    wallet: { coins: 0 },
     // The pre-existing no-price wardrobe remains starter content. Vehicles and
     // upgrades are the only Phase 1 purchasable catalog entries.
     inventory: {
@@ -54,7 +57,7 @@ function starterProfile(memberId, now = new Date()) {
 function publicProfile(profile) {
   return {
     schemaVersion: profile.schemaVersion,
-    wallet: { coins: profile.wallet?.coins ?? STARTER_COINS },
+    wallet: { coins: profile.wallet?.coins ?? 0 },
     inventory: profile.inventory,
     appearance: profile.appearance
   };
@@ -144,7 +147,46 @@ async function saveAppearance(collection, memberId, input, now = new Date()) {
   return { profile: await collection.findOne({ _id: memberId }) };
 }
 
-async function purchase(collection, memberId, kind, itemId, now = new Date()) {
+async function purchase(collection, memberId, kind, itemId, now = new Date(), ledger = null) {
+  if (kind === "character") {
+    const price = CHARACTER_PRICES[itemId];
+    if (!CHARACTER_IDS.has(itemId) || !Number.isSafeInteger(price)) return { error: "UNKNOWN_ITEM" };
+    await ensureProfile(collection, memberId, now);
+    const transactionId = `characterverse:purchase:${memberId}:${kind}:${itemId}`;
+    const ledgerEntry = {
+      _id: transactionId, transactionId, memberId, transactionType: "purchase",
+      category: kind, amount: -price, sourceId: itemId, reason: `Purchased character ${itemId}`,
+      status: "pending", createdAt: now
+    };
+    if (ledger) await ledger.updateOne({ _id: transactionId }, { $setOnInsert: ledgerEntry }, { upsert: true });
+    const filter = { _id: memberId, "wallet.coins": { $gte: price }, "inventory.characters": { $ne: itemId } };
+    const result = await collection.findOneAndUpdate(
+      filter,
+      {
+        $inc: { "wallet.coins": -price },
+        $addToSet: { "inventory.characters": itemId, walletTransactionKeys: transactionId },
+        $set: { "appearance.selectedCharacterId": itemId, "appearance.equippedCharacterId": itemId, updatedAt: now }
+      },
+      { returnDocument: "after" }
+    );
+    if (result) {
+      if (ledger) {
+        await ledger.updateOne({ _id: transactionId }, { $set: { status: "applied", appliedAt: now } });
+      }
+      return { profile: result };
+    }
+    const current = await collection.findOne({ _id: memberId }, { projection: { wallet: 1, inventory: 1, walletTransactionKeys: 1, appearance: 1 } });
+    if (current?.inventory?.characters?.includes(itemId)) {
+      if (ledger && current.walletTransactionKeys?.includes(transactionId)) {
+        await ledger.updateOne({ _id: transactionId }, { $set: { status: "applied", appliedAt: now } });
+        return { profile: current };
+      }
+      return { error: "ALREADY_OWNED" };
+    }
+    if (ledger) await ledger.deleteOne({ _id: transactionId, status: "pending" });
+    return { error: "INSUFFICIENT_COINS" };
+  }
+
   const vehicle = kind === "vehicle" ? VEHICLES[itemId] : Object.values(VEHICLES).find(candidate => candidate.upgradeId === itemId);
   const price = kind === "vehicle" ? vehicle?.price : vehicle?.upgradePrice;
   const inventoryField = kind === "vehicle" ? "inventory.vehicles" : "inventory.vehicleUpgrades";
@@ -154,21 +196,46 @@ async function purchase(collection, memberId, kind, itemId, now = new Date()) {
   // A single MongoDB document update is atomic: the balance, ownership, and
   // equipped state are changed together only if its conditional filter matches.
   const requiredVehicleId = kind === "upgrade" ? Object.keys(VEHICLES).find(id => VEHICLES[id] === vehicle) : null;
+  const transactionId = `characterverse:purchase:${memberId}:${kind}:${itemId}`;
+  const ledgerEntry = {
+    _id: transactionId, transactionId, memberId, transactionType: "purchase",
+    category: kind, amount: -price, sourceId: itemId, reason: `Purchased ${itemId}`,
+    status: "pending", createdAt: now
+  };
+  // Record an idempotency marker before changing the wallet. If the audit
+  // database write fails, no wallet debit occurs. The profile update itself is
+  // a single-document atomic operation, so concurrent purchase attempts can
+  // debit and grant ownership at most once.
+  if (ledger) await ledger.updateOne({ _id: transactionId }, { $setOnInsert: ledgerEntry }, { upsert: true });
   const filter = { _id: memberId, "wallet.coins": { $gte: price }, [inventoryField]: { $ne: itemId } };
   if (requiredVehicleId) filter["inventory.vehicles"] = requiredVehicleId;
   const result = await collection.findOneAndUpdate(
     filter,
-    { $inc: { "wallet.coins": -price }, $addToSet: { [inventoryField]: itemId }, $set: { [equipmentField]: itemId, updatedAt: now } },
+    { $inc: { "wallet.coins": -price }, $addToSet: { [inventoryField]: itemId, walletTransactionKeys: transactionId }, $set: { [equipmentField]: itemId, updatedAt: now } },
     { returnDocument: "after" }
   );
-  if (result) return { profile: result };
-  const current = await collection.findOne({ _id: memberId }, { projection: { wallet: 1, inventory: 1 } });
+  if (result) {
+    if (ledger) {
+      await ledger.updateOne({ _id: transactionId }, { $set: { status: "applied", appliedAt: now } });
+    }
+    return { profile: result };
+  }
+  const current = await collection.findOne({ _id: memberId }, { projection: { wallet: 1, inventory: 1, walletTransactionKeys: 1, appearance: 1 } });
   if (current?.inventory) {
     const items = kind === "vehicle" ? current.inventory?.vehicles : current.inventory?.vehicleUpgrades;
-    if (items?.includes(itemId)) return { error: "ALREADY_OWNED" };
+    if (items?.includes(itemId)) {
+      // A retry after an interrupted ledger-finalization sees the already
+      // atomic purchase and completes its audit record without charging again.
+      if (ledger && current.walletTransactionKeys?.includes(transactionId)) {
+        await ledger.updateOne({ _id: transactionId }, { $set: { status: "applied", appliedAt: now } });
+        return { profile: current };
+      }
+      return { error: "ALREADY_OWNED" };
+    }
   }
+  if (ledger) await ledger.deleteOne({ _id: transactionId, status: "pending" });
   if (requiredVehicleId && !current?.inventory?.vehicles?.includes(requiredVehicleId)) return { error: "REQUIRES_VEHICLE" };
   return { error: "INSUFFICIENT_COINS" };
 }
 
-module.exports = { STARTER_COINS, starterProfile, publicProfile, ensureProfile, validateAppearance, saveAppearance, purchase };
+module.exports = { STARTER_COINS, VEHICLES, CHARACTER_PRICES, starterProfile, publicProfile, ensureProfile, validateAppearance, saveAppearance, purchase };

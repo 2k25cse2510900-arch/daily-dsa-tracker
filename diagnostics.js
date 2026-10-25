@@ -55,4 +55,14 @@ function safeMongoDiagnostic(error) {
   };
 }
 
-module.exports = { classifyMongoError, safeMongoDiagnostic };
+function safeMongoMessage(error) {
+  if (typeof error?.message !== "string") return "No MongoDB error message was supplied.";
+  // Keep server validation text useful while removing connection credentials,
+  // URI hosts, and query-string secrets before it reaches application logs.
+  return error.message
+    .replace(/mongodb(?:\+srv)?:\/\/[^\s)]+/gi, "[REDACTED_MONGODB_URI]")
+    .replace(/\b(?:password|secret|token)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]")
+    .slice(0, 500);
+}
+
+module.exports = { classifyMongoError, safeMongoDiagnostic, safeMongoMessage };
