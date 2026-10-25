@@ -231,3 +231,79 @@ test("concurrent scheduler and manual refreshes coordinate on the shared lock", 
   const manualAfterCompletion = await acquireActivityLease(collection, { lockId: "leetcode-activity", token: "manual-2", ownerId: "server-a" });
   assert.equal(manualAfterCompletion.acquired, true);
 });
+
+test("acquire -> complete -> release guarantees database deletion and enables immediate reacquire by another worker", async () => {
+  const collection = memoryLocks();
+  const logEvents = [];
+  const log = (event, details = {}) => logEvents.push({ event, ...details });
+
+  // Worker 1 acquires lock
+  const worker1Lease = await acquireActivityLease(collection, {
+    lockId: "leetcode-activity",
+    token: "token-worker-1",
+    ownerId: "pid-1:uuid-1",
+    log
+  });
+  assert.equal(worker1Lease.acquired, true);
+  assert.equal(collection.rows.has("leetcode-activity"), true);
+  assert.equal(collection.rows.get("leetcode-activity").ownerId, "pid-1:uuid-1");
+
+  // Worker 1 releases lock
+  const released = await releaseActivityLease(worker1Lease, log);
+  assert.equal(released, true);
+  assert.equal(collection.rows.has("leetcode-activity"), false);
+  const releaseLog = logEvents.find(e => e.event === "released");
+  assert.ok(releaseLog, "released event must be logged when deletedCount is 1");
+  assert.equal(releaseLog.lockId, "leetcode-activity");
+
+  // Worker 2 immediately acquires lock with different owner and token
+  const worker2Lease = await acquireActivityLease(collection, {
+    lockId: "leetcode-activity",
+    token: "token-worker-2",
+    ownerId: "pid-2:uuid-2",
+    log
+  });
+  assert.equal(worker2Lease.acquired, true);
+  assert.equal(collection.rows.has("leetcode-activity"), true);
+  assert.equal(collection.rows.get("leetcode-activity").ownerId, "pid-2:uuid-2");
+  assert.equal(collection.rows.get("leetcode-activity").token, "token-worker-2");
+});
+
+test("unexpired lease held by another worker blocks contender with blocked-valid-lease and ownerIsRequester: false", async () => {
+  const collection = memoryLocks();
+  const logEvents = [];
+  const log = (event, details = {}) => logEvents.push({ event, ...details });
+
+  const now = new Date("2026-10-25T12:00:00Z");
+  // Worker 1 holds a lock with 78 seconds remaining
+  const leaseUntil = new Date(now.getTime() + 78_000);
+  collection.rows.set("leetcode-activity", {
+    _id: "leetcode-activity",
+    token: "token-cloud-worker",
+    ownerId: "pid-render:uuid-cloud",
+    acquiredAt: new Date(now.getTime() - 102_000),
+    heartbeatAt: new Date(now.getTime() - 102_000),
+    leaseUntil,
+    expiresAt: leaseUntil
+  });
+
+  // Worker 2 (local restart) attempts acquisition
+  const result = await acquireActivityLease(collection, {
+    lockId: "leetcode-activity",
+    token: "token-local-restart",
+    ownerId: "pid-local:uuid-local",
+    now,
+    log
+  });
+
+  assert.equal(result.acquired, false);
+  assert.equal(result.reason, "valid-lease");
+  assert.equal(result.retryAfterSeconds, 78);
+
+  const blockLog = logEvents.find(e => e.event === "blocked-valid-lease");
+  assert.ok(blockLog);
+  assert.equal(blockLog.lockId, "leetcode-activity");
+  assert.equal(blockLog.retryAfterSeconds, 78);
+  assert.equal(blockLog.legacy, false);
+  assert.equal(blockLog.ownerIsRequester, false);
+});

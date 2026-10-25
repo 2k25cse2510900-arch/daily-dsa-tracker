@@ -60,10 +60,14 @@ function starterProfile(memberId, now = new Date()) {
 }
 
 function publicProfile(profile) {
+  const inventory = profile.inventory ? { ...profile.inventory } : {};
+  if (!Array.isArray(inventory.outfits) || !inventory.outfits.includes("outfit-default")) {
+    inventory.outfits = ["outfit-default", ...(Array.isArray(inventory.outfits) ? inventory.outfits : [])];
+  }
   return {
     schemaVersion: profile.schemaVersion,
     wallet: { coins: profile.wallet?.coins ?? 0 },
-    inventory: profile.inventory,
+    inventory,
     appearance: profile.appearance
   };
 }
@@ -71,7 +75,11 @@ function publicProfile(profile) {
 async function ensureProfile(collection, memberId, now = new Date()) {
   const starter = starterProfile(memberId, now);
   await collection.updateOne({ _id: memberId }, { $setOnInsert: starter }, { upsert: true });
-  return collection.findOne({ _id: memberId });
+  const profile = await collection.findOne({ _id: memberId });
+  if (profile?.inventory && (!Array.isArray(profile.inventory.outfits) || !profile.inventory.outfits.includes("outfit-default"))) {
+    profile.inventory.outfits = ["outfit-default", ...(Array.isArray(profile.inventory.outfits) ? profile.inventory.outfits : [])];
+  }
+  return profile;
 }
 
 function isPlainObject(value) {
@@ -87,7 +95,7 @@ function validateAppearance(input, profile) {
   const appearance = { ...profile.appearance };
   const ownedCharacters = new Set(profile.inventory?.characters || []);
   const ownedCosmetics = new Set(profile.inventory?.cosmetics || []);
-  const ownedOutfits = new Set(profile.inventory?.outfits || []);
+  const ownedOutfits = new Set(["outfit-default", ...(profile.inventory?.outfits || [])]);
   const ownedVehicles = new Set(profile.inventory?.vehicles || []);
   const ownedUpgrades = new Set(profile.inventory?.vehicleUpgrades || []);
 
@@ -97,37 +105,56 @@ function validateAppearance(input, profile) {
       appearance[key] = input[key];
     }
   }
+
   if (input.equippedCosmetics !== undefined) {
     if (!isPlainObject(input.equippedCosmetics)) return null;
     const next = {};
+    for (const charId of ownedCharacters) {
+      if (appearance.equippedCosmetics?.[charId]) next[charId] = appearance.equippedCosmetics[charId];
+    }
     for (const [characterId, slots] of Object.entries(input.equippedCosmetics)) {
-      if (!CHARACTER_IDS.has(characterId) || !ownedCharacters.has(characterId) || !isPlainObject(slots) || Object.keys(slots).some(slot => !EQUIPMENT_SLOTS.has(slot))) return null;
-      next[characterId] = {};
+      if (!CHARACTER_IDS.has(characterId) || !isPlainObject(slots) || Object.keys(slots).some(slot => !EQUIPMENT_SLOTS.has(slot))) return null;
       for (const [slot, itemId] of Object.entries(slots)) {
         if (itemId !== null && (!COSMETIC_IDS.has(itemId) || !ownedCosmetics.has(itemId))) return null;
+      }
+      if (!ownedCharacters.has(characterId)) continue;
+      next[characterId] = {};
+      for (const [slot, itemId] of Object.entries(slots)) {
         next[characterId][slot] = itemId;
       }
     }
     appearance.equippedCosmetics = next;
   }
+
   if (input.equippedOutfits !== undefined) {
     if (!isPlainObject(input.equippedOutfits)) return null;
     const next = {};
+    for (const charId of ownedCharacters) {
+      if (appearance.equippedOutfits?.[charId]) next[charId] = appearance.equippedOutfits[charId];
+    }
     for (const [characterId, outfitId] of Object.entries(input.equippedOutfits)) {
-      if (!CHARACTER_IDS.has(characterId) || !ownedCharacters.has(characterId) || (outfitId !== null && (!OUTFIT_IDS.has(outfitId) || !ownedOutfits.has(outfitId)))) return null;
+      if (!CHARACTER_IDS.has(characterId)) return null;
+      if (outfitId !== null && (!OUTFIT_IDS.has(outfitId) || !ownedOutfits.has(outfitId))) return null;
+      if (!ownedCharacters.has(characterId)) continue;
       next[characterId] = outfitId;
     }
     appearance.equippedOutfits = next;
   }
+
   if (input.customColors !== undefined) {
     if (!isPlainObject(input.customColors)) return null;
     const next = {};
+    for (const charId of ownedCharacters) {
+      if (appearance.customColors?.[charId]) next[charId] = appearance.customColors[charId];
+    }
     for (const [characterId, colors] of Object.entries(input.customColors)) {
-      if (!CHARACTER_IDS.has(characterId) || !ownedCharacters.has(characterId) || !isPlainObject(colors) || Object.keys(colors).some(key => !COLOR_KEYS.has(key) || !validHex(colors[key]))) return null;
+      if (!CHARACTER_IDS.has(characterId) || !isPlainObject(colors) || Object.keys(colors).some(key => !COLOR_KEYS.has(key) || !validHex(colors[key]))) return null;
+      if (!ownedCharacters.has(characterId)) continue;
       next[characterId] = colors;
     }
     appearance.customColors = next;
   }
+
   if (input.equippedVehicleId !== undefined) {
     if (input.equippedVehicleId !== null && (!VEHICLES[input.equippedVehicleId] || !ownedVehicles.has(input.equippedVehicleId))) return null;
     appearance.equippedVehicleId = input.equippedVehicleId;

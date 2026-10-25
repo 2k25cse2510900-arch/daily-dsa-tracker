@@ -275,3 +275,74 @@ test("outfit rule 9: equipping an unowned outfit is rejected by server appearanc
   }, profile);
   assert.equal(validated, null, "Server must reject unowned outfit in appearance validation");
 });
+
+test("regression: legacy profile without inventory.outfits and with unowned character entries does not fail appearance save", async () => {
+  const legacyDoc = {
+    _id: "member-legacy",
+    schemaVersion: 1,
+    wallet: { coins: 5550 },
+    inventory: {
+      characters: ["buster-blitz"],
+      cosmetics: ["head-blitz-visor"],
+      // Notice: inventory.outfits is undefined in legacy records
+      vehicles: [],
+      vehicleUpgrades: []
+    },
+    appearance: {
+      selectedCharacterId: "buster-blitz",
+      equippedCharacterId: "buster-blitz",
+      equippedCosmetics: { "buster-blitz": {} },
+      // Notice: legacy appearance record has nebula-nova entry
+      equippedOutfits: {
+        "buster-blitz": "outfit-default",
+        "nebula-nova": "outfit-default"
+      },
+      customColors: {},
+      equippedVehicleId: null,
+      equippedVehicleUpgrades: {}
+    }
+  };
+
+  const collection = createMemoryProfileCollection({ "member-legacy": legacyDoc });
+
+  // When frontend opens CharacterVerse, it transmits its current state in autosave
+  const autosavePayload = {
+    equippedCharacterId: "buster-blitz",
+    equippedCosmetics: { "buster-blitz": {} },
+    equippedOutfits: { "buster-blitz": "outfit-default", "nebula-nova": "outfit-default" },
+    customColors: {},
+    equippedVehicleId: null,
+    equippedVehicleUpgrades: {},
+    selectedCharacterId: "buster-blitz"
+  };
+
+  const result = await saveAppearance(collection, "member-legacy", autosavePayload);
+  assert.equal(result.error, undefined, "Must not return INVALID_APPEARANCE");
+  assert.ok(result.profile, "Must return updated profile");
+  assert.equal(result.profile.appearance.equippedOutfits["buster-blitz"], "outfit-default");
+  // Security verification: unowned character was pruned/not equipped
+  assert.equal(result.profile.appearance.equippedOutfits["nebula-nova"], undefined);
+});
+
+test("regression: attempting to equip locked Warrior or Royal outfit is strictly rejected", async () => {
+  const collection = createMemoryProfileCollection();
+  await ensureProfile(collection, "member-locked-test");
+
+  // Member tries to equip outfit-warrior without purchasing
+  const warriorAttempt = await saveAppearance(collection, "member-locked-test", {
+    equippedOutfits: { "buster-blitz": "outfit-warrior" }
+  });
+  assert.equal(warriorAttempt.error, "INVALID_APPEARANCE");
+
+  // Member tries to equip outfit-royal without purchasing
+  const royalAttempt = await saveAppearance(collection, "member-locked-test", {
+    equippedOutfits: { "buster-blitz": "outfit-royal" }
+  });
+  assert.equal(royalAttempt.error, "INVALID_APPEARANCE");
+
+  // Member tries to equip outfit-warrior on an unowned character
+  const unownedCharAttempt = await saveAppearance(collection, "member-locked-test", {
+    equippedOutfits: { "nebula-nova": "outfit-warrior" }
+  });
+  assert.equal(unownedCharAttempt.error, "INVALID_APPEARANCE");
+});

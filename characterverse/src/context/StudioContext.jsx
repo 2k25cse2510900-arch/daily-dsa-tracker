@@ -79,7 +79,6 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
   // Active outfit tracking: { [charId]: outfitId }
   const [equippedOutfits, setEquippedOutfits] = useState({
     'buster-blitz': 'outfit-default',
-    'nebula-nova': 'outfit-default',
   });
   const [previewOutfitId, setPreviewOutfitId] = useState(null);
   const [previewColors, setPreviewColors] = useState({});
@@ -161,11 +160,20 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
   useEffect(() => {
     if (!profileReady) return undefined;
     const timer = setTimeout(() => {
+      const sanitizedCosmetics = {};
+      const sanitizedOutfits = {};
+      const sanitizedColors = {};
+      ownedCharacterIds.forEach((charId) => {
+        if (equippedCosmetics[charId]) sanitizedCosmetics[charId] = equippedCosmetics[charId];
+        if (equippedOutfits[charId]) sanitizedOutfits[charId] = equippedOutfits[charId];
+        if (customColors[charId]) sanitizedColors[charId] = customColors[charId];
+      });
+
       const payload = {
-        equippedCharacterId,
-        equippedCosmetics,
-        equippedOutfits,
-        customColors,
+        equippedCharacterId: ownedCharacterIds.includes(equippedCharacterId) ? equippedCharacterId : (ownedCharacterIds[0] || 'buster-blitz'),
+        equippedCosmetics: sanitizedCosmetics,
+        equippedOutfits: sanitizedOutfits,
+        customColors: sanitizedColors,
         equippedVehicleId,
         equippedVehicleUpgrades,
       };
