@@ -1909,9 +1909,16 @@ let leetcodeProfiles = {};
 let localSnapshot = null;
 let sessionExpiryTimer = null;
 let sessionExpiresAt = 0;
+let ensureMemberCharacterVerse = () => {};
+let routeAvatarInstance = null;
+let memberAvatarInstance = null;
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function expireLocalSession() {
+  routeAvatarInstance?.unmount();
+  routeAvatarInstance = null;
+  memberAvatarInstance?.unmount();
+  memberAvatarInstance = null;
   clearTimeout(sessionExpiryTimer);
   sessionExpiresAt = 0;
   isAdmin = false;
@@ -1979,14 +1986,44 @@ function setRoleUI() {
   }
 }
 
+const resetAdminLoginForm = () => {
+  const formElement = $("loginForm");
+  if (!formElement) return;
+  formElement.reset();
+  const passwordInput = $("adminPassword");
+  if (passwordInput) {
+    passwordInput.value = "";
+    passwordInput.type = "password";
+  }
+  const toggleBtn = $("togglePassword");
+  if (toggleBtn) {
+    toggleBtn.textContent = "Show";
+    toggleBtn.setAttribute("aria-label", "Show password");
+    toggleBtn.setAttribute("aria-pressed", "false");
+  }
+  const errorEl = $("loginError");
+  if (errorEl) errorEl.textContent = "";
+}
+
+function openAdminLoginDialog() {
+  resetAdminLoginForm();
+  $("loginDialog")?.showModal();
+}
+
+function openMemberLoginDialog() {
+  const errorEl = $("memberLoginError");
+  if (errorEl) errorEl.textContent = "";
+  $("memberLoginDialog")?.showModal();
+}
+
 function bindGateLoginButton(button) {
   if (!button) return;
-  button.addEventListener("click", () => $("loginBtn").click());
+  button.onclick = openAdminLoginDialog;
 }
 
 function bindGateMemberLoginButton(button) {
   if (!button) return;
-  button.addEventListener("click", openMemberLoginDialog);
+  button.onclick = openMemberLoginDialog;
 }
 
 function setSecurityGate(message, canImport = false, canSignIn = false) {
@@ -2048,12 +2085,38 @@ function renderMemberProgress() {
 
 function setMemberDashboardLoading() {
   $("memberDashboardName").textContent = memberProfile?.name || "Not available yet";
-  $("memberDashboardSolved").textContent = "Loading…";
+  $("memberDashboardHard").textContent = "Loading…";
   $("memberDashboardEasy").textContent = "Loading…";
   $("memberDashboardMedium").textContent = "Loading…";
   $("memberDashboardHard").textContent = "Loading…";
   $("memberDashboardMessage").hidden = true;
   $("memberDashboardRetry").hidden = true;
+  $("memberCharacterSummary").textContent = "Loading your secure character profile...";
+  $("memberCoinBalance").textContent = "-";
+  $("memberEquippedOutfit").textContent = "Loading";
+  $("memberEquippedVehicle").textContent = "Loading";
+}
+
+function characterVerseLabel(value, fallback) {
+  if (!value) return fallback;
+  return String(value).replace(/^(outfit-|vehicle-)/, "").replace(/-/g, " ").replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+async function loadMemberCharacterVerseSummary() {
+  try {
+    const profile = await apiRequest("/api/characterverse/me");
+    const appearance = profile.appearance || {};
+    const selected = characterVerseLabel(appearance.equippedCharacterId || appearance.selectedCharacterId, "Starter character");
+    $("memberCharacterSummary").textContent = `${selected} is ready in your 3D studio. Customize its appearance, manage your wardrobe, or visit the garage without leaving your profile.`;
+    $("memberCoinBalance").textContent = Number.isSafeInteger(profile.wallet?.coins) ? profile.wallet.coins.toLocaleString() : "0";
+    $("memberEquippedOutfit").textContent = characterVerseLabel(appearance.equippedOutfits?.[appearance.equippedCharacterId || appearance.selectedCharacterId], "Default");
+    $("memberEquippedVehicle").textContent = characterVerseLabel(appearance.equippedVehicleId, "On foot");
+  } catch (error) {
+    $("memberCharacterSummary").textContent = "Your character studio is temporarily unavailable. Your DSA progress remains available.";
+    $("memberCoinBalance").textContent = "Unavailable";
+    $("memberEquippedOutfit").textContent = "Unavailable";
+    $("memberEquippedVehicle").textContent = "Unavailable";
+  }
 }
 
 async function loadMemberPersonalDashboard() {
@@ -2076,8 +2139,30 @@ async function loadMemberPersonalDashboard() {
     $("memberDashboardMedium").textContent = Number.isSafeInteger(data.mediumSolved) ? data.mediumSolved.toLocaleString() : "Not available yet";
     $("memberDashboardHard").textContent = Number.isSafeInteger(data.hardSolved) ? data.hardSolved.toLocaleString() : "Not available yet";
     const photo = $("memberProfilePhoto");
+    const memberFallback = $("memberProfileInitials");
     photo.hidden = !data.photoUrl;
     photo.src = data.photoUrl || "";
+    if (memberFallback) memberFallback.hidden = Boolean(data.photoUrl);
+    void loadMemberCharacterVerseSummary();
+
+    const memberMount = $("memberProfileCharacterMount");
+    if (!memberAvatarInstance && window.CharacterVerseEmbed?.mountCharacterAvatar && memberMount) {
+      try {
+        memberAvatarInstance = window.CharacterVerseEmbed.mountCharacterAvatar(memberMount, {
+          onReady: () => {
+            memberFallback.hidden = true;
+            photo.hidden = true;
+          },
+          onError: () => {
+            if (!data.photoUrl) memberFallback.hidden = false;
+            else photo.hidden = false;
+          }
+        });
+      } catch {
+        if (!data.photoUrl) memberFallback.hidden = false;
+        else photo.hidden = false;
+      }
+    }
   } catch (error) {
     $("memberDashboardSolved").textContent = "Not available yet";
     $("memberDashboardEasy").textContent = "Not available yet";
@@ -2097,11 +2182,17 @@ function showMemberPersonalDashboard() {
   $("memberDashboardOpen").setAttribute("aria-expanded", "true");
   $("memberDashboardNav").setAttribute("aria-pressed", "true");
   $("memberProgressNav").setAttribute("aria-pressed", "false");
+  // The Three renderer must be created only after this visible, authenticated
+  // member view exists. Mounting it during boot created a zero-sized canvas and
+  // sent the profile request before the member session was established.
+  requestAnimationFrame(ensureMemberCharacterVerse);
   loadMemberPersonalDashboard();
 }
 
 function showMemberProgressView() {
   if (!memberProfile?.groupMember) return;
+  memberAvatarInstance?.unmount();
+  memberAvatarInstance = null;
   $("memberPersonalDashboard").hidden = true;
   $("memberProgressView").hidden = false;
   $("memberViewTitle").textContent = "My progress";
@@ -2117,6 +2208,57 @@ function initializeMemberDashboardNavigation() {
     showMemberProgressView();
     try { await loadMemberProgress(memberWeek); } catch (error) { showToast(error.message, "error"); }
   });
+  const characterMount = $("memberCharacterVerseMount");
+  const frameFallback = $("memberCharacterFrameFallback");
+  const characterStage = characterMount.closest(".member-character-stage");
+  const frameStatus = $("memberCharacterFrameStatus");
+  const frameRetry = $("memberCharacterFrameRetry");
+  let characterFrameReady = false;
+  let characterFrameTimer;
+  let characterVerse;
+  const showCharacterFrameFallback = (message, canRetry = false) => {
+    characterFrameReady = false;
+    characterStage.classList.remove("is-ready");
+    frameFallback.hidden = false;
+    frameStatus.textContent = message;
+    frameRetry.hidden = !canRetry;
+  };
+  const markCharacterFrameReady = () => {
+    if (characterFrameReady) return;
+    characterFrameReady = true;
+    clearTimeout(characterFrameTimer);
+    characterStage.classList.add("is-ready");
+    frameFallback.hidden = false;
+    frameRetry.hidden = true;
+  };
+  const receiveCharacterVerseReady = (event) => {
+    if (event.target === characterMount) markCharacterFrameReady();
+  };
+  characterMount.addEventListener("characterverse-preview-ready", receiveCharacterVerseReady);
+  const mountCharacterVerse = () => {
+    clearTimeout(characterFrameTimer);
+    showCharacterFrameFallback("Loading your character model...");
+    try {
+      characterVerse?.unmount();
+      if (!window.CharacterVerseEmbed?.mountCharacterVerse) throw new Error("The integrated CharacterVerse bundle is unavailable.");
+      characterVerse = window.CharacterVerseEmbed.mountCharacterVerse(characterMount);
+      characterFrameTimer = setTimeout(() => showCharacterFrameFallback("The 3D preview is taking longer than expected. Your saved character and DSA progress are safe.", true), 15000);
+    } catch {
+      showCharacterFrameFallback("The integrated 3D studio could not load. Check your connection and try again.", true);
+    }
+  };
+  ensureMemberCharacterVerse = () => {
+    if (!isMember || characterVerse) return;
+    mountCharacterVerse();
+  };
+  frameRetry.addEventListener("click", () => {
+    mountCharacterVerse();
+  });
+  document.querySelectorAll("[data-characterverse-tab]").forEach(button => button.addEventListener("click", () => {
+    const tab = button.dataset.characterverseTab;
+    characterVerse?.navigate(tab);
+    characterMount.scrollIntoView({ behavior: "smooth", block: "center" });
+  }));
 }
 
 async function openProfileRoute(memberId, pushHistory = false) {
@@ -2126,17 +2268,24 @@ async function openProfileRoute(memberId, pushHistory = false) {
   document.querySelector(".app-shell").hidden = true;
   $("memberHome").hidden = true;
   $("profileRoutePage").hidden = false;
-  $("routeProfileName").textContent = "Loading profile…";
+  $("routeProfileSource").textContent = "Loading statistics…";
   $("routeProfileSource").textContent = "Loading statistics…";
   $("routeProfileUsername").textContent = "Not linked";
   $("routeProfileLink").hidden = true;
   $("routeProfileMessage").hidden = true;
   ["routeProfileTotal", "routeProfileEasy", "routeProfileMedium", "routeProfileHard"].forEach(id => { $(id).textContent = "—"; });
+  routeAvatarInstance?.unmount();
+  routeAvatarInstance = null;
+  const routeMount = $("routeProfileCharacterMount");
+  const routeFallback = $("routeProfileAvatar");
+  routeFallback.hidden = false;
+  const characterBtn = $("routeProfileCharacterBtn");
+  if (characterBtn) characterBtn.hidden = true;
   try {
     const data = await apiRequest(`/api/profile/${encodeURIComponent(memberId)}`);
     const displayName = (data.name || "Member").replace(/\s*\(ADMIN\)\s*$/i, "").trim();
     $("routeProfileName").textContent = displayName;
-    $("routeProfileAvatar").textContent = getInitials(displayName);
+    routeFallback.textContent = getInitials(displayName);
     $("routeProfileUsername").textContent = data.leetCodeUsername || "Not linked";
     if (data.profileUrl) {
       $("routeProfileLink").href = data.profileUrl;
@@ -2152,15 +2301,42 @@ async function openProfileRoute(memberId, pushHistory = false) {
     } else {
       $("routeProfileSource").textContent = "LeetCode statistics are unavailable until the public profile can be verified.";
     }
+    const isSelf = isMember && memberProfile?.id === memberId;
+    if (isSelf && characterBtn) {
+      characterBtn.href = `/characterverse?returnTo=${encodeURIComponent('/profile/' + memberId)}`;
+      characterBtn.hidden = false;
+    }
+    const portraitFallback = $("routeProfileCharacterFallback");
+    if (portraitFallback) portraitFallback.hidden = false;
+    if (window.CharacterVerseEmbed?.mountCharacterAvatar && routeMount) {
+      try {
+        routeAvatarInstance = window.CharacterVerseEmbed.mountCharacterAvatar(routeMount, {
+          appearance: data.characterVerse?.appearance || null,
+          autoRotate: false,
+          profilePreview: true,
+          onReady: () => {
+            if (portraitFallback) portraitFallback.hidden = true;
+          },
+          onError: () => {
+            if (portraitFallback) portraitFallback.hidden = false;
+          }
+        });
+      } catch {
+        if (portraitFallback) portraitFallback.hidden = false;
+      }
+    }
   } catch (error) {
     $("routeProfileName").textContent = "Profile unavailable";
     $("routeProfileSource").textContent = "Profile statistics could not be loaded.";
     $("routeProfileMessage").textContent = error.message || "Profile data could not be loaded.";
     $("routeProfileMessage").hidden = false;
+    routeFallback.hidden = false;
   }
 }
 
 function restoreDashboardRoute() {
+  routeAvatarInstance?.unmount();
+  routeAvatarInstance = null;
   $("profileRoutePage").hidden = true;
   setRoleUI();
   if (isAdmin || isMember) showPage("overview");
@@ -2256,21 +2432,8 @@ async function navigatePage(page) {
 function initializeSecurityControls() {
   const dialog = $("loginDialog");
   const formElement = $("loginForm");
-  const resetAdminLoginForm = () => {
-    formElement.reset();
-    const passwordInput = $("adminPassword");
-    passwordInput.value = "";
-    passwordInput.type = "password";
-    $("togglePassword").textContent = "Show";
-    $("togglePassword").setAttribute("aria-label", "Show password");
-    $("togglePassword").setAttribute("aria-pressed", "false");
-    $("loginError").textContent = "";
-  };
-  const openAdminLoginDialog = () => {
-    resetAdminLoginForm();
-    dialog.showModal();
-  };
   $("loginBtn").addEventListener("click", openAdminLoginDialog);
+  bindGateLoginButton($("gateAdminLogin"));
   bindGateMemberLoginButton($("gateMemberLogin"));
   $("cancelMemberLogin").addEventListener("click", () => $("memberLoginDialog").close());
   $("cancelMemberEmail").addEventListener("click", () => { memberEmailTarget = null; $("memberEmailDialog").close(); });
@@ -2405,12 +2568,11 @@ function initializeSecurityControls() {
   $("logoutBtn").addEventListener("click", logoutCurrentSession);
 }
 
-function openMemberLoginDialog() {
-  $("memberLoginError").textContent = "";
-  $("memberLoginDialog").showModal();
-}
-
 async function logoutCurrentSession() {
+  routeAvatarInstance?.unmount();
+  routeAvatarInstance = null;
+  memberAvatarInstance?.unmount();
+  memberAvatarInstance = null;
   try {
     await apiRequest("/api/logout", { method: "POST", body: "{}" });
     if (isMember && window.memberFirebaseAuth) await window.memberFirebaseAuth.signOut().catch(() => {});
@@ -2438,7 +2600,10 @@ async function initializeApp() {
   initializeSecurityControls();
   const profileRoute = location.pathname.match(/^\/profile\/([\w-]{1,100})\/?$/);
   try {
-    const session = await apiRequest("/api/session");
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
+    const session = await apiRequest("/api/session", controller ? { signal: controller.signal } : {});
+    if (timeoutId) clearTimeout(timeoutId);
     isAdmin = session.role === "admin";
     isMember = session.role === "member";
     memberProfile = session.member || null;
@@ -2456,9 +2621,9 @@ async function initializeApp() {
         state.currentWeek = currentWeek;
         ensureAllData();
         renderAll();
-        setSecurityGate("Shared data is not initialized. Import this browser’s existing data to preserve it, or use the admin import endpoint.", true);
+        setSecurityGate("Shared data is not initialized. Import this browser’s existing data to preserve it, or use the admin import endpoint.", true, true);
       } else {
-        setSecurityGate(error.message);
+        setSecurityGate(error.message, false, true);
       }
     } else if (isMember) {
       $("securityGate").hidden = true;
@@ -2470,7 +2635,7 @@ async function initializeApp() {
       setSecurityGate("Choose an account type to sign in.", false, true);
     }
   } catch (error) {
-    setSecurityGate("Secure server unavailable. Start the dashboard server; local-only mode is disabled.", false, true);
+    setSecurityGate("Session verification timed out or secure server is unavailable. You can sign in below.", false, true);
     console.error("Dashboard security initialization failed:", error.message);
   }
 }

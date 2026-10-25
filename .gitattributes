@@ -1,0 +1,3 @@
+# Generated Three.js bundles retain shader-source whitespace by design.
+public/characterverse/**/*.js -whitespace
+public/characterverse-embed/*.js -whitespace

@@ -367,11 +367,57 @@
       </div>
     </div>
     <section id="memberPersonalDashboard" class="member-personal-dashboard" aria-labelledby="memberPersonalDashboardTitle">
-      <div class="member-dashboard-heading"><div><h2 id="memberPersonalDashboardTitle">My profile</h2><p>Your verified identity and mapped LeetCode results.</p></div></div>
+      <div class="member-dashboard-heading"><div><h2 id="memberPersonalDashboardTitle">My player profile</h2><p>Your DSA progress, character loadout, and secure coin wallet.</p></div></div>
       <p id="memberDashboardMessage" class="member-dashboard-message" role="status" hidden></p>
       <button class="btn btn-light" id="memberDashboardRetry" type="button" hidden>Try again</button>
-      <div class="member-profile-identity"><img id="memberProfilePhoto" class="member-profile-photo" alt="" hidden><span id="memberProfileInitials" class="member-profile-initials" aria-hidden="true">M</span><div><span class="member-stat-label">Member</span><strong id="memberDashboardName" class="member-stat-value">Loading…</strong><span id="memberDashboardEmail" class="member-stat-detail"></span></div></div>
+      <div class="member-profile-identity">
+        <div class="member-profile-avatar-wrapper">
+          <img id="memberProfilePhoto" class="member-profile-photo" alt="" hidden>
+          <span id="memberProfileInitials" class="member-profile-initials" aria-hidden="true">M</span>
+        </div>
+        <div class="member-profile-title-block">
+          <div class="member-profile-title-row">
+            <div>
+              <span class="member-stat-label">Member</span>
+              <strong id="memberDashboardName" class="member-stat-value">Loading…</strong>
+            </div>
+            <a id="memberViewCharacterBtn" class="btn btn-primary view-character-btn" href="/characterverse">
+              <svg class="view-character-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zm-6 14a6 6 0 1112 0H4z"/></svg>
+              View Your Character
+            </a>
+          </div>
+          <span id="memberDashboardEmail" class="member-stat-detail"></span>
+        </div>
+      </div>
       <p id="memberGroupStatus" class="member-group-status" role="status"></p>
+      <section class="member-game-profile" aria-labelledby="memberGameProfileTitle">
+        <div class="member-game-copy">
+          <span class="member-game-kicker">DSA CHARACTERVERSE</span>
+          <h2 id="memberGameProfileTitle">My Character</h2>
+          <p id="memberCharacterSummary">Loading your secure character profile...</p>
+          <div class="member-game-loadout">
+            <span><strong id="memberCoinBalance">-</strong> coins</span>
+            <span>Outfit: <strong id="memberEquippedOutfit">Default</strong></span>
+            <span>Ride: <strong id="memberEquippedVehicle">On foot</strong></span>
+          </div>
+          <div class="member-character-actions" aria-label="CharacterVerse sections">
+            <button class="btn btn-primary" type="button" data-characterverse-tab="studio">Customize Character</button>
+            <button class="btn btn-light" type="button" data-characterverse-tab="wardrobe">Wardrobe</button>
+            <button class="btn btn-light" type="button" data-characterverse-tab="vehicles">Garage / Store</button>
+            <button class="btn btn-light" type="button" data-characterverse-tab="inventory">Inventory</button>
+          </div>
+        </div>
+        <div class="member-character-stage">
+          <div id="memberCharacterFrameFallback" class="member-character-frame-fallback" role="status" aria-live="polite">
+            <div>
+              <strong id="memberCharacterFrameStatus">Preparing your 3D character preview...</strong>
+              <p>The studio loads your saved loadout securely from your member account.</p>
+              <button id="memberCharacterFrameRetry" class="btn btn-light" type="button" hidden>Retry 3D preview</button>
+            </div>
+          </div>
+          <div id="memberCharacterVerseMount" class="member-characterverse-mount" aria-label="CharacterVerse 3D character customizer"></div>
+        </div>
+      </section>
       <form id="memberLeetCodeForm" class="member-leetcode-form"><label for="memberLeetCodeUsername">LeetCode username<input id="memberLeetCodeUsername" maxlength="64" autocomplete="off" placeholder="Not linked yet"></label><button class="btn btn-light" type="submit">Save</button></form>
       <div class="member-stat-grid" aria-live="polite">
         <article class="panel member-stat-card"><span class="member-stat-label">Total solved</span><strong id="memberDashboardSolved" class="member-stat-value">Loading…</strong></article>
@@ -390,23 +436,51 @@
     <div class="leetcode-profile-shell">
       <div class="leetcode-profile-toolbar"><a id="profileBackToDashboard" class="leetcode-profile-back" href="/">&#8592; Back to Dashboard</a></div>
       <section class="leetcode-profile-card" aria-labelledby="routeProfileName">
-        <div class="leetcode-profile-identity">
-          <span id="routeProfileAvatar" class="leetcode-profile-avatar" aria-hidden="true">K</span>
-          <div><h1 id="routeProfileName">Loading profileâ€¦</h1><p id="routeProfileEmail" hidden></p></div>
+        <div class="leetcode-profile-card-header">
+          <div class="leetcode-profile-identity">
+            <div class="leetcode-profile-avatar-wrapper">
+              <span id="routeProfileAvatar" class="leetcode-profile-avatar" aria-hidden="true">K</span>
+            </div>
+            <div class="leetcode-profile-title-block">
+              <h1 id="routeProfileName">Loading profile…</h1>
+              <p id="routeProfileEmail" hidden></p>
+            </div>
+          </div>
+          <div class="leetcode-profile-card-actions">
+            <a id="routeProfileCharacterBtn" class="btn btn-primary view-character-btn" href="/characterverse" hidden>
+              <svg class="view-character-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zm-6 14a6 6 0 1112 0H4z"/></svg>
+              View Your Character
+            </a>
+          </div>
         </div>
-        <div class="leetcode-profile-account">
-          <span>LeetCode username</span>
-          <strong id="routeProfileUsername">Not linked</strong>
-          <a id="routeProfileLink" href="https://leetcode.com/" target="_blank" rel="noopener noreferrer" hidden>Open public profile</a>
+
+        <div class="leetcode-profile-layout">
+          <div class="leetcode-profile-main-col">
+            <div class="leetcode-profile-account">
+              <span>LeetCode username</span>
+              <strong id="routeProfileUsername">Not linked</strong>
+              <a id="routeProfileLink" href="https://leetcode.com/" target="_blank" rel="noopener noreferrer" hidden>Open public profile</a>
+            </div>
+            <p id="routeProfileMessage" class="leetcode-profile-message" role="status" hidden></p>
+            <div class="leetcode-profile-stats" aria-label="LeetCode questions solved">
+              <article><span>Total solved</span><strong id="routeProfileTotal">—</strong></article>
+              <article><span>Easy</span><strong id="routeProfileEasy">—</strong></article>
+              <article><span>Medium</span><strong id="routeProfileMedium">—</strong></article>
+              <article><span>Hard</span><strong id="routeProfileHard">—</strong></article>
+            </div>
+            <small id="routeProfileSource" class="leetcode-profile-source"></small>
+          </div>
+
+          <div class="leetcode-profile-portrait-col">
+            <div class="leetcode-profile-portrait-stage">
+              <div id="routeProfileCharacterMount" class="leetcode-profile-character-mount" aria-label="3D Character Avatar"></div>
+              <div id="routeProfileCharacterFallback" class="portrait-stage-fallback" hidden>
+                <div class="portrait-fallback-icon">🛡️</div>
+                <p class="portrait-fallback-text">3D hero preview</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <p id="routeProfileMessage" class="leetcode-profile-message" role="status" hidden></p>
-        <div class="leetcode-profile-stats" aria-label="LeetCode questions solved">
-          <article><span>Total solved</span><strong id="routeProfileTotal">â€”</strong></article>
-          <article><span>Easy</span><strong id="routeProfileEasy">â€”</strong></article>
-          <article><span>Medium</span><strong id="routeProfileMedium">â€”</strong></article>
-          <article><span>Hard</span><strong id="routeProfileHard">â€”</strong></article>
-        </div>
-        <small id="routeProfileSource" class="leetcode-profile-source"></small>
       </section>
     </div>
   </main>
@@ -445,6 +519,7 @@
 
   <script src="activity-date.js"></script>
   <script src="firebase-client.js"></script>
+  <script src="/characterverse-embed/characterverse-embed.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

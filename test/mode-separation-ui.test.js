@@ -64,3 +64,38 @@ test("profile route identifiers, refresh handling, and Back to Dashboard control
   assert.match(script, /location\.pathname\.match\(\/\^\\\/profile/);
   assert.match(script, /addEventListener\("popstate"/);
 });
+
+test("secure session gate provides responsive Admin Login and Member Login buttons with distinct dialog flows", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const script = fs.readFileSync(path.join(root, "script.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+
+  // Elements exist in HTML
+  assert.match(html, /id="securityGate"/);
+  assert.match(html, /id="gateAdminLogin"/);
+  assert.match(html, /id="gateMemberLogin"/);
+  assert.match(html, /id="loginDialog"/);
+  assert.match(html, /id="memberLoginDialog"/);
+
+  // Script registers click handlers via idempotent binding functions
+  assert.match(script, /function bindGateLoginButton\(button\) \{/);
+  assert.match(script, /button\.onclick = openAdminLoginDialog/);
+  assert.match(script, /function bindGateMemberLoginButton\(button\) \{/);
+  assert.match(script, /button\.onclick = openMemberLoginDialog/);
+
+  // Flow handlers open respective dialogs
+  assert.match(script, /function openAdminLoginDialog\(\) \{[\s\S]*?loginDialog.*showModal/);
+  assert.match(script, /function openMemberLoginDialog\(\) \{[\s\S]*?memberLoginDialog.*showModal/);
+
+  // Session check failure leaves gate with functional login buttons
+  assert.match(script, /setSecurityGate\("Session verification timed out or secure server is unavailable\. You can sign in below\.", false, true\);/);
+
+  // setSecurityGate binds both buttons when rendered with canSignIn = true
+  assert.match(script, /bindGateLoginButton\(\$\("gateAdminLogin"\)\);/);
+  assert.match(script, /bindGateMemberLoginButton\(\$\("gateMemberLogin"\)\);/);
+
+  // CSS ensures security-gate and its actions receive pointer events without invisible overlays blocking them
+  assert.match(css, /\.security-gate:not\(\[hidden\]\)\s*\{[^}]*position:\s*fixed/);
+  assert.doesNotMatch(css, /\.security-gate[^{]*\{[^}]*pointer-events:\s*none/);
+  assert.doesNotMatch(css, /\.gate-actions[^{]*\{[^}]*pointer-events:\s*none/);
+});

@@ -6,10 +6,14 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "vercel-build": "node scripts/prepare-vercel-assets.js",
+    "vercel-build": "npm --prefix characterverse run build && npm --prefix characterverse run build:embed && node scripts/prepare-vercel-assets.js",
     "diagnose-mongodb": "node scripts/diagnose-mongodb.js",
     "provision-admin": "node scripts/provision-admin.js",
-    "test": "node --test"
+    "test": "node --test",
+    "characterverse:dev": "npm --prefix characterverse run dev",
+    "characterverse:build": "npm --prefix characterverse run build",
+    "characterverse:build:embed": "npm --prefix characterverse run build:embed",
+    "characterverse:preview": "npm --prefix characterverse run preview"
   },
   "engines": {
     "node": ">=20 <21 || >=22 <23"

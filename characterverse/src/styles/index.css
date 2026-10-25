@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Outfit', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #ebe6f0;
+    color: #261b35;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+
+  /* Prevent text selection on interactive game UI */
+  button, [role="button"] {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep scrollability */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Custom thin scrollbars for sidebars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #f0eaf3;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7b8d2;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a893b8;
+}
+
+/* Glassmorphic panel helpers */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(219, 206, 226, 0.85);
+  box-shadow: 0 10px 30px rgba(48, 33, 62, 0.08);
+}
+
+/* Neon glow utilities */
+.glow-rare    { box-shadow: 0 0 16px -2px rgba(14, 165, 233, 0.35); }
+.glow-epic    { box-shadow: 0 0 16px -2px rgba(117, 68, 174, 0.35); }
+.glow-legendary { box-shadow: 0 0 18px -2px rgba(200, 136, 50, 0.40); }
+
+/* Simple modal entry animation */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.modal-enter {
+  animation: fadeSlideUp 0.25s ease-out both;
+}

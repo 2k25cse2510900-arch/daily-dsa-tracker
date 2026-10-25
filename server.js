@@ -24,6 +24,7 @@ const { SESSION_TTL_SECONDS, createAdminSessionOptions } = require("./session-co
 const { sameOriginMutationOnly } = require("./request-security");
 const { calculateTotalActiveDays, resolveTodayActivity, calculateTotalMemberPoints, publicSolvedStats, createMemberDashboardHandler } = require("./member-dashboard");
 const { createPersonalProfileResolver } = require("./member-profiles");
+const { publicProfile: publicCharacterVerseProfile, ensureProfile: ensureCharacterVerseProfile, saveAppearance: saveCharacterVerseAppearance, purchase: purchaseCharacterVerseItem } = require("./characterverse-profiles");
 const { REFRESH_INTERVAL_MS, REQUEST_GAP_MS, RECENT_SUBMISSION_LIMIT, profileForMember, fetchProfile, fetchRecentSubmissions, inspectMemberActivity, effectiveActivityDate, trackerPosition, publicRecord } = require("./leetcode");
 const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
 const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, ACTIVITY_LOCK_LEASE_MS, ACTIVITY_LOCK_HEARTBEAT_MS, acquireActivityLease, renewActivityLease, releaseActivityLease } = require("./activity-jobs");
@@ -124,6 +125,7 @@ function initializeRuntime() {
         db.collection("memberAuthLinks").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true }),
         db.collection("memberAuthLinks").createIndex({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: "string" } } }),
         db.collection("memberProfiles").createIndex({ firebaseUid: 1 }, { unique: true }),
+        db.collection("characterVerseProfiles").createIndex({ updatedAt: 1 }),
         db.collection("audit").createIndex({ at: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }),
         db.collection("leetcodeSubmissions").createIndex({ memberId: 1, activityDate: 1 })
       ]);
@@ -291,7 +293,7 @@ const resolvePersonalProfile = createPersonalProfileResolver({ collection: { upd
 
 app.disable("x-powered-by");
 app.set("trust proxy", production ? 1 : false);
-app.use(helmet({ crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, contentSecurityPolicy: { directives: { "default-src": ["'self'"], "script-src": ["'self'", "https://www.gstatic.com", "https://apis.google.com"], "style-src": ["'self'", "'unsafe-inline'"], "img-src": ["'self'", "data:"], "connect-src": ["'self'", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://*.firebaseapp.com", "https://*.web.app"], "frame-src": ["https://accounts.google.com", "https://*.firebaseapp.com", "https://*.web.app"], "object-src": ["'none'"], "frame-ancestors": ["'none'"] } } }));
+app.use(helmet({ crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, contentSecurityPolicy: { directives: { "default-src": ["'self'"], "script-src": ["'self'", "https://www.gstatic.com", "https://apis.google.com"], "style-src": ["'self'", "'unsafe-inline'"], "img-src": ["'self'", "data:", "blob:"], "connect-src": ["'self'", "blob:", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com", "https://*.firebaseapp.com", "https://*.web.app"], "frame-src": ["https://accounts.google.com", "https://*.firebaseapp.com", "https://*.web.app"], "object-src": ["'none'"], "frame-ancestors": ["'none'"] } } }));
 app.use(express.json({ limit: "1mb", strict: true }));
 app.use("/api", (req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
 app.use(requireRuntime);
@@ -381,6 +383,7 @@ app.get("/api/profile/:memberId", async (req, res, next) => {
     const profileRecord = username ? await db.collection("leetcodeProfiles").findOne({ _id: memberId, username }, { projection: { stats: 1, status: 1, lastFetchedAt: 1 } }) : null;
     const rawStats = profileRecord?.status === "Success" ? profileRecord.stats : null;
     const stats = publicSolvedStats(rawStats);
+    const cvDoc = await db.collection("characterVerseProfiles").findOne({ _id: memberId }, { projection: { appearance: 1 } });
     res.json({
       id: memberId,
       name: member?.name || personal?.displayName || "Member",
@@ -390,7 +393,8 @@ app.get("/api/profile/:memberId", async (req, res, next) => {
       stats,
       statsSource: stats ? "LeetCode public profile" : null,
       statsUpdatedAt: stats ? profileRecord.lastFetchedAt || null : null,
-      statsUnavailable: Boolean(username && !stats)
+      statsUnavailable: Boolean(username && !stats),
+      characterVerse: cvDoc?.appearance ? { appearance: cvDoc.appearance } : null
     });
   } catch {
     res.status(503).json({ error: "Profile data is temporarily unavailable." });
@@ -597,6 +601,42 @@ app.get("/api/member/dashboard", memberOnly, createMemberDashboardHandler({
     };
   }
 }));
+
+// CharacterVerse always resolves the owner from the authenticated session.
+// No route or request body may select another member's profile.
+app.get("/api/characterverse/me", memberOnly, async (req, res) => {
+  try {
+    const profile = await ensureCharacterVerseProfile(db.collection("characterVerseProfiles"), req.member.id);
+    res.json(publicCharacterVerseProfile(profile));
+  } catch {
+    res.status(503).json({ error: "CharacterVerse profile is temporarily unavailable." });
+  }
+});
+
+app.put("/api/characterverse/me/appearance", memberOnly, async (req, res) => {
+  try {
+    const result = await saveCharacterVerseAppearance(db.collection("characterVerseProfiles"), req.member.id, req.body);
+    if (result.error) return res.status(400).json({ error: "Invalid CharacterVerse appearance update." });
+    res.json(publicCharacterVerseProfile(result.profile));
+  } catch {
+    res.status(503).json({ error: "CharacterVerse appearance could not be saved." });
+  }
+});
+
+app.post("/api/characterverse/me/purchases/:kind/:itemId", memberOnly, async (req, res) => {
+  const { kind, itemId } = req.params;
+  if (!["vehicle", "upgrade"].includes(kind) || !/^[a-z0-9-]{1,80}$/.test(itemId)) return res.status(400).json({ error: "Unknown CharacterVerse item." });
+  try {
+    const result = await purchaseCharacterVerseItem(db.collection("characterVerseProfiles"), req.member.id, kind, itemId);
+    if (result.error === "UNKNOWN_ITEM") return res.status(404).json({ error: "CharacterVerse item was not found." });
+    if (result.error === "ALREADY_OWNED") return res.status(409).json({ error: "You already own this item." });
+    if (result.error === "REQUIRES_VEHICLE") return res.status(409).json({ error: "Unlock the matching vehicle before its upgrade." });
+    if (result.error === "INSUFFICIENT_COINS") return res.status(409).json({ error: "You do not have enough coins." });
+    res.json(publicCharacterVerseProfile(result.profile));
+  } catch {
+    res.status(503).json({ error: "CharacterVerse purchase could not be completed." });
+  }
+});
 
 app.put("/api/member/profile", memberOnly, (_req, res) => res.status(403).json({ error: "Member Mode is read-only." }));
 app.post("/api/member/progress", memberOnly, (_req, res) => res.status(403).json({ error: "Member Mode is read-only." }));
@@ -1127,6 +1167,19 @@ function startLeetCodeActivityScheduler() {
   };
   scheduleBoundary();
 }
+
+// CharacterVerse is a separately built client application. Its assets remain
+// public, while its entry document and every data operation require a member
+// session. The API remains the authorization boundary.
+app.use("/characterverse", express.static(path.join(__dirname, "characterverse", "dist"), { index: false, maxAge: production ? "1h" : 0 }));
+app.get(["/characterverse", "/characterverse/"], memberOnly, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(__dirname, "characterverse", "dist", "index.html"));
+});
+// The member dashboard mounts this bundle directly in a Shadow DOM. Keeping
+// the assets separate preserves CharacterVerse's standalone development build
+// without exposing it as a second member-facing route.
+app.use("/characterverse-embed", express.static(path.join(__dirname, "characterverse", "dist-embed"), { index: false, maxAge: production ? "1h" : 0 }));
 
 app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
 app.get("/index.html", (req, res) => { res.setHeader("Cache-Control", "no-store"); res.sendFile(path.join(__dirname, "index.html")); });
