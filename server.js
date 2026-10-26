@@ -31,8 +31,9 @@ const { REFRESH_INTERVAL_MS, REQUEST_GAP_MS, RECENT_SUBMISSION_LIMIT, profileFor
 const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
 const { MAX_WEEKS, scheduledSlots } = require("./tracker-calendar");
 const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, ACTIVITY_LOCK_LEASE_MS, ACTIVITY_LOCK_HEARTBEAT_MS, acquireActivityLease, renewActivityLease, releaseActivityLease } = require("./activity-jobs");
+const { buildRaceArenaState } = require("./arena-race");
 
-const PAGES = ["overview", "daily", "concepts", "members", "report", "leaderboard"];
+const PAGES = ["overview", "daily", "concepts", "members", "arena", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
 const PORT = Number(process.env.PORT) || 3000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -570,8 +571,37 @@ app.get("/api/page-data/:page", dashboardViewer, async (req, res) => {
     const summary = rows.map(row => ({ name: row.name, dailyDone: row.dailyDone, conceptsDone: row.conceptsDone, overallDone: row.score, percent: row.percent }));
     return res.json({ page, week: weekNumber, participants: rows.length, dailyDone: rows.reduce((n, row) => n + row.dailyDone, 0), conceptsDone: rows.reduce((n, row) => n + row.conceptsDone, 0), summary });
   }
+  if (page === "arena") {
+    const memberIds = shared.members.map(member => member.id);
+    const [leetcodeDocs, cvDocs] = await Promise.all([
+      db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray(),
+      db.collection("characterVerseProfiles").find({ _id: { $in: memberIds } }).toArray()
+    ]);
+    const leetCodeMap = new Map(leetcodeDocs.map(doc => [doc._id, doc]));
+    const cvMap = new Map(cvDocs.map(doc => [doc._id, doc]));
+    const arena = buildRaceArenaState(shared.members, leetCodeMap, cvMap);
+    return res.json({ page, week: weekNumber, arena });
+  }
   if (page === "report") {
     return res.json({ page, week: weekNumber, members, statuses: { daily: Object.fromEntries(members.map(member => [member.id, daily(member.id)])), concepts: Object.fromEntries(members.map(member => [member.id, concepts(member.id)])) } });
+  }
+});
+
+app.get("/api/arena/live", dashboardViewer, async (req, res) => {
+  try {
+    const document = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
+    const members = document?.members || [];
+    const memberIds = members.map(member => member.id);
+    const [leetcodeDocs, cvDocs] = await Promise.all([
+      db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray(),
+      db.collection("characterVerseProfiles").find({ _id: { $in: memberIds } }).toArray()
+    ]);
+    const leetCodeMap = new Map(leetcodeDocs.map(doc => [doc._id, doc]));
+    const cvMap = new Map(cvDocs.map(doc => [doc._id, doc]));
+    const arena = buildRaceArenaState(members, leetCodeMap, cvMap);
+    res.json(arena);
+  } catch (error) {
+    res.status(503).json({ error: "Race arena standings are temporarily unavailable." });
   }
 });
 

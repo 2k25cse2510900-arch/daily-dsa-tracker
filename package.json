@@ -10,7 +10,7 @@
     "diagnose-mongodb": "node scripts/diagnose-mongodb.js",
     "characterverse:rewards:report": "node scripts/characterverse-rewards-report.js",
     "provision-admin": "node scripts/provision-admin.js",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "characterverse:dev": "npm --prefix characterverse run dev",
     "characterverse:build": "npm --prefix characterverse run build",
     "characterverse:build:embed": "npm --prefix characterverse run build:embed",

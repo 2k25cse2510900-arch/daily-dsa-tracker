@@ -18,6 +18,7 @@ const PAGE_INFO = {
   daily: { title: "Daily Submissions", id: "dailyPage" },
   concepts: { title: "Weekly Concepts", id: "conceptsPage" },
   members: { title: "Members", id: "membersPage" },
+  arena: { title: "Race Arena", id: "arenaPage" },
   leaderboard: { title: "Leaderboard", id: "leaderboardPage" },
   report: { title: "Weekly Report", id: "reportPage" }
 };
@@ -533,6 +534,11 @@ function showPage(pageName) {
     renderReport();
   }
   if (pageName === "daily" && isAdmin) loadDailyActivityStatus();
+  if (pageName === "arena") {
+    loadAndMountArenaPage(viewerPageData?.arena || null);
+  } else {
+    cleanupArenaPage();
+  }
 
   animatePageAchievements(pageName);
   if (pageName === "leaderboard") observePodiumVisibility();
@@ -2415,6 +2421,213 @@ function renderViewerOverview(data) {
   renderArenaAchievements(data.summary.map(member => ({ member, stats: member, daily: [] })));
 }
 
+let liveArenaInstance = null;
+let arenaPollingInterval = null;
+let arenaCameraMode = "leader";
+let arenaReducedMotion = false;
+let arenaFocusedMemberId = null;
+let arenaCurrentState = null;
+
+function cleanupArenaPage() {
+  if (arenaPollingInterval) {
+    clearInterval(arenaPollingInterval);
+    arenaPollingInterval = null;
+  }
+  if (liveArenaInstance) {
+    try {
+      liveArenaInstance.unmount();
+    } catch (_) {}
+    liveArenaInstance = null;
+  }
+}
+
+async function fetchArenaLiveState() {
+  try {
+    const arena = await apiRequest("/api/arena/live");
+    if (!arena || !arena.racers) return null;
+    arenaCurrentState = arena;
+    const syncEl = $("arenaSyncTime");
+    if (syncEl) syncEl.textContent = `Live Sync: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    renderArenaStandings(arena);
+    if (liveArenaInstance) {
+      liveArenaInstance.update(arena);
+    }
+    return arena;
+  } catch (err) {
+    console.error("Live arena poll error:", err);
+    return null;
+  }
+}
+
+function renderArenaStandings(arena) {
+  const listEl = $("arenaStandingsList");
+  if (!listEl || !arena || !arena.racers) return;
+
+  const milestoneEl = $("arenaTargetMilestoneValue");
+  if (milestoneEl) milestoneEl.textContent = `${arena.targetMilestone || 100} Solved`;
+  const countEl = $("arenaStandingsCount");
+  if (countEl) countEl.textContent = `${arena.racers.length} Racers`;
+
+  listEl.innerHTML = "";
+  arena.racers.forEach((racer) => {
+    const memberId = racer.id || racer.memberId;
+    const isFocused = memberId && memberId === arenaFocusedMemberId;
+    const item = document.createElement("div");
+    item.className = `standings-item${isFocused ? " focused" : ""}`;
+    item.setAttribute("role", "listitem");
+    item.tabIndex = 0;
+
+    const rankClass = racer.rank <= 3 ? `standings-rank-${racer.rank}` : "standings-rank-other";
+    const percent = Math.round((racer.progress || 0) * 100);
+    const vehicleIcon = racer.character?.equippedVehicleId ? "🏎️" : "🏃";
+    const solvedNum = Number(racer.solved ?? racer.solvedCount ?? 0);
+    const solvedMarkup = racer.solvedAvailable === false
+      ? `<span class="standings-pending">Pending sync</span>`
+      : `${solvedNum} <small style="font-size:10px;color:var(--text-muted)">solved</small>`;
+
+    item.innerHTML = `
+      <div class="standings-rank-pill ${rankClass}">#${racer.rank}</div>
+      <div class="standings-info">
+        <div class="standings-name-row">
+          <span class="standings-name" title="${escapeHTML(racer.name)}">${escapeHTML(racer.name)}</span>
+          <span class="standings-solved">${solvedMarkup}</span>
+        </div>
+        <div class="standings-bar-bg">
+          <div class="standings-bar-fill ${racer.rank <= 3 ? `rank-${racer.rank}` : ""}" style="width: ${percent}%"></div>
+        </div>
+        <div class="standings-meta">
+          <span>Lane ${(racer.laneIndex || 0) + 1} · ${vehicleIcon}</span>
+          <span>${percent}%</span>
+        </div>
+      </div>
+    `;
+
+    item.addEventListener("click", () => {
+      arenaFocusedMemberId = memberId;
+      document.querySelectorAll(".standings-item").forEach(el => el.classList.remove("focused"));
+      item.classList.add("focused");
+      if (liveArenaInstance) {
+        liveArenaInstance.focusMember(memberId);
+        setArenaCameraMode("leader");
+      }
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+function setArenaCameraMode(mode) {
+  arenaCameraMode = mode;
+  document.querySelectorAll(".arena-cam-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.camera === mode);
+  });
+  if (liveArenaInstance) {
+    liveArenaInstance.setCameraMode(mode);
+  }
+}
+
+async function loadAndMountArenaPage(initialArenaData = null) {
+  const mountEl = $("raceArenaMount");
+  if (!mountEl) return;
+
+  let arenaData = initialArenaData || arenaCurrentState;
+  if (!arenaData) {
+    arenaData = await fetchArenaLiveState();
+  } else {
+    renderArenaStandings(arenaData);
+  }
+
+  const mountEmbed = () => {
+    if (!window.CharacterVerseEmbed || typeof window.CharacterVerseEmbed.mountRaceArena !== "function") {
+      setTimeout(() => {
+        if (activePage === "arena" && window.CharacterVerseEmbed?.mountRaceArena && !liveArenaInstance) {
+          loadAndMountArenaPage(arenaData);
+        }
+      }, 200);
+      return;
+    }
+    if (liveArenaInstance) {
+      try { liveArenaInstance.unmount(); } catch (_) {}
+    }
+    mountEl.innerHTML = "";
+    liveArenaInstance = window.CharacterVerseEmbed.mountRaceArena(mountEl, {
+      arenaState: arenaData,
+      cameraMode: arenaCameraMode,
+      reducedMotion: arenaReducedMotion,
+      focusedMemberId: arenaFocusedMemberId,
+      onFocusMember: (memberId) => {
+        arenaFocusedMemberId = memberId;
+        document.querySelectorAll(".standings-item").forEach(el => el.classList.remove("focused"));
+      },
+      onError: (err) => {
+        console.warn("Race arena WebGL error, fallback active:", err);
+      }
+    });
+  };
+  mountEmbed();
+
+  if (arenaPollingInterval) clearInterval(arenaPollingInterval);
+  arenaPollingInterval = setInterval(() => {
+    if (activePage === "arena" && document.visibilityState === "visible") {
+      fetchArenaLiveState();
+    }
+  }, 20000);
+}
+
+function initArenaControls() {
+  document.querySelectorAll(".arena-cam-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      setArenaCameraMode(btn.dataset.camera);
+    });
+  });
+
+  const zoomInBtn = $("arenaZoomIn");
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener("click", () => {
+      if (liveArenaInstance && typeof liveArenaInstance.zoomIn === "function") {
+        liveArenaInstance.zoomIn();
+      }
+    });
+  }
+
+  const zoomOutBtn = $("arenaZoomOut");
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener("click", () => {
+      if (liveArenaInstance && typeof liveArenaInstance.zoomOut === "function") {
+        liveArenaInstance.zoomOut();
+      }
+    });
+  }
+
+  const resetCamBtn = $("arenaResetCam");
+  if (resetCamBtn) {
+    resetCamBtn.addEventListener("click", () => {
+      setArenaCameraMode("broadcast");
+      if (liveArenaInstance && typeof liveArenaInstance.resetView === "function") {
+        liveArenaInstance.resetView();
+      }
+    });
+  }
+
+  const motionBtn = $("arenaMotionToggle");
+  if (motionBtn) {
+    motionBtn.addEventListener("click", () => {
+      arenaReducedMotion = !arenaReducedMotion;
+      const label = $("arenaMotionLabel");
+      if (label) label.textContent = arenaReducedMotion ? "Motion: Snapped" : "Motion: Smooth";
+      if (liveArenaInstance) {
+        liveArenaInstance.setReducedMotion(arenaReducedMotion);
+      }
+    });
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && activePage === "arena") {
+      fetchArenaLiveState();
+    }
+  });
+}
+
 async function navigatePage(page) {
   if (isAdmin) { showPage(page); return true; }
   if (!PAGE_INFO[page]) return;
@@ -2426,6 +2639,9 @@ async function navigatePage(page) {
     viewerPageData = data;
     if (page === "overview") renderViewerOverview(data);
     if (page === "leaderboard") renderViewerLeaderboard(data);
+    if (page === "arena") {
+      arenaCurrentState = data.arena;
+    }
     if (page === "daily" || page === "concepts") {
       const weekData = page === "daily" ? { daily: data.statuses, concepts: {} } : { daily: {}, concepts: data.statuses };
       state = { members: data.members, weeks: { [String(data.week)]: weekData }, currentWeek: data.week };
@@ -2615,6 +2831,7 @@ async function initializeApp() {
   initializePhaseTracker();
   initializeLeetCodeActivityControls();
   initializeSecurityControls();
+  initArenaControls();
   const profileRoute = location.pathname.match(/^\/profile\/([\w-]{1,100})\/?$/);
   try {
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
