@@ -118,6 +118,62 @@ export const CHARACTERS = [
       featured: true,
     },
   },
+
+  {
+    id: "superman",
+    name: "Superman",
+    category: "Superhero",
+    rarity: "LEGENDARY",
+    role: "The Man of Steel",
+    description: "The iconic superhero in royal blue, red trunks, and flowing cape, powered by the yellow sun. A champion standing for truth and justice.",
+    quote: "\"Up, up, and away!\"",
+
+    // GLB model path (served from /public)
+    modelFile: modelPath("Superman.glb"),
+
+    // Core color styling - default #ffffff preserves pristine custom GLB textures!
+    colors: {
+      baseColor: "#ffffff",       // Default: Pure White (preserves royal blue suit, red trunks, boots, shield & belt)
+      themeColor: "#0b5ed7",      // Superman Royal Blue (UI badge / theme accent)
+      accentColor: "#f59e0b",     // Radiant Hero Gold (harmonious UI attribute bars)
+      secondaryColor: "#ffffff",  // Default: Pure White (preserves red cape texture)
+      skinColor: "#fed7aa",       // Peach/Tan (preserved skin tone)
+      eyeColor: "#0b5ed7",        // Blue eyes
+      visorColor: "#ffc107",      // Yellow/Gold accent
+      podiumGlow: "#0b5ed7",      // Blue podium glow
+      backdropGradient: "from-blue-950/40 via-red-950/20 to-slate-950",
+    },
+
+    // Default cosmetic loadout keys (matching wardrobe catalog IDs)
+    defaultEquipment: {
+      head: null,
+      face: null,
+      upperBody: null,
+      lowerBody: null,
+      footwear: null,
+      backAccessory: null,
+      effect: 'none',
+    },
+
+    // Prepared Phase 4 Character Attributes
+    attributes: {
+      agility: 95,
+      dashSpeed: 98,
+      jumpForce: 99,
+      recovery: 96,
+    },
+
+    // Superman exclusively supports his iconic default tournament suit (no Warrior or Royal modes)
+    supportedOutfits: ['outfit-default'],
+
+    // Prepared Phase 3 Shop metadata: Legendary price of 2000 coins
+    shopData: {
+      owned: false,
+      price: 2000,
+      currency: "coins",
+      featured: true,
+    },
+  },
 ];
 
 /**

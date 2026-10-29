@@ -200,7 +200,7 @@ export default function CharacterDetails() {
             <div className="flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <h3 className="text-[11px] font-bold text-[#261b35] uppercase tracking-wider">
-                Hero Outfit (3 Options)
+                Hero Outfit ({outfits?.length || 1} Option{outfits?.length === 1 ? '' : 's'})
               </h3>
             </div>
             {previewOutfitId ? (
@@ -217,8 +217,8 @@ export default function CharacterDetails() {
             )}
           </div>
 
-          {/* 3 Outfit Cards */}
-          <div className="grid grid-cols-3 gap-2">
+          {/* Outfit Cards */}
+          <div className={`grid ${outfits?.length === 1 ? 'grid-cols-1 max-w-[150px] mx-auto' : 'grid-cols-3'} gap-2`}>
             {outfits?.map((outfit) => {
               const isOutfitEquipped = activeEquippedOutfitId === outfit.id;
               const isOutfitPreviewing = previewOutfitId === outfit.id;

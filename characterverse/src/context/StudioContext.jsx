@@ -46,9 +46,17 @@ async function characterVerseRequest(path, options = {}) {
 }
 
 export const StudioProvider = ({ children, navigationTarget = null }) => {
-  const [selectedCharacterId, setSelectedCharacterId] = useState('buster-blitz');
+  const [selectedCharacterId, setSelectedCharacterId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const char = new URLSearchParams(window.location.search).get('char');
+      if (char && CHARACTERS.some((c) => c.id === char)) return char;
+    }
+    return 'buster-blitz';
+  });
   const [equippedCharacterId, setEquippedCharacterId] = useState('buster-blitz');
-  const [ownedCharacterIds, setOwnedCharacterIds] = useState(['buster-blitz']);
+  const [ownedCharacterIds, setOwnedCharacterIds] = useState(() =>
+    CHARACTERS.filter((c) => c.shopData?.owned !== false).map((c) => c.id)
+  );
   const [ownedCosmeticIds, setOwnedCosmeticIds] = useState([]);
   const [ownedOutfitIds, setOwnedOutfitIds] = useState(['outfit-default']);
   const [activeTab, setActiveTab] = useState(() => {
@@ -121,13 +129,18 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   const applyServerProfile = (profile) => {
     const appearance = profile.appearance || {};
+    const defaultOwned = CHARACTERS.filter((c) => c.shopData?.owned !== false).map((c) => c.id);
+    const serverOwned = profile.inventory?.characters || ['buster-blitz'];
+    const mergedOwned = Array.from(new Set([...defaultOwned, ...serverOwned]));
     setCoins(profile.wallet?.coins ?? 0);
-    setOwnedCharacterIds(profile.inventory?.characters || ['buster-blitz']);
+    setOwnedCharacterIds(mergedOwned);
     setOwnedCosmeticIds(profile.inventory?.cosmetics || []);
     setOwnedOutfitIds(profile.inventory?.outfits || ['outfit-default']);
     setOwnedVehicles(Object.fromEntries(VEHICLES.map((vehicle) => [vehicle.id, (profile.inventory?.vehicles || []).includes(vehicle.id)])));
     setOwnedVehicleUpgrades(Object.fromEntries(VEHICLES.map((vehicle) => [vehicle.upgradeEffect.id, (profile.inventory?.vehicleUpgrades || []).includes(vehicle.upgradeEffect.id)])));
-    setSelectedCharacterId(appearance.selectedCharacterId || 'buster-blitz');
+    const urlChar = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('char') : null;
+    const initialChar = urlChar && CHARACTERS.some((c) => c.id === urlChar) ? urlChar : (appearance.selectedCharacterId || 'buster-blitz');
+    setSelectedCharacterId(initialChar);
     setEquippedCharacterId(appearance.equippedCharacterId || 'buster-blitz');
     setEquippedCosmetics(appearance.equippedCosmetics || INITIAL_EQUIPPED_COSMETICS);
     setEquippedOutfits(appearance.equippedOutfits || { 'buster-blitz': 'outfit-default' });
@@ -204,6 +217,13 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
   const equippedCharacter = useMemo(() => {
     return getCharacterById(equippedCharacterId);
   }, [equippedCharacterId]);
+
+  const availableOutfits = useMemo(() => {
+    if (selectedCharacter?.supportedOutfits) {
+      return OUTFITS.filter((o) => selectedCharacter.supportedOutfits.includes(o.id));
+    }
+    return OUTFITS;
+  }, [selectedCharacter]);
 
   const selectCharacter = (id) => {
     const target = CHARACTERS.find((c) => c.id === id);
@@ -425,6 +445,10 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   const previewOutfit = (outfit) => {
     if (!outfit) return;
+    if (selectedCharacter?.supportedOutfits && !selectedCharacter.supportedOutfits.includes(outfit.id)) {
+      showToast(`${selectedCharacter.name} does not support this outfit.`, 'error');
+      return;
+    }
     setPreviewOutfitId(outfit.id);
     setPreviewCosmetics((prev) => ({
       ...prev,
@@ -439,6 +463,10 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   const equipOutfit = (outfit) => {
     if (!outfit) return;
+    if (selectedCharacter?.supportedOutfits && !selectedCharacter.supportedOutfits.includes(outfit.id)) {
+      showToast(`${selectedCharacter.name} does not support this outfit.`, 'error');
+      return;
+    }
     if (!outfit.isFree && !ownedOutfitIds.includes(outfit.id)) {
       showToast(`Unlock ${outfit.name} (${outfit.priceCoins} coins) before equipping!`, 'error');
       return;
@@ -471,6 +499,10 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     const outfit = OUTFITS.find((o) => o.id === outfitId);
     if (!outfit) {
       showToast('Unknown outfit.', 'error');
+      return;
+    }
+    if (selectedCharacter?.supportedOutfits && !selectedCharacter.supportedOutfits.includes(outfitId)) {
+      showToast(`${selectedCharacter.name} does not support this outfit.`, 'error');
       return;
     }
     if (outfit.isFree || ownedOutfitIds.includes(outfitId)) {
@@ -810,7 +842,7 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
         checkCompatibility,
 
         // Outfits
-        outfits: OUTFITS,
+        outfits: availableOutfits,
         ownedCosmeticIds,
         ownedOutfitIds,
         equippedOutfits,

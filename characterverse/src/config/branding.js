@@ -42,7 +42,7 @@ export const BRANDING = {
       id: "characters",
       label: "Characters",
       isInteractive: true,
-      badge: "2",
+      badge: "3",
       description: "Browse all available roster heroes and unlocked champions.",
     },
     {

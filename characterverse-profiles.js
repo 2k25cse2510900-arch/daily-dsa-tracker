@@ -4,9 +4,10 @@
 // Client catalog data is presentation only and must never decide a price or grant.
 const STARTER_COINS = 0;
 const DEFAULT_CHARACTER_ID = "buster-blitz";
-const CHARACTER_IDS = new Set(["buster-blitz", "nebula-nova"]);
+const CHARACTER_IDS = new Set(["buster-blitz", "nebula-nova", "superman"]);
 const CHARACTER_PRICES = Object.freeze({
-  "nebula-nova": 2000
+  "nebula-nova": 2000,
+  "superman": 2000
 });
 const OUTFIT_IDS = new Set(["outfit-default", "outfit-warrior", "outfit-royal"]);
 const OUTFIT_PRICES = Object.freeze({
@@ -134,6 +135,7 @@ function validateAppearance(input, profile) {
     }
     for (const [characterId, outfitId] of Object.entries(input.equippedOutfits)) {
       if (!CHARACTER_IDS.has(characterId)) return null;
+      if (characterId === "superman" && outfitId !== null && outfitId !== "outfit-default") return null;
       if (outfitId !== null && (!OUTFIT_IDS.has(outfitId) || !ownedOutfits.has(outfitId))) return null;
       if (!ownedCharacters.has(characterId)) continue;
       next[characterId] = outfitId;
