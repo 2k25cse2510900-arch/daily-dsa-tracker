@@ -63,7 +63,13 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     const tab = new URLSearchParams(window.location.search).get('tab');
     return ['studio', 'characters', 'wardrobe', 'vehicles', 'shop', 'inventory'].includes(tab) ? tab : 'studio';
   });
-  const [isAutoRotating, setIsAutoRotating] = useState(false);
+  const [isAutoRotating, setIsAutoRotating] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const rot = new URLSearchParams(window.location.search).get('rotate');
+      return rot === 'true' || rot === '1';
+    }
+    return false;
+  });
   const [cameraResetTrigger, setCameraResetTrigger] = useState(0);
   const [zoomAction, setZoomAction] = useState({ delta: 0, count: 0 });
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,7 +107,13 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
   const [equippedVehicleUpgrades, setEquippedVehicleUpgrades] = useState({ 'vehicle-bike': null, 'vehicle-car': null, 'vehicle-rocket': null });
   const [previewVehicleId, setPreviewVehicleId] = useState(null);
   const [previewVehicleUpgradeId, setPreviewVehicleUpgradeId] = useState(null);
-  const [isDrivingMode, setIsDrivingMode] = useState(false);
+  const [isDrivingMode, setIsDrivingMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const run = new URLSearchParams(window.location.search).get('run') || new URLSearchParams(window.location.search).get('flight');
+      return run === 'true' || run === '1';
+    }
+    return false;
+  });
 
   const [profileReady, setProfileReady] = useState(false);
 
@@ -664,7 +676,13 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
   const toggleDrivingMode = () => {
     setIsDrivingMode((prev) => {
       const next = !prev;
-      showToast(next ? 'Active Run & Drive Mode enabled' : 'Returned to Idle Showcase', 'info');
+      const isSuperman = selectedCharacter?.id === 'superman';
+      const msg = next
+        ? isSuperman
+          ? 'Superman Flight Mode activated'
+          : 'Active Run & Drive Mode enabled'
+        : 'Returned to Idle Showcase';
+      showToast(msg, 'info');
       return next;
     });
   };

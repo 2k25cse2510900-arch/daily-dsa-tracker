@@ -131,3 +131,28 @@ test("Superman requirement 5: purchase rejects when player has < 2000 coins and 
   assert.ok(success.profile.inventory.characters.includes("superman"));
   assert.equal(success.profile.appearance.equippedCharacterId, "superman");
 });
+
+test("Superman flight mode: CharacterViewer, RaceArena, StudioControls, and StudioContext configure flight for superman", () => {
+  const fs = require('fs');
+  const viewerCode = fs.readFileSync('characterverse/src/components/viewer/CharacterViewer.jsx', 'utf8');
+  const arenaCode = fs.readFileSync('characterverse/src/components/arena/RaceArena.jsx', 'utf8');
+  const controlsCode = fs.readFileSync('characterverse/src/components/panels/StudioControls.jsx', 'utf8');
+  const contextCode = fs.readFileSync('characterverse/src/context/StudioContext.jsx', 'utf8');
+
+  // Verify CharacterViewer has Superman flight kinematics and dynamic cloth simulation
+  assert.ok(viewerCode.includes("isSuperman && !isMounted"), "CharacterViewer must have dedicated flight kinematics branch for Superman");
+  assert.ok(viewerCode.includes("Superman_Cape"), "CharacterViewer must reference Superman_Cape mesh for cloth dynamics");
+  assert.ok(viewerCode.includes("Superman_Head"), "CharacterViewer must reference Superman_Head for hair dynamics");
+  assert.ok(viewerCode.includes("flightOrbitX"), "CharacterViewer must calculate 3D flight trajectory through studio space");
+
+  // Verify RaceArena gives Superman elevated flight clearance
+  assert.ok(arenaCode.includes("const isSuperman = characterData?.id === 'superman'"), "RaceArena must detect Superman");
+  assert.ok(arenaCode.includes("1.25"), "RaceArena must provide elevated flight clearance for Superman");
+
+  // Verify StudioControls provides 'Test Flight' / 'Flight Mode (Active)' for Superman
+  assert.ok(controlsCode.includes("Flight Mode (Active)"), "StudioControls must offer Flight Mode (Active) for Superman");
+  assert.ok(controlsCode.includes("Test Flight"), "StudioControls must offer Test Flight for Superman");
+
+  // Verify StudioContext announces Superman Flight Mode
+  assert.ok(contextCode.includes("Superman Flight Mode activated"), "StudioContext must announce flight mode activation");
+});

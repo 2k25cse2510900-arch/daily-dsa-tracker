@@ -89,6 +89,10 @@ export default function StudioControls() {
               ? isDrivingMode
                 ? `Ride: ${selectedCharacter.vehicle.name} (Active)`
                 : `Ride: ${selectedCharacter.vehicle.name}`
+              : selectedCharacter.id === 'superman'
+              ? isDrivingMode
+                ? 'Flight Mode (Active)'
+                : 'Test Flight'
               : isDrivingMode
               ? 'Run Mode (Active)'
               : 'Test Run'
@@ -98,6 +102,8 @@ export default function StudioControls() {
           title={
             selectedCharacter.vehicle
               ? `Toggle animated driving motion for ${selectedCharacter.vehicle.name}`
+              : selectedCharacter.id === 'superman'
+              ? 'Toggle Superman heroic flight test animation'
               : 'Toggle character running test animation'
           }
         />

@@ -603,6 +603,21 @@ function ParticleEffect({ effectType, glowColor }) {
 
 export function GLBCharacter({ characterData, onReady }) {
   const { scene, animations } = useGLTF(characterData.modelFile, false, false);
+  const isSuperman = characterData?.id === 'superman';
+
+  // Dynamic Cape, Hair & Ground Shadow simulation refs
+  const capeMeshRef = useRef(null);
+  const baseCapePositionsRef = useRef(null);
+  const headMeshRef = useRef(null);
+  const baseHeadPositionsRef = useRef(null);
+  const shadowRef = useRef(null);
+
+  const flightBlendRef = useRef(0);
+  const flightTimeRef = useRef(0);
+  const filteredSpeedRef = useRef(0);
+  const lastYawRef = useRef(0);
+  const turnRateRef = useRef(0);
+  const overshootRef = useRef(0);
 
   // The dashboard hosts this React experience in an isolated same-origin
   // frame. Confirm readiness only after the actual character GLB resolved,
@@ -673,6 +688,38 @@ export function GLBCharacter({ characterData, onReady }) {
     return { clone, headMat: head, weaponMat: weapon, clothingMat: clothing, capeMat: cape };
   }, [scene]);
 
+  // Cache original vertex positions of Superman Cape and Hair for dynamic airflow simulation
+  useEffect(() => {
+    if (!clonedScene) return;
+    capeMeshRef.current = null;
+    baseCapePositionsRef.current = null;
+    headMeshRef.current = null;
+    baseHeadPositionsRef.current = null;
+
+    clonedScene.traverse((child) => {
+      if (child.isMesh) {
+        if (child.name === 'Superman_Cape') {
+          capeMeshRef.current = child;
+          baseCapePositionsRef.current = new Float32Array(child.geometry.attributes.position.array);
+        } else if (child.name === 'Superman_Head') {
+          headMeshRef.current = child;
+          baseHeadPositionsRef.current = new Float32Array(child.geometry.attributes.position.array);
+        }
+      }
+    });
+
+    return () => {
+      if (capeMeshRef.current && baseCapePositionsRef.current) {
+        capeMeshRef.current.geometry.attributes.position.array.set(baseCapePositionsRef.current);
+        capeMeshRef.current.geometry.attributes.position.needsUpdate = true;
+      }
+      if (headMeshRef.current && baseHeadPositionsRef.current) {
+        headMeshRef.current.geometry.attributes.position.array.set(baseHeadPositionsRef.current);
+        headMeshRef.current.geometry.attributes.position.needsUpdate = true;
+      }
+    };
+  }, [clonedScene, characterData?.id]);
+
   // Bind animations to clonedScene
   const { actions, names: animNames } = useAnimations(animations, clonedScene);
 
@@ -701,20 +748,25 @@ export function GLBCharacter({ characterData, onReady }) {
         if (sitKey) targetAction = actions[sitKey];
       }
     } else if (isDriving) {
-      const runNames = ['Running_A', 'Running_B', 'Walking_A', 'Run', 'run'];
-      for (const name of runNames) {
-        if (actions[name]) {
-          targetAction = actions[name];
-          break;
+      if (characterData?.id === 'superman') {
+        // Superman Flight Mode: Handled authoritatively via skeletal flight controller in useFrame
+        targetAction = null;
+      } else {
+        const runNames = ['Running_A', 'Running_B', 'Walking_A', 'Run', 'run'];
+        for (const name of runNames) {
+          if (actions[name]) {
+            targetAction = actions[name];
+            break;
+          }
         }
-      }
-      if (!targetAction && animNames) {
-        const runKey = animNames.find((n) => n.toLowerCase().includes('run'));
-        if (runKey) targetAction = actions[runKey];
+        if (!targetAction && animNames) {
+          const runKey = animNames.find((n) => n.toLowerCase().includes('run'));
+          if (runKey) targetAction = actions[runKey];
+        }
       }
     }
 
-    if (!targetAction) {
+    if (!targetAction && !(characterData?.id === 'superman' && isDriving)) {
       const idleNames = ['Idle', 'Unarmed_Idle', 'idle'];
       for (const name of idleNames) {
         if (actions[name]) {
@@ -736,6 +788,13 @@ export function GLBCharacter({ characterData, onReady }) {
         }
       });
       targetAction.reset().fadeIn(0.25).play();
+    } else if (characterData?.id === 'superman' && isDriving) {
+      // Fade out running/idle clips so skeletal flight controller has full authoritative control
+      Object.values(actions).forEach((act) => {
+        if (act && act.isRunning()) {
+          act.fadeOut(0.25);
+        }
+      });
     }
 
     return () => {
@@ -767,28 +826,258 @@ export function GLBCharacter({ characterData, onReady }) {
   }, [clonedScene, characterData?.vehicle?.modelType]);
 
   // Ergonomic bone positioning for bike riding, sports car cockpit, and legendary rocket astride flight
-  useFrame(({ clock }) => {
+  // plus dedicated Superman heroic flight controller with aerodynamic cape & hair cloth dynamics
+  useFrame(({ clock }, delta) => {
     if (!clonedScene) return;
     const vehicleType = characterData?.vehicle?.modelType;
     const isMountedBike = vehicleType === 'bike';
     const isMountedCar = vehicleType === 'car';
     const isMountedRocket = vehicleType === 'rocket';
-    if (!isMountedBike && !isMountedCar && !isMountedRocket) {
-      // Reset any flight offsets if unequipped
+    const isMounted = isMountedBike || isMountedCar || isMountedRocket;
+
+    if (!isMounted && !isSuperman) {
+      // Reset any flight offsets if unequipped for standard characters
       if (clonedScene.position.y !== 0) clonedScene.position.set(0, 0, 0);
-      if (clonedScene.rotation.x !== 0 || clonedScene.rotation.z !== 0) clonedScene.rotation.set(0, 0, 0);
+      if (clonedScene.rotation.x !== 0 || clonedScene.rotation.z !== 0 || clonedScene.rotation.y !== 0) {
+        clonedScene.rotation.set(0, 0, 0);
+      }
+      if (shadowRef.current) {
+        shadowRef.current.position.set(0, 0.015, 0.04);
+        if (shadowRef.current.material) shadowRef.current.material.opacity = 0.42;
+        shadowRef.current.scale.set(1, 1, 1);
+      }
       return;
     }
 
     const spine = clonedScene.getObjectByName('spine');
+    const chest = clonedScene.getObjectByName('chest');
+    const head = clonedScene.getObjectByName('head');
     const ual = clonedScene.getObjectByName('upperarm.l') || clonedScene.getObjectByName('upperarml');
     const uar = clonedScene.getObjectByName('upperarm.r') || clonedScene.getObjectByName('upperarmr');
+    const lal = clonedScene.getObjectByName('lowerarm.l') || clonedScene.getObjectByName('lowerarml');
+    const lar = clonedScene.getObjectByName('lowerarm.r') || clonedScene.getObjectByName('lowerarmr');
     const ull = clonedScene.getObjectByName('upperleg.l') || clonedScene.getObjectByName('upperlegl');
     const ulr = clonedScene.getObjectByName('upperleg.r') || clonedScene.getObjectByName('upperlegr');
     const lll = clonedScene.getObjectByName('lowerleg.l') || clonedScene.getObjectByName('lowerlegl');
     const llr = clonedScene.getObjectByName('lowerleg.r') || clonedScene.getObjectByName('lowerlegr');
+    const footl = clonedScene.getObjectByName('foot.l') || clonedScene.getObjectByName('footl');
+    const footr = clonedScene.getObjectByName('foot.r') || clonedScene.getObjectByName('footr');
     const t = clock.getElapsedTime();
     const isDriving = characterData?.isDrivingMode;
+
+    if (isSuperman && !isMounted) {
+      const isFlight = Boolean(isDriving);
+      const blendSpeed = isFlight ? 3.0 : 4.0;
+      flightBlendRef.current = THREE.MathUtils.lerp(
+        flightBlendRef.current,
+        isFlight ? 1 : 0,
+        Math.min(1, delta * blendSpeed)
+      );
+      const fb = flightBlendRef.current;
+
+      if (fb > 0.001) {
+        flightTimeRef.current += delta * fb;
+        const ft = flightTimeRef.current;
+
+        // 1. Aerodynamic Straight Flight Positioning & Orientation
+        // Superman hovers in heroic forward flight centered directly over the podium.
+        // Rock-solid straight heading by default with zero yaw oscillation or wobble.
+        const flightY = (0.62 + Math.sin(ft * 2.0) * 0.015) * fb; // Elevated clearance above podium
+        const flightZ = -1.10 * fb; // Centered horizontal silhouette [hands to boots] over podium center
+        const flightOrbitX = 0; // Rock-solid straight flight along center axis (neutral studio trajectory)
+        const flightX = flightOrbitX;
+
+        clonedScene.position.set(flightX, flightY, flightZ);
+
+        // Horizontal forward pitch leans torso horizontally into heroic forward flight
+        // Facing direction is strictly straight forward along Z-axis; banking is strictly 0
+        const pitchAngle = 1.08 * fb;
+        const headingYaw = 0;
+        const bankAngle = 0;
+
+        clonedScene.rotation.set(pitchAngle, headingYaw, bankAngle, 'YXZ');
+
+        // 2. Heroic Superman Flight Pose — BOTH Arms Extended Forward Level with Shoulders
+        if (spine) {
+          spine.rotation.x = 0.10 * fb;
+        }
+        if (chest) {
+          // Proud chest: arching upward so the solid 3D S-shield emblem faces key light and camera
+          chest.rotation.set(-0.25 * fb, 0, 0);
+        }
+        if (head) {
+          // Head tilted up to look directly forward along the flight path; face clearly visible
+          head.rotation.set((-0.55 + Math.sin(ft * 2.0) * 0.01) * fb, 0, 0);
+        }
+        if (uar) {
+          // Right arm: Leading heroic Superman fist extended straight forward level with shoulder
+          uar.rotation.set(
+            (1.08 + Math.sin(ft * 3.0) * 0.008) * fb,
+            0.45 * fb,
+            (-0.18 + Math.cos(ft * 2.5) * 0.006) * fb
+          );
+        }
+        if (lar) {
+          // Right forearm: Straight and level with upper arm
+          lar.rotation.set(0.04 * fb, 0, 0);
+        }
+        if (ual) {
+          // Left arm: Extended straight forward level with shoulder, mirroring right arm with subtle perspective lead
+          ual.rotation.set(
+            (1.02 + Math.sin(ft * 3.0) * 0.008) * fb,
+            -0.45 * fb,
+            (0.18 - Math.cos(ft * 2.5) * 0.006) * fb
+          );
+        }
+        if (lal) {
+          // Left forearm: Straight and level with upper arm
+          lal.rotation.set(0.04 * fb, 0, 0);
+        }
+        if (ull) {
+          // Streamlined trailing left leg
+          ull.rotation.set(
+            3.107 + Math.sin(ft * 2.5) * 0.006,
+            0.02 * fb,
+            -0.04 * fb
+          );
+        }
+        if (ulr) {
+          // Streamlined trailing right leg
+          ulr.rotation.set(
+            3.107 - Math.sin(ft * 2.5) * 0.006,
+            -0.02 * fb,
+            0.04 * fb
+          );
+        }
+        if (lll) {
+          // Left knee: Straightened with subtle natural flex
+          lll.rotation.set(0.02 * fb, 0, 0);
+        }
+        if (llr) {
+          // Right knee: Straightened with subtle natural flex
+          llr.rotation.set(0.02 * fb, 0, 0);
+        }
+        if (footl) {
+          // Pointed left toes
+          footl.rotation.set(0.00, 0, 0);
+        }
+        if (footr) {
+          // Pointed right toes
+          footr.rotation.set(0.00, 0, 0);
+        }
+
+        // 3. Dynamic Cape Cloth Dynamics Simulation — Flowing strictly behind the legs
+        if (capeMeshRef.current && baseCapePositionsRef.current) {
+          const posAttr = capeMeshRef.current.geometry.attributes.position;
+          const posArray = posAttr.array;
+          const baseArray = baseCapePositionsRef.current;
+          const vertCount = posAttr.count;
+
+          const s = fb;
+          const waveTime = clock.getElapsedTime();
+
+          for (let i = 0; i < vertCount; i++) {
+            const idx = i * 3;
+            const x0 = baseArray[idx];
+            const y0 = baseArray[idx + 1];
+            const z0 = baseArray[idx + 2];
+
+            // Distance from shoulder (y0 = 0) to hem (y0 = -1.12)
+            const vNorm = THREE.MathUtils.clamp(-y0 / 1.12, 0, 1);
+            const vFactor = Math.pow(vNorm, 1.5);
+            const edgeFactor = THREE.MathUtils.clamp(Math.abs(x0) / 0.45, 0, 1);
+
+            // Backward slipstream stream along local -Z (keeps cape behind back and trailing legs)
+            const streamZ = -0.16 * s * Math.pow(vNorm, 1.4);
+            const liftY = 0.04 * s * Math.pow(vNorm, 1.6);
+
+            // Traveling layered aerodynamic waves from shoulders to hem
+            const phi1 = waveTime * 8.5 - vNorm * 5.0;
+            const phi2 = waveTime * 15.0 - vNorm * 9.5 + x0 * 3.0;
+
+            const wave1 = Math.sin(phi1) * 0.030 * s * vFactor;
+            const wave2 = Math.sin(phi2) * 0.012 * s * Math.pow(vNorm, 1.8);
+            const edgeFlutter = Math.cos(phi2 * 1.2) * 0.010 * s * edgeFactor * Math.pow(vNorm, 1.6);
+            const spanFolds = Math.cos(x0 * 6.0) * 0.008 * s * vNorm;
+
+            // Idle breathing sway when not in flight
+            const idleZ = (1 - s) * Math.sin(waveTime * 2.2 + x0 * 2.0) * 0.018 * Math.pow(vNorm, 2.0);
+            const idleX = (1 - s) * Math.cos(waveTime * 1.6) * 0.010 * Math.pow(vNorm, 2.0);
+
+            // Subtle lateral ripple (keeps cape strictly behind legs, never obscuring thighs/boots)
+            const flutterX = Math.sin(waveTime * 5.0 + vNorm * 2.5) * 0.010 * s * Math.pow(vNorm, 1.5);
+
+            posArray[idx] = x0 + flutterX + idleX;
+            posArray[idx + 1] = y0 + liftY;
+            posArray[idx + 2] = (z0 - 0.08 * s) + streamZ + wave1 + wave2 + edgeFlutter + spanFolds + idleZ;
+          }
+
+          posAttr.needsUpdate = true;
+          capeMeshRef.current.geometry.computeVertexNormals();
+        }
+
+        // 4. Hair & Front S-Curl Secondary Response
+        if (headMeshRef.current && baseHeadPositionsRef.current) {
+          const headPosAttr = headMeshRef.current.geometry.attributes.position;
+          const headPosArray = headPosAttr.array;
+          const baseHeadArray = baseHeadPositionsRef.current;
+          const s = fb;
+          const waveTime = clock.getElapsedTime();
+
+          // S-curl vertices (indices 727 to 783)
+          for (let i = 727; i < 784; i++) {
+            const idx = i * 3;
+            const x0 = baseHeadArray[idx];
+            const y0 = baseHeadArray[idx + 1];
+            const z0 = baseHeadArray[idx + 2];
+
+            const d = THREE.MathUtils.clamp((1.97 - y0) / 0.225, 0, 1);
+            const d2 = d * d;
+
+            const curlZ = -s * 0.008 * d2 + Math.sin(waveTime * 14 + d * 3.5) * 0.003 * s * d2;
+            const curlX = Math.cos(waveTime * 10) * 0.002 * s * d2;
+
+            headPosArray[idx] = x0 + curlX;
+            headPosArray[idx + 1] = y0;
+            headPosArray[idx + 2] = z0 + curlZ;
+          }
+
+          headPosAttr.needsUpdate = true;
+          headMeshRef.current.geometry.computeVertexNormals();
+        }
+
+        // Ground shadow tracking
+        if (shadowRef.current) {
+          shadowRef.current.position.set(0, 0.015, -0.05 * fb + 0.04);
+          if (shadowRef.current.material) {
+            shadowRef.current.material.opacity = THREE.MathUtils.lerp(0.42, 0.20, fb);
+          }
+          const scale = 1 + fb * 0.55;
+          shadowRef.current.scale.set(scale, scale, 1);
+        }
+      } else {
+        // Reset to exact ground idle coordinates
+        if (clonedScene.position.y !== 0) clonedScene.position.set(0, 0, 0);
+        if (clonedScene.rotation.x !== 0 || clonedScene.rotation.z !== 0 || clonedScene.rotation.y !== 0) {
+          clonedScene.rotation.set(0, 0, 0);
+        }
+        // Restore cape and head if they were deformed
+        if (capeMeshRef.current && baseCapePositionsRef.current) {
+          capeMeshRef.current.geometry.attributes.position.array.set(baseCapePositionsRef.current);
+          capeMeshRef.current.geometry.attributes.position.needsUpdate = true;
+        }
+        if (headMeshRef.current && baseHeadPositionsRef.current) {
+          headMeshRef.current.geometry.attributes.position.array.set(baseHeadPositionsRef.current);
+          headMeshRef.current.geometry.attributes.position.needsUpdate = true;
+        }
+        if (shadowRef.current) {
+          shadowRef.current.position.set(0, 0.015, 0.04);
+          if (shadowRef.current.material) shadowRef.current.material.opacity = 0.42;
+          shadowRef.current.scale.set(1, 1, 1);
+        }
+      }
+      return;
+    }
 
     if (isMountedBike) {
       // Bike: Natural forward lean over cyber tank; hands gripping handlebar grips at [±0.37, 0.78, -0.12]
@@ -943,7 +1232,7 @@ export function GLBCharacter({ characterData, onReady }) {
       )}
 
       {/* Ground contact shadow disc right above podium surface */}
-      <mesh position={[0, 0.015, 0.04]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh ref={shadowRef} position={[0, 0.015, 0.04]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[vehicle ? 0.95 : 0.55, 32]} />
         <meshBasicMaterial color="#000000" transparent opacity={0.42} />
       </mesh>
@@ -1023,6 +1312,20 @@ function CanvasLoader() {
 function CharacterScene({ characterData, autoRotate, resetTrigger, zoomAction, onReady }) {
   const controlsRef = useRef();
 
+  // Support camera view presets (front, side, rear, threequarter) via URL query
+  useEffect(() => {
+    if (!controlsRef.current) return;
+    const v = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('view') : null;
+    if (v === 'side') {
+      controlsRef.current.object.position.set(4.2, 0.65, 0);
+    } else if (v === 'rear') {
+      controlsRef.current.object.position.set(2.4, 0.95, -3.8);
+    } else if (v === 'threequarter') {
+      controlsRef.current.object.position.set(1.6, 0.85, 3.8);
+    }
+    controlsRef.current.update();
+  }, []);
+
   // Reset camera view
   useEffect(() => {
     if (resetTrigger > 0 && controlsRef.current) {
@@ -1041,6 +1344,19 @@ function CharacterScene({ characterData, autoRotate, resetTrigger, zoomAction, o
       controlsRef.current.update();
     }
   }, [zoomAction]);
+
+  // Camera smooth targeting centered on character
+  useFrame(({ clock }, delta) => {
+    if (!controlsRef.current) return;
+    const isFlight = characterData?.id === 'superman' && characterData?.isDrivingMode;
+    const targetY = isFlight ? 0.28 : 0.15;
+    const targetZ = 0;
+    const desiredTarget = new THREE.Vector3(0, targetY, targetZ);
+    if (controlsRef.current.target.distanceTo(desiredTarget) > 0.001) {
+      controlsRef.current.target.lerp(desiredTarget, Math.min(1, delta * 4.0));
+      controlsRef.current.update();
+    }
+  });
 
   return (
     <>
@@ -1159,6 +1475,14 @@ class ModelErrorBoundary extends React.Component {
 export default function CharacterViewer({ characterData, autoRotate, resetTrigger, onReady = null }) {
   const { zoomAction } = useStudio();
 
+  const viewParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('view') : null;
+  const initialCamPos = useMemo(() => {
+    if (viewParam === 'side') return [4.6, 0.28, 0];
+    if (viewParam === 'rear') return [2.5, 0.75, -4.2];
+    if (viewParam === 'threequarter') return [2.2, 0.75, 4.0];
+    return [0, 0.65, 4.4];
+  }, [viewParam]);
+
   if (!characterData) {
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-[#080b14] rounded-xl">
@@ -1173,7 +1497,7 @@ export default function CharacterViewer({ characterData, autoRotate, resetTrigge
         <Suspense fallback={<CanvasLoader />}>
           <Canvas
             shadows={{ type: THREE.PCFSoftShadowMap }}
-            camera={{ position: [0, 0.8, 3.8], fov: 42 }}
+            camera={{ position: initialCamPos, fov: 40 }}
             gl={{
               antialias: true,
               alpha: true,

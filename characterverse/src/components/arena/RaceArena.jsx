@@ -245,12 +245,19 @@ function ArenaRacer({ racer, scrollRef, reducedMotion, onFocus }) {
     // Lane positioning along depth (Z axis): [-3.3, +3.3]
     const laneZ = (laneIndex - 3.5) * 0.95;
 
-    // Grounding: characters stand cleanly above the grass surface on all slopes (+0.08 clearance)
-    groupRef.current.position.set(worldX, terrainHeight + 0.08 + strideBob, laneZ);
+    // Grounding: characters stand cleanly above grass, or Superman flies airborne with clearance
+    const isSuperman = characterData?.id === 'superman';
+    const verticalElevation = isSuperman
+      ? 1.25 + (reducedMotion ? 0 : Math.sin(t * 3.2 + laneIndex) * 0.08)
+      : 0.08 + strideBob;
 
-    // Facing right (+X) with natural hill incline pitch
+    groupRef.current.position.set(worldX, terrainHeight + verticalElevation, laneZ);
+
+    // Facing right (+X) with natural hill incline pitch and aerodynamic flight banking
     const slopePitch = Math.atan(slope) * 0.65;
-    groupRef.current.rotation.set(0, Math.PI / 2, slopePitch);
+    const flightPitch = isSuperman ? slopePitch + 0.15 : slopePitch;
+    const flightBank = isSuperman && !reducedMotion ? Math.sin(t * 2.8 + laneIndex) * 0.08 : 0;
+    groupRef.current.rotation.set(flightBank, Math.PI / 2, flightPitch);
   });
 
   const memberId = racer.id || racer.memberId;
