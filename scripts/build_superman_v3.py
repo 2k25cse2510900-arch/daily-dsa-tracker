@@ -482,12 +482,11 @@ def build_superman():
     # Raised proud of chest surface (z ~ 0.78 to 1.06, center at 0.94)
     # 100% weighted to chest bone so it moves in perfect lockstep without warping!
     def get_chest_y(x, z):
-        # Smooth athletic chest profile
-        z_factor = 1.0 - ((z - 0.94) / 0.16) ** 2
-        x_factor = 1.0 - (x / 0.22) ** 2
-        return -0.320 - 0.022 * max(0.0, z_factor) - 0.012 * max(0.0, x_factor)
+        # Smooth athletic chest profile matching actual body mesh surface
+        z_diff = z - 0.94
+        return -0.325 + 0.150 * (z_diff ** 2) + 0.080 * (x ** 2)
 
-    # Base pentagon coordinates (width +/-0.14, height 0.775 to 1.060)
+    # Base pentagon coordinates (width +/-0.140, height 0.775 to 1.060)
     base_coords = [
         (-0.140, 1.060), # 0: top left
         (0.000,  1.060), # 1: top center
@@ -507,14 +506,14 @@ def build_superman():
         (-0.178, 0.945),
     ]
 
-    # Center vertex of yellow plate
-    center_y = get_chest_y(0.0, 0.94) - 0.015
+    # Center vertex of yellow plate (subtly raised 3.5mm proud of chest)
+    center_y = get_chest_y(0.0, 0.94) - 0.0035
     center_v = bm_body.verts.new(Vector((0.0, center_y, 0.94)))
     center_v[dvert_body][chest_idx] = 1.0 # 100% CHEST BONE!
 
     v_base = []
     for x, z in base_coords:
-        y = get_chest_y(x, z) - 0.015
+        y = get_chest_y(x, z) - 0.0035
         v = bm_body.verts.new(Vector((x, y, z)))
         v[dvert_body][chest_idx] = 1.0 # 100% CHEST BONE!
         v_base.append(v)
@@ -527,10 +526,10 @@ def build_superman():
         for loop in f.loops:
             loop[uv_body].uv = UV_HERO_YELLOW
 
-    # Raised Beveled Red Outer Rim
+    # Raised Beveled Red Outer Rim (flush with chest surface at 0.001m beveling up to 0.0035m)
     v_rim = []
     for x, z in rim_coords:
-        y = get_chest_y(x, z) - 0.022
+        y = get_chest_y(x, z) - 0.0010
         v = bm_body.verts.new(Vector((x, y, z)))
         v[dvert_body][chest_idx] = 1.0 # 100% CHEST BONE!
         v_rim.append(v)
@@ -542,32 +541,69 @@ def build_superman():
         for loop in f.loops:
             loop[uv_body].uv = UV_SUPERMAN_RED
 
-    # Solid 3D Raised Red 'S' Symbol (proud of yellow plate at offset -0.026)
-    s_facets = [
-        # Upper horizontal roof
-        [(-0.040, 1.040), (0.075, 1.040), (0.075, 1.000), (-0.040, 1.000)],
-        # Upper-left rounded lobe
-        [(-0.075, 1.040), (-0.040, 1.040), (-0.040, 0.940), (-0.075, 0.940)],
-        # Center diagonal slash crossing from upper-left to lower-right
-        [(-0.065, 0.970), (-0.020, 0.970), (0.065, 0.890), (0.020, 0.890)],
-        # Lower-right rounded lobe
-        [(0.030, 0.930), (0.075, 0.930), (0.075, 0.830), (0.030, 0.830)],
+    # Smooth Continuous Stylized 'S' Ribbon (raised 2.5mm proud of yellow plate, 6mm total)
+    s_pairs = [
+        # Top-right roof serif
+        (( 0.075, 1.040), ( 0.075, 1.010)),
+        # Top horizontal roof
+        (( 0.020, 1.040), ( 0.020, 1.010)),
+        ((-0.035, 1.040), (-0.035, 1.010)),
+        # Top-left curved turn
+        ((-0.062, 1.032), (-0.050, 1.006)),
+        ((-0.080, 1.008), (-0.056, 0.990)),
+        ((-0.082, 0.970), (-0.054, 0.965)),
+        # Transition into diagonal
+        ((-0.065, 0.935), (-0.038, 0.950)),
+        # Center diagonal slash
+        ((-0.025, 0.915), ( 0.005, 0.930)),
+        (( 0.005, 0.890), ( 0.035, 0.905)),
+        # Transition to lower-right lobe
+        (( 0.040, 0.875), ( 0.065, 0.890)),
+        # Lower-right curved turn
+        (( 0.082, 0.860), ( 0.054, 0.865)),
+        (( 0.080, 0.822), ( 0.056, 0.840)),
+        (( 0.062, 0.798), ( 0.050, 0.824)),
         # Bottom horizontal floor
-        [(-0.055, 0.830), (0.065, 0.830), (0.045, 0.790), (-0.055, 0.790)],
-        # Bottom-left tail terminal
-        [(-0.075, 0.860), (-0.035, 0.860), (-0.035, 0.790), (-0.075, 0.790)],
+        (( 0.035, 0.790), ( 0.035, 0.820)),
+        ((-0.020, 0.790), (-0.020, 0.820)),
+        # Bottom-left tail turn
+        ((-0.055, 0.792), (-0.045, 0.820)),
+        ((-0.075, 0.812), (-0.050, 0.835)),
+        ((-0.075, 0.850), (-0.050, 0.850)),
     ]
 
-    for facet in s_facets:
-        vs = []
-        for x, z in facet:
-            y = get_chest_y(x, z) - 0.028
-            v = bm_body.verts.new(Vector((x, y, z)))
-            v[dvert_body][chest_idx] = 1.0 # 100% CHEST BONE!
-            vs.append(v)
-        f = bm_body.faces.new(vs)
-        f.smooth = True
-        for loop in f.loops:
+    v_s_pairs = []
+    for p_out, p_in in s_pairs:
+        y_out = get_chest_y(p_out[0], p_out[1]) - 0.0060
+        vo = bm_body.verts.new(Vector((p_out[0], y_out, p_out[1])))
+        vo[dvert_body][chest_idx] = 1.0
+        
+        y_in = get_chest_y(p_in[0], p_in[1]) - 0.0060
+        vi = bm_body.verts.new(Vector((p_in[0], y_in, p_in[1])))
+        vi[dvert_body][chest_idx] = 1.0
+        
+        v_s_pairs.append((vo, vi))
+
+    # Top-right serif terminal cap
+    p_serif = [(0.051, 1.010), (0.075, 1.010), (0.075, 0.982), (0.051, 0.982)]
+    v_serif = []
+    for x, z in p_serif:
+        y = get_chest_y(x, z) - 0.0060
+        vs = bm_body.verts.new(Vector((x, y, z)))
+        vs[dvert_body][chest_idx] = 1.0
+        v_serif.append(vs)
+    f_serif = bm_body.faces.new(v_serif)
+    f_serif.smooth = True
+    for loop in f_serif.loops:
+        loop[uv_body].uv = UV_SUPERMAN_RED
+
+    # Continuous quads along the entire S ribbon
+    for i in range(len(v_s_pairs) - 1):
+        vo0, vi0 = v_s_pairs[i]
+        vo1, vi1 = v_s_pairs[i + 1]
+        f_s = bm_body.faces.new([vi0, vo0, vo1, vi1])
+        f_s.smooth = True
+        for loop in f_s.loops:
             loop[uv_body].uv = UV_SUPERMAN_RED
 
     bmesh.ops.recalc_face_normals(bm_body, faces=bm_body.faces)
