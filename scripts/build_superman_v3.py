@@ -160,6 +160,11 @@ def build_superman():
     elif 'Specular' in node_bsdf.inputs:
         node_bsdf.inputs['Specular'].default_value = 0.35
     node_bsdf.inputs['Metallic'].default_value = 0.0
+    if 'Alpha' in node_bsdf.inputs:
+        node_bsdf.inputs['Alpha'].default_value = 1.0
+    superman_mat.blend_method = 'OPAQUE'
+    if hasattr(superman_mat, 'shadow_method'):
+        superman_mat.shadow_method = 'OPAQUE'
     
     links.new(node_tex.outputs['Color'], node_bsdf.inputs['Base Color'])
     links.new(node_bsdf.outputs['BSDF'], node_out.inputs['Surface'])
@@ -244,8 +249,8 @@ def build_superman():
         # Outer flared skirt flaps (Z in 0.40-0.50, flared out |X| > 0.31 or Y > 0.25):
         elif min_z >= 0.40 and max_z <= 0.50 and (max_x > 0.31 or min_x < -0.31):
             del_faces.extend(isl)
-        # Rogue buckle / front pouch bits (X in [-0.12, 0.12], Y < -0.30, Z in [0.49, 0.66], len < 30):
-        elif min_z >= 0.49 and max_z <= 0.66 and abs(min_x) < 0.12 and abs(max_x) < 0.12 and min_y < -0.30 and len(isl) < 30:
+        # Rogue buckle / front pouch bits:
+        elif min_z >= 0.49 and max_z <= 0.67 and abs(min_x) < 0.15 and abs(max_x) < 0.15 and min_y < -0.22:
             del_faces.extend(isl)
 
     bmesh.ops.delete(bm_body, geom=del_faces, context='FACES')
@@ -281,57 +286,178 @@ def build_superman():
             elif v.co.y > target_y + 0.05 and abs(v.co.x) < 0.18:
                 v.co.y = target_y
 
-    # Recolor body faces: Royal Blue suit, Gold Belt, Red Trunks
+    # Bridge front abdomen gap between Z ~ 0.523 and Z ~ 0.627
+    low_boundary_verts = []
+    up_boundary_verts = []
+    for v in bm_body.verts:
+        if abs(v.co.z - 0.523) < 0.006 and v.co.y < -0.05:
+            if any(not e.is_manifold for e in v.link_edges):
+                if v not in low_boundary_verts:
+                    low_boundary_verts.append(v)
+        elif abs(v.co.z - 0.627) < 0.006 and v.co.y < -0.05:
+            if any(not e.is_manifold for e in v.link_edges):
+                if v not in up_boundary_verts:
+                    up_boundary_verts.append(v)
+
+    def dedup_by_x(v_list):
+        seen = {}
+        for v in v_list:
+            k = round(v.co.x, 3)
+            if k not in seen:
+                seen[k] = v
+        return [seen[k] for k in sorted(seen.keys())]
+
+    low_sorted = dedup_by_x(low_boundary_verts)
+    up_sorted = dedup_by_x(up_boundary_verts)
+
+    if len(low_sorted) == len(up_sorted) and len(low_sorted) > 1:
+        for i in range(len(low_sorted) - 1):
+            v0 = low_sorted[i]
+            v1 = low_sorted[i+1]
+            v2 = up_sorted[i+1]
+            v3 = up_sorted[i]
+            try:
+                f = bm_body.faces.new([v0, v3, v2, v1])
+                f.smooth = True
+                for loop in f.loops:
+                    loop[uv_body].uv = UV_ROYAL_BLUE
+            except ValueError:
+                pass
+
+    # Recolor body faces: Royal Blue suit, Red Trunks, Yellow underlay
     for f in bm_body.faces:
         f.smooth = True
         cz = f.calc_center_median().z
-        cy = f.calc_center_median().y
-        cx = abs(f.calc_center_median().x)
-        
-        if cz < 0.49:
+        if cz < 0.485:
             # Red Trunks
             for loop in f.loops:
                 loop[uv_body].uv = UV_SUPERMAN_RED
-        elif 0.49 <= cz <= 0.555:
-            # Gold Belt
-            for loop in f.loops:
-                loop[uv_body].uv = UV_HERO_YELLOW
-        else:
-            # Royal Blue Suit (Entire upper torso, chest, shoulders & neck)
+        elif cz > 0.555:
+            # Royal Blue Suit
             for loop in f.loops:
                 loop[uv_body].uv = UV_ROYAL_BLUE
+        else:
+            # Gold Belt underlay
+            for loop in f.loops:
+                loop[uv_body].uv = UV_HERO_YELLOW
 
-    # Clean Solid 3D Gold Belt Buckle on front waist:
-    # Outer frame: width +/-0.065, height [0.490, 0.555]
-    buckle_outer = [
-        (-0.065, 0.555),
-        ( 0.065, 0.555),
-        ( 0.065, 0.490),
-        (-0.065, 0.490),
+    # 2. DEDICATED SOLID 3D BELT RING
+    # Continuous 360-degree stylized superhero belt ring wrapped around waist (Z: 0.485 to 0.555)
+    # Raised proud of body with beveled top and bottom rims, 100% hips bone weighting
+    N_SEGS = 24
+    z_belt_bot = 0.485
+    z_belt_top = 0.555
+    z_bevel = 0.005
+
+    rx = 0.288
+    ry = 0.295
+    belt_thickness = 0.008
+
+    top_inner_ring = []
+    top_outer_ring = []
+    bot_outer_ring = []
+    bot_inner_ring = []
+
+    for i in range(N_SEGS):
+        phi = (2.0 * math.pi * i) / N_SEGS
+        cos_p = math.cos(phi)
+        sin_p = math.sin(phi)
+        
+        r_base = (rx * ry) / math.hypot(ry * sin_p, rx * cos_p)
+        r_out = r_base + belt_thickness
+        
+        x_in = r_base * sin_p
+        y_in = -r_base * cos_p
+        x_out = r_out * sin_p
+        y_out = -r_out * cos_p
+        
+        v_ti = bm_body.verts.new(Vector((x_in, y_in, z_belt_top)))
+        v_ti[dvert_body][hips_idx] = 1.0
+        top_inner_ring.append(v_ti)
+        
+        v_to = bm_body.verts.new(Vector((x_out, y_out, z_belt_top - z_bevel)))
+        v_to[dvert_body][hips_idx] = 1.0
+        top_outer_ring.append(v_to)
+        
+        v_bo = bm_body.verts.new(Vector((x_out, y_out, z_belt_bot + z_bevel)))
+        v_bo[dvert_body][hips_idx] = 1.0
+        bot_outer_ring.append(v_bo)
+        
+        v_bi = bm_body.verts.new(Vector((x_in, y_in, z_belt_bot)))
+        v_bi[dvert_body][hips_idx] = 1.0
+        bot_inner_ring.append(v_bi)
+
+    for i in range(N_SEGS):
+        i_next = (i + 1) % N_SEGS
+        # Top beveled rim:
+        f_top = bm_body.faces.new([top_inner_ring[i], top_inner_ring[i_next], top_outer_ring[i_next], top_outer_ring[i]])
+        f_top.smooth = True
+        for loop in f_top.loops:
+            loop[uv_body].uv = UV_HERO_YELLOW
+            
+        # Vertical outer belt face:
+        f_mid = bm_body.faces.new([top_outer_ring[i], top_outer_ring[i_next], bot_outer_ring[i_next], bot_outer_ring[i]])
+        f_mid.smooth = True
+        for loop in f_mid.loops:
+            loop[uv_body].uv = UV_HERO_YELLOW
+            
+        # Bottom beveled rim:
+        f_bot = bm_body.faces.new([bot_outer_ring[i], bot_outer_ring[i_next], bot_inner_ring[i_next], bot_inner_ring[i]])
+        f_bot.smooth = True
+        for loop in f_bot.loops:
+            loop[uv_body].uv = UV_HERO_YELLOW
+
+    # 3. SOLID 3D GOLD BELT BUCKLE
+    # Centered on front waist, raised 7mm proud of belt outer surface
+    w_buckle = 0.065
+    z_buckle_top = 0.562
+    z_buckle_bot = 0.478
+    y_buckle_front = -(ry + belt_thickness + 0.007)
+    y_belt_base = -(ry + belt_thickness)
+
+    outer_corners = [
+        (-w_buckle, z_buckle_top),
+        ( w_buckle, z_buckle_top),
+        ( w_buckle, z_buckle_bot),
+        (-w_buckle, z_buckle_bot),
     ]
-    buckle_inner = [
-        (-0.038, 0.538),
-        ( 0.038, 0.538),
-        ( 0.038, 0.507),
-        (-0.038, 0.507),
+
+    v_b_front = []
+    v_b_back = []
+    for x, z in outer_corners:
+        curve = 0.004 * (x / w_buckle) ** 2
+        y_f = y_buckle_front + curve
+        y_b = y_belt_base + curve
+        
+        vf = bm_body.verts.new(Vector((x, y_f, z)))
+        vf[dvert_body][hips_idx] = 1.0
+        v_b_front.append(vf)
+        
+        vb = bm_body.verts.new(Vector((x, y_b, z)))
+        vb[dvert_body][hips_idx] = 1.0
+        v_b_back.append(vb)
+
+    w_plate = 0.038
+    z_plate_top = 0.542
+    z_plate_bot = 0.498
+    y_plate = y_buckle_front + 0.003 # Inset 3mm into buckle
+
+    inner_corners = [
+        (-w_plate, z_plate_top),
+        ( w_plate, z_plate_top),
+        ( w_plate, z_plate_bot),
+        (-w_plate, z_plate_bot),
     ]
 
-    v_buckle_outer = []
-    for x, z in buckle_outer:
-        y = -0.324 - 0.008 * (1.0 - (x / 0.065) ** 2)
-        v = bm_body.verts.new(Vector((x, y, z)))
-        v[dvert_body][hips_idx] = 1.0 # 100% hips bone
-        v_buckle_outer.append(v)
+    v_plate = []
+    for x, z in inner_corners:
+        curve = 0.004 * (x / w_buckle) ** 2
+        vp = bm_body.verts.new(Vector((x, y_plate + curve, z)))
+        vp[dvert_body][hips_idx] = 1.0
+        v_plate.append(vp)
 
-    v_buckle_inner = []
-    for x, z in buckle_inner:
-        y = -0.320 - 0.008 * (1.0 - (x / 0.065) ** 2)
-        v = bm_body.verts.new(Vector((x, y, z)))
-        v[dvert_body][hips_idx] = 1.0
-        v_buckle_inner.append(v)
-
-    # Inner buckle plate (Dark Gold)
-    f_inner = bm_body.faces.new(v_buckle_inner)
+    # Inner buckle plate (Dark Gold clasp)
+    f_inner = bm_body.faces.new(v_plate)
     f_inner.smooth = True
     for loop in f_inner.loops:
         loop[uv_body].uv = UV_DARK_GOLD
@@ -339,9 +465,17 @@ def build_superman():
     # Outer buckle frame (Hero Yellow)
     for i in range(4):
         i_next = (i + 1) % 4
-        f_frame = bm_body.faces.new([v_buckle_outer[i], v_buckle_outer[i_next], v_buckle_inner[i_next], v_buckle_inner[i]])
+        f_frame = bm_body.faces.new([v_b_front[i], v_b_front[i_next], v_plate[i_next], v_plate[i]])
         f_frame.smooth = True
         for loop in f_frame.loops:
+            loop[uv_body].uv = UV_HERO_YELLOW
+
+    # Buckle side walls connecting front to belt:
+    for i in range(4):
+        i_next = (i + 1) % 4
+        f_wall = bm_body.faces.new([v_b_front[i_next], v_b_back[i_next], v_b_back[i], v_b_front[i]])
+        f_wall.smooth = True
+        for loop in f_wall.loops:
             loop[uv_body].uv = UV_HERO_YELLOW
 
     # 3. Solid 3D Pentagonal S-Shield Emblem
