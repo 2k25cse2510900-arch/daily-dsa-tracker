@@ -912,9 +912,9 @@ export function GLBCharacter({ characterData, onReady }) {
         if (uar) {
           // Right arm: Leading heroic Superman fist extended straight forward level with shoulder
           uar.rotation.set(
-            (1.08 + Math.sin(ft * 3.0) * 0.008) * fb,
-            0.45 * fb,
-            (-0.18 + Math.cos(ft * 2.5) * 0.006) * fb
+            (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
+            0.26 * fb,
+            (-0.14 + Math.cos(ft * 2.5) * 0.006) * fb
           );
         }
         if (lar) {
@@ -924,9 +924,9 @@ export function GLBCharacter({ characterData, onReady }) {
         if (ual) {
           // Left arm: Extended straight forward level with shoulder, mirroring right arm with subtle perspective lead
           ual.rotation.set(
-            (1.02 + Math.sin(ft * 3.0) * 0.008) * fb,
-            -0.45 * fb,
-            (0.18 - Math.cos(ft * 2.5) * 0.006) * fb
+            (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
+            -0.26 * fb,
+            (0.14 - Math.cos(ft * 2.5) * 0.006) * fb
           );
         }
         if (lal) {
