@@ -252,8 +252,19 @@ def build_superman():
         # Rogue buckle / front pouch bits:
         elif min_z >= 0.49 and max_z <= 0.67 and abs(min_x) < 0.15 and abs(max_x) < 0.15 and min_y < -0.22:
             del_faces.extend(isl)
+        # Old flared skirt & broken lower crotch (all fragments below belt z < 0.485):
+        elif max_z < 0.485:
+            del_faces.extend(isl)
+
+    # Ensure all old fragmented body faces below belt are removed for clean solid trunks rebuild
+    for f in bm_body.faces:
+        if f.calc_center_median().z < 0.485 and f not in del_faces:
+            del_faces.append(f)
 
     bmesh.ops.delete(bm_body, geom=del_faces, context='FACES')
+
+    del_loose = [v for v in bm_body.verts if not v.link_faces]
+    bmesh.ops.delete(bm_body, geom=del_loose, context='VERTS')
 
     def get_athletic_chest_y(x, z):
         z_rel = (z - 0.94) / 0.28
@@ -477,6 +488,157 @@ def build_superman():
         f_wall.smooth = True
         for loop in f_wall.loops:
             loop[uv_body].uv = UV_HERO_YELLOW
+
+    # 4. SOLID 3D V-SHAPED SUPERMAN RED TRUNKS & SOLID PELVIS COVERAGE
+    # Clean, symmetrical classic Superman briefs with recognizable V-cut in front,
+    # high-cut hip openings, and solid closed crotch gusset & beveled leg cuffs.
+    # 100% hips bone weighted, completely opaque with zero see-through holes from below.
+    v_waist = bot_inner_ring # Seamlessly welded to bottom inner ring of belt!
+
+    # Mid-hip ring (24 vertices):
+    v_mid = []
+    for i in range(N_SEGS):
+        phi = (2.0 * math.pi * i) / N_SEGS
+        cos_p = math.cos(phi)
+        sin_p = math.sin(phi)
+        
+        r_x = 0.284
+        r_y = 0.278
+        r = (r_x * r_y) / math.hypot(r_y * sin_p, r_x * cos_p)
+        x = r * sin_p
+        y = -r * cos_p
+        
+        # Smooth V-drop in front, high hips at sides
+        if cos_p >= 0:
+            z = 0.468 - 0.055 * (cos_p ** 1.3)
+        else:
+            z = 0.468 - 0.035 * ((-cos_p) ** 1.3)
+            
+        vm = bm_body.verts.new(Vector((x, y, z)))
+        vm[dvert_body][hips_idx] = 1.0
+        v_mid.append(vm)
+
+    for i in range(N_SEGS):
+        i_next = (i + 1) % N_SEGS
+        f = bm_body.faces.new([v_waist[i], v_waist[i_next], v_mid[i_next], v_mid[i]])
+        f.smooth = True
+        for loop in f.loops:
+            loop[uv_body].uv = UV_SUPERMAN_RED
+
+    left_cuff_coords = [
+        (0.040, -0.160, 0.360), # 0: front-inner V
+        (0.090, -0.185, 0.380), # 1: front-mid groin
+        (0.160, -0.185, 0.405), # 2: front-outer groin
+        (0.235, -0.140, 0.435), # 3: hip front
+        (0.280,  0.000, 0.465), # 4: hip apex (high cut)
+        (0.245,  0.135, 0.440), # 5: hip back
+        (0.180,  0.185, 0.415), # 6: back-outer glute
+        (0.100,  0.185, 0.395), # 7: back-mid glute
+        (0.040,  0.155, 0.375), # 8: back-inner glute
+        (0.048,  0.080, 0.365), # 9: crotch inner back
+        (0.052,  0.000, 0.358), # 10: crotch inner mid
+        (0.048, -0.080, 0.358), # 11: crotch inner front
+    ]
+    right_cuff_coords = [(-x, y, z) for x, y, z in left_cuff_coords]
+
+    v_cuff_l = []
+    for pt in left_cuff_coords:
+        v = bm_body.verts.new(Vector(pt))
+        v[dvert_body][hips_idx] = 1.0
+        v_cuff_l.append(v)
+
+    v_cuff_r = []
+    for pt in right_cuff_coords:
+        v = bm_body.verts.new(Vector(pt))
+        v[dvert_body][hips_idx] = 1.0
+        v_cuff_r.append(v)
+
+    v_front_v = bm_body.verts.new(Vector((0.0, -0.170, 0.355)))
+    v_front_v[dvert_body][hips_idx] = 1.0
+
+    v_back_c = bm_body.verts.new(Vector((0.0, +0.165, 0.370)))
+    v_back_c[dvert_body][hips_idx] = 1.0
+
+    v_crotch_f = bm_body.verts.new(Vector((0.0, -0.080, 0.355)))
+    v_crotch_f[dvert_body][hips_idx] = 1.0
+
+    v_crotch_m = bm_body.verts.new(Vector((0.0,  0.000, 0.355)))
+    v_crotch_m[dvert_body][hips_idx] = 1.0
+
+    v_crotch_b = bm_body.verts.new(Vector((0.0, +0.080, 0.362)))
+    v_crotch_b[dvert_body][hips_idx] = 1.0
+
+    trunks_faces = []
+
+    # Front V panel:
+    trunks_faces.append(bm_body.faces.new([v_mid[0], v_mid[1], v_cuff_l[0], v_front_v]))
+    trunks_faces.append(bm_body.faces.new([v_front_v, v_cuff_r[0], v_mid[23], v_mid[0]]))
+
+    # Left groin & hip panel:
+    trunks_faces.append(bm_body.faces.new([v_mid[1], v_mid[2], v_cuff_l[1], v_cuff_l[0]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[2], v_mid[3], v_cuff_l[2], v_cuff_l[1]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[3], v_mid[4], v_cuff_l[3], v_cuff_l[2]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[4], v_mid[5], v_cuff_l[4], v_cuff_l[3]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[5], v_mid[6], v_cuff_l[4]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[6], v_mid[7], v_cuff_l[5], v_cuff_l[4]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[7], v_mid[8], v_cuff_l[5]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[8], v_mid[9], v_cuff_l[6], v_cuff_l[5]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[9], v_mid[10], v_cuff_l[7], v_cuff_l[6]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[10], v_mid[11], v_cuff_l[8], v_cuff_l[7]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[11], v_mid[12], v_back_c, v_cuff_l[8]]))
+
+    # Right groin & hip panel:
+    trunks_faces.append(bm_body.faces.new([v_mid[23], v_cuff_r[0], v_cuff_r[1], v_mid[22]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[22], v_cuff_r[1], v_cuff_r[2], v_mid[21]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[21], v_cuff_r[2], v_cuff_r[3], v_mid[20]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[20], v_cuff_r[3], v_cuff_r[4], v_mid[19]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[19], v_cuff_r[4], v_mid[18]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[18], v_cuff_r[4], v_cuff_r[5], v_mid[17]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[17], v_cuff_r[5], v_mid[16]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[16], v_cuff_r[5], v_cuff_r[6], v_mid[15]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[15], v_cuff_r[6], v_cuff_r[7], v_mid[14]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[14], v_cuff_r[7], v_cuff_r[8], v_mid[13]]))
+    trunks_faces.append(bm_body.faces.new([v_mid[12], v_mid[13], v_cuff_r[8], v_back_c]))
+
+    # Crotch Gusset (solid underside bridge between legs):
+    trunks_faces.append(bm_body.faces.new([v_front_v, v_cuff_l[0], v_cuff_l[11], v_crotch_f]))
+    trunks_faces.append(bm_body.faces.new([v_front_v, v_crotch_f, v_cuff_r[11], v_cuff_r[0]]))
+    trunks_faces.append(bm_body.faces.new([v_crotch_f, v_cuff_l[11], v_cuff_l[10], v_crotch_m]))
+    trunks_faces.append(bm_body.faces.new([v_crotch_f, v_crotch_m, v_cuff_r[10], v_cuff_r[11]]))
+    trunks_faces.append(bm_body.faces.new([v_crotch_m, v_cuff_l[10], v_cuff_l[9], v_crotch_b]))
+    trunks_faces.append(bm_body.faces.new([v_crotch_m, v_crotch_b, v_cuff_r[9], v_cuff_r[10]]))
+    trunks_faces.append(bm_body.faces.new([v_crotch_b, v_cuff_l[9], v_cuff_l[8], v_back_c]))
+    trunks_faces.append(bm_body.faces.new([v_crotch_b, v_back_c, v_cuff_r[8], v_cuff_r[9]]))
+
+    # Inner cuffs (beveled lips wrapping inward around thigh columns):
+    x_leg_l = 0.1709
+    x_leg_r = -0.1709
+    for is_l, v_cuff, center_x in [(True, v_cuff_l, x_leg_l), (False, v_cuff_r, x_leg_r)]:
+        v_inner = []
+        for v in v_cuff:
+            dx = v.co.x - center_x
+            dy = v.co.y
+            dist = math.hypot(dx, dy)
+            scale = max(0.001, (dist - 0.008) / dist) if dist > 0.001 else 1.0
+            vx = center_x + dx * scale
+            vy = dy * scale
+            vz = v.co.z + 0.006
+            v_in = bm_body.verts.new(Vector((vx, vy, vz)))
+            v_in[dvert_body][hips_idx] = 1.0
+            v_inner.append(v_in)
+            
+        for k in range(12):
+            k_next = (k + 1) % 12
+            if is_l:
+                f_c = bm_body.faces.new([v_cuff[k], v_cuff[k_next], v_inner[k_next], v_inner[k]])
+            else:
+                f_c = bm_body.faces.new([v_cuff[k_next], v_cuff[k], v_inner[k], v_inner[k_next]])
+            trunks_faces.append(f_c)
+
+    for f in trunks_faces:
+        f.smooth = True
+        for loop in f.loops:
+            loop[uv_body].uv = UV_SUPERMAN_RED
 
     # 3. Solid 3D Pentagonal S-Shield Emblem
     # Raised proud of chest surface (z ~ 0.78 to 1.06, center at 0.94)
