@@ -173,6 +173,37 @@ def build_superman():
         obj.data.materials.clear()
         obj.data.materials.append(superman_mat)
 
+    # Dedicated Premium Metallic Gold Material for Belt Buckle
+    buckle_mat = bpy.data.materials.new(name="superman_buckle_gold")
+    buckle_mat.use_nodes = True
+    b_nodes = buckle_mat.node_tree.nodes
+    b_links = buckle_mat.node_tree.links
+    b_nodes.clear()
+    
+    b_node_out = b_nodes.new(type='ShaderNodeOutputMaterial')
+    b_node_bsdf = b_nodes.new(type='ShaderNodeBsdfPrincipled')
+    b_node_tex = b_nodes.new(type='ShaderNodeTexImage')
+    b_node_tex.image = img
+    b_node_tex.interpolation = 'Linear'
+    
+    # Premium Metallic Gold PBR settings for realistic highlights and reflections
+    b_node_bsdf.inputs['Base Color'].default_value = (0.95, 0.76, 0.18, 1.0)
+    b_node_bsdf.inputs['Metallic'].default_value = 0.88
+    b_node_bsdf.inputs['Roughness'].default_value = 0.20
+    if 'Specular IOR Level' in b_node_bsdf.inputs:
+        b_node_bsdf.inputs['Specular IOR Level'].default_value = 0.90
+    elif 'Specular' in b_node_bsdf.inputs:
+        b_node_bsdf.inputs['Specular'].default_value = 0.90
+    if 'Alpha' in b_node_bsdf.inputs:
+        b_node_bsdf.inputs['Alpha'].default_value = 1.0
+    buckle_mat.blend_method = 'OPAQUE'
+    
+    b_links.new(b_node_tex.outputs['Color'], b_node_bsdf.inputs['Base Color'])
+    b_links.new(b_node_bsdf.outputs['BSDF'], b_node_out.inputs['Surface'])
+    
+    body_obj.data.materials.append(buckle_mat)
+    buckle_mat_idx = 1
+
     # ─────────────────────────────────────────────────────────────
     # A. HEAD: HEROIC SQUARE JAW, JET BLACK HAIR & ICONIC S-CURL
     # ─────────────────────────────────────────────────────────────
@@ -285,7 +316,14 @@ def build_superman():
         # Symmetrize waist (Z: 0.49 to 0.64)
         elif 0.49 < v.co.z <= 0.64:
             r = math.hypot(v.co.x, v.co.y)
-            if r > 0.292 and abs(v.co.x) > 0.10:
+            # Under the belt (Z: 0.49 to 0.56): ensure base torso is strictly inside inner belt ring
+            # removing Rogue front pouch protrusions (e.g. at y = -0.317) so it never clips belt/buckle
+            if v.co.z <= 0.56:
+                if r > 0.286 and r > 0.001:
+                    scale = 0.286 / r
+                    v.co.x *= scale
+                    v.co.y *= scale
+            elif r > 0.292 and abs(v.co.x) > 0.10:
                 scale = 0.290 / r
                 v.co.x *= scale
                 v.co.y *= scale
@@ -418,76 +456,86 @@ def build_superman():
         for loop in f_bot.loops:
             loop[uv_body].uv = UV_HERO_YELLOW
 
-    # 3. SOLID 3D GOLD BELT BUCKLE
-    # Centered on front waist, raised 7mm proud of belt outer surface
-    w_buckle = 0.065
-    z_buckle_top = 0.562
-    z_buckle_bot = 0.478
-    y_buckle_front = -(ry + belt_thickness + 0.007)
+    # 3. SOLID CRAFTED 3D METALLIC GOLD BELT BUCKLE
+    # Perfectly centered on front waist (x = 0), spanning z: 0.477 to 0.563 (8.6cm high, 9.2cm wide)
+    # Beautiful 5-ring watertight solid with beveled chamfer edges, recessed inner plate,
+    # and realistic metallic gold PBR finish. 100% hips bone weighted.
+    w_base = 0.046
+    h_base = 0.043
+    z_mid_buckle = 0.520 # Vertically centered on belt (0.485 to 0.555)
+
+    def get_buckle_curve(x_val):
+        return 0.0035 * (x_val / w_base) ** 2
+
+    # Ring specifications: (scale_w, scale_h, corner_chamfer, y_depth)
     y_belt_base = -(ry + belt_thickness)
-
-    outer_corners = [
-        (-w_buckle, z_buckle_top),
-        ( w_buckle, z_buckle_top),
-        ( w_buckle, z_buckle_bot),
-        (-w_buckle, z_buckle_bot),
+    buckle_rings_spec = [
+        # 0: Back base (sits 1.5mm into belt surface to guarantee zero floating gap)
+        (1.00, 1.00, 0.007, y_belt_base + 0.0015),
+        # 1: Outer rim chamfer base (4.0mm proud of belt)
+        (1.00, 1.00, 0.007, y_belt_base - 0.0040),
+        # 2: Front frame crest (highest crest, 9.0mm proud of belt)
+        (0.90, 0.89, 0.005, y_belt_base - 0.0090),
+        # 3: Inner frame step (7.0mm proud of belt)
+        (0.68, 0.66, 0.0035, y_belt_base - 0.0070),
+        # 4: Recessed core plate (5.5mm proud of belt)
+        (0.52, 0.48, 0.0025, y_belt_base - 0.0055),
     ]
 
-    v_b_front = []
-    v_b_back = []
-    for x, z in outer_corners:
-        curve = 0.004 * (x / w_buckle) ** 2
-        y_f = y_buckle_front + curve
-        y_b = y_belt_base + curve
-        
-        vf = bm_body.verts.new(Vector((x, y_f, z)))
-        vf[dvert_body][hips_idx] = 1.0
-        v_b_front.append(vf)
-        
-        vb = bm_body.verts.new(Vector((x, y_b, z)))
-        vb[dvert_body][hips_idx] = 1.0
-        v_b_back.append(vb)
+    buckle_rings = []
+    for sw, sh, c, y_base in buckle_rings_spec:
+        bw = w_base * sw
+        bh = h_base * sh
+        cx = c
+        cz = c
+        pts = [
+            (-bw + cx,  bh),      # 0: top-left
+            ( bw - cx,  bh),      # 1: top-right
+            ( bw,       bh - cz), # 2: right-top
+            ( bw,      -bh + cz), # 3: right-bot
+            ( bw - cx, -bh),      # 4: bot-right
+            (-bw + cx, -bh),      # 5: bot-left
+            (-bw,      -bh + cz), # 6: left-bot
+            (-bw,       bh - cz), # 7: left-top
+        ]
+        v_ring = []
+        for bx, bz in pts:
+            by = y_base + get_buckle_curve(bx)
+            v = bm_body.verts.new(Vector((bx, by, z_mid_buckle + bz)))
+            v[dvert_body][hips_idx] = 1.0
+            v_ring.append(v)
+        buckle_rings.append(v_ring)
 
-    w_plate = 0.038
-    z_plate_top = 0.542
-    z_plate_bot = 0.498
-    y_plate = y_buckle_front + 0.003 # Inset 3mm into buckle
+    # Connect rings with smooth quads:
+    # Ring 0->1: Side outer walls
+    # Ring 1->2: Outer chamfer bevel (45 deg)
+    # Ring 2->3: Raised front frame
+    # Ring 3->4: Inner chamfer step to recessed plate
+    for r in range(len(buckle_rings) - 1):
+        r_curr = buckle_rings[r]
+        r_next = buckle_rings[r + 1]
+        for i in range(8):
+            i_next = (i + 1) % 8
+            f_q = bm_body.faces.new([r_next[i], r_next[i_next], r_curr[i_next], r_curr[i]])
+            f_q.smooth = True
+            f_q.material_index = buckle_mat_idx
+            uv_target = UV_HERO_YELLOW if r < 3 else UV_DARK_GOLD
+            for loop in f_q.loops:
+                loop[uv_body].uv = uv_target
 
-    inner_corners = [
-        (-w_plate, z_plate_top),
-        ( w_plate, z_plate_top),
-        ( w_plate, z_plate_bot),
-        (-w_plate, z_plate_bot),
-    ]
-
-    v_plate = []
-    for x, z in inner_corners:
-        curve = 0.004 * (x / w_buckle) ** 2
-        vp = bm_body.verts.new(Vector((x, y_plate + curve, z)))
-        vp[dvert_body][hips_idx] = 1.0
-        v_plate.append(vp)
-
-    # Inner buckle plate (Dark Gold clasp)
-    f_inner = bm_body.faces.new(v_plate)
-    f_inner.smooth = True
-    for loop in f_inner.loops:
+    # Center recessed plate cap:
+    f_center = bm_body.faces.new(buckle_rings[-1])
+    f_center.smooth = True
+    f_center.material_index = buckle_mat_idx
+    for loop in f_center.loops:
         loop[uv_body].uv = UV_DARK_GOLD
 
-    # Outer buckle frame (Hero Yellow)
-    for i in range(4):
-        i_next = (i + 1) % 4
-        f_frame = bm_body.faces.new([v_b_front[i], v_b_front[i_next], v_plate[i_next], v_plate[i]])
-        f_frame.smooth = True
-        for loop in f_frame.loops:
-            loop[uv_body].uv = UV_HERO_YELLOW
-
-    # Buckle side walls connecting front to belt:
-    for i in range(4):
-        i_next = (i + 1) % 4
-        f_wall = bm_body.faces.new([v_b_front[i_next], v_b_back[i_next], v_b_back[i], v_b_front[i]])
-        f_wall.smooth = True
-        for loop in f_wall.loops:
-            loop[uv_body].uv = UV_HERO_YELLOW
+    # Back cap against belt:
+    f_back = bm_body.faces.new(buckle_rings[0][::-1])
+    f_back.smooth = True
+    f_back.material_index = buckle_mat_idx
+    for loop in f_back.loops:
+        loop[uv_body].uv = UV_HERO_YELLOW
 
     # 4. SOLID 3D V-SHAPED SUPERMAN RED TRUNKS & SOLID PELVIS COVERAGE
     # Clean, symmetrical classic Superman briefs with recognizable V-cut in front,
