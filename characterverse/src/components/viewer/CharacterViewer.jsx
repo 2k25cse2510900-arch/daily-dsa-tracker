@@ -781,18 +781,24 @@ export function GLBCharacter({ characterData, onReady }) {
     }
 
     if (targetAction) {
-      // Fade out other running actions immediately
+      const isSuperman = characterData?.id === 'superman';
+      // Stop other actions immediately without delay
       Object.values(actions).forEach((act) => {
         if (act && act !== targetAction && act.isRunning()) {
-          act.fadeOut(0.20);
+          if (isSuperman) act.stop();
+          else act.fadeOut(0.20);
         }
       });
-      targetAction.reset().fadeIn(0.20).play();
+      if (isSuperman) {
+        targetAction.reset().play();
+      } else {
+        targetAction.reset().fadeIn(0.20).play();
+      }
     } else if (characterData?.id === 'superman' && isDriving) {
-      // Fade out running/idle clips so skeletal flight controller has full authoritative control
+      // Cancel running/idle clips immediately so flight controller has instant control
       Object.values(actions).forEach((act) => {
         if (act && act.isRunning()) {
-          act.fadeOut(0.20);
+          act.stop();
         }
       });
     }
@@ -869,11 +875,11 @@ export function GLBCharacter({ characterData, onReady }) {
 
     if (isSuperman && !isMounted) {
       const isFlight = Boolean(isDriving);
-      // Immediate 0.20s exit transition to idle (0.15-0.25s spec); 0.25s entrance transition to flight
+      // Instant Stop: 0.00s delay on exit (0-0.05s target); smooth 0.20s entrance transition to flight
       if (isFlight) {
-        flightBlendRef.current = Math.min(1, flightBlendRef.current + delta / 0.25);
+        flightBlendRef.current = Math.min(1, flightBlendRef.current + delta / 0.20);
       } else {
-        flightBlendRef.current = Math.max(0, flightBlendRef.current - delta / 0.20);
+        flightBlendRef.current = 0;
       }
       const rawBlend = flightBlendRef.current;
       // Smooth Hermite ease (smoothstep) for organic acceleration and deceleration
