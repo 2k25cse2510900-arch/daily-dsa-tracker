@@ -914,36 +914,36 @@ export function GLBCharacter({ characterData, onReady }) {
           head.rotation.set((-0.55 + Math.sin(ft * 2.0) * 0.01) * fb, 0, 0);
         }
         if (uar) {
-          // Right arm: Wide parallel flight pose with 117.2 cm head-width fist separation
+          // Right arm: Polished forward flight reach with 115.2 cm head-width clearance
           uar.rotation.set(
-            (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
+            (1.06 + Math.sin(ft * 3.0) * 0.008) * fb,
             (-0.20 + Math.cos(ft * 2.5) * 0.003) * fb,
-            (0.65 + Math.sin(ft * 2.0) * 0.002) * fb
+            (0.63 + Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lar) {
-          // Right forearm: Extended forward matching wide flight line
-          lar.rotation.set(0.04 * fb, 0, 0.55 * fb);
+          // Right forearm: Level forward reach matching shoulder flight vector
+          lar.rotation.set(0.04 * fb, 0, 0.52 * fb);
         }
         if (handr) {
-          // Right fist: Pointing directly forward in flight direction with zero sideways flare
-          handr.rotation.set(0.30 * fb, -0.40 * fb, -1.15 * fb);
+          // Right fist: Knuckles aligned directly forward along flight trajectory
+          handr.rotation.set(0.31 * fb, -0.41 * fb, -1.12 * fb);
         }
         if (ual) {
-          // Left arm: Wide parallel flight pose with 117.2 cm head-width fist separation
+          // Left arm: Polished forward flight reach with 115.2 cm head-width clearance
           ual.rotation.set(
-            (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
+            (1.06 + Math.sin(ft * 3.0) * 0.008) * fb,
             (0.20 - Math.cos(ft * 2.5) * 0.003) * fb,
-            (-0.65 - Math.sin(ft * 2.0) * 0.002) * fb
+            (-0.63 - Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lal) {
-          // Left forearm: Extended forward matching wide flight line
-          lal.rotation.set(0.04 * fb, 0, -0.55 * fb);
+          // Left forearm: Level forward reach matching shoulder flight vector
+          lal.rotation.set(0.04 * fb, 0, -0.52 * fb);
         }
         if (handl) {
-          // Left fist: Pointing directly forward in flight direction with zero sideways flare
-          handl.rotation.set(0.30 * fb, 0.40 * fb, 1.15 * fb);
+          // Left fist: Knuckles aligned directly forward along flight trajectory
+          handl.rotation.set(0.31 * fb, 0.41 * fb, 1.12 * fb);
         }
         if (ull) {
           // Streamlined trailing left leg
