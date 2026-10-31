@@ -781,24 +781,24 @@ export function GLBCharacter({ characterData, onReady }) {
     }
 
     if (targetAction) {
-      // Fade out other running actions
+      // Fade out other running actions immediately
       Object.values(actions).forEach((act) => {
         if (act && act !== targetAction && act.isRunning()) {
-          act.fadeOut(0.25);
+          act.fadeOut(0.20);
         }
       });
-      targetAction.reset().fadeIn(0.25).play();
+      targetAction.reset().fadeIn(0.20).play();
     } else if (characterData?.id === 'superman' && isDriving) {
       // Fade out running/idle clips so skeletal flight controller has full authoritative control
       Object.values(actions).forEach((act) => {
         if (act && act.isRunning()) {
-          act.fadeOut(0.25);
+          act.fadeOut(0.20);
         }
       });
     }
 
     return () => {
-      if (targetAction) targetAction.fadeOut(0.25);
+      if (targetAction) targetAction.fadeOut(0.20);
     };
   }, [actions, animNames, characterData.id, characterData?.isDrivingMode, characterData?.vehicle?.modelType]);
 
@@ -869,15 +869,17 @@ export function GLBCharacter({ characterData, onReady }) {
 
     if (isSuperman && !isMounted) {
       const isFlight = Boolean(isDriving);
-      const blendSpeed = isFlight ? 3.0 : 4.0;
-      flightBlendRef.current = THREE.MathUtils.lerp(
-        flightBlendRef.current,
-        isFlight ? 1 : 0,
-        Math.min(1, delta * blendSpeed)
-      );
-      const fb = flightBlendRef.current;
+      // Immediate 0.20s exit transition to idle (0.15-0.25s spec); 0.25s entrance transition to flight
+      if (isFlight) {
+        flightBlendRef.current = Math.min(1, flightBlendRef.current + delta / 0.25);
+      } else {
+        flightBlendRef.current = Math.max(0, flightBlendRef.current - delta / 0.20);
+      }
+      const rawBlend = flightBlendRef.current;
+      // Smooth Hermite ease (smoothstep) for organic acceleration and deceleration
+      const fb = rawBlend * rawBlend * (3 - 2 * rawBlend);
 
-      if (fb > 0.001) {
+      if (fb > 0.0001) {
         flightTimeRef.current += delta * fb;
         const ft = flightTimeRef.current;
 
