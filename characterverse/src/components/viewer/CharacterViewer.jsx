@@ -862,6 +862,8 @@ export function GLBCharacter({ characterData, onReady }) {
     const llr = clonedScene.getObjectByName('lowerleg.r') || clonedScene.getObjectByName('lowerlegr');
     const footl = clonedScene.getObjectByName('foot.l') || clonedScene.getObjectByName('footl');
     const footr = clonedScene.getObjectByName('foot.r') || clonedScene.getObjectByName('footr');
+    const handl = clonedScene.getObjectByName('hand.l') || clonedScene.getObjectByName('handl');
+    const handr = clonedScene.getObjectByName('hand.r') || clonedScene.getObjectByName('handr');
     const t = clock.getElapsedTime();
     const isDriving = characterData?.isDrivingMode;
 
@@ -910,28 +912,28 @@ export function GLBCharacter({ characterData, onReady }) {
           head.rotation.set((-0.55 + Math.sin(ft * 2.0) * 0.01) * fb, 0, 0);
         }
         if (uar) {
-          // Right arm: Leading heroic Superman fist extended straight forward level with shoulder
+          // Right arm: Separated outward to prevent fist contact, reaching forward in flight
           uar.rotation.set(
             (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
-            0.26 * fb,
-            (-0.14 + Math.cos(ft * 2.5) * 0.006) * fb
+            (-0.05 + Math.cos(ft * 2.5) * 0.003) * fb,
+            (0.10 + Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lar) {
-          // Right forearm: Straight and level with upper arm
-          lar.rotation.set(0.04 * fb, 0, 0);
+          // Right forearm: Level forward reach with separated fist alignment
+          lar.rotation.set(0.04 * fb, 0, 0.10 * fb);
         }
         if (ual) {
-          // Left arm: Extended straight forward level with shoulder, mirroring right arm with subtle perspective lead
+          // Left arm: Separated outward to prevent fist contact, reaching forward in flight
           ual.rotation.set(
             (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
-            -0.26 * fb,
-            (0.14 - Math.cos(ft * 2.5) * 0.006) * fb
+            (0.05 - Math.cos(ft * 2.5) * 0.003) * fb,
+            (-0.10 - Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lal) {
-          // Left forearm: Straight and level with upper arm
-          lal.rotation.set(0.04 * fb, 0, 0);
+          // Left forearm: Level forward reach with separated fist alignment
+          lal.rotation.set(0.04 * fb, 0, -0.10 * fb);
         }
         if (ull) {
           // Streamlined trailing left leg
