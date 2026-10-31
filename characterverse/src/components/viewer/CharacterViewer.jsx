@@ -929,11 +929,11 @@ export function GLBCharacter({ characterData, onReady }) {
         }
         if (lar) {
           // Right forearm: Parallel forward reach matching flight vector
-          lar.rotation.set(0.04 * fb, 0, 0.12 * fb);
+          lar.rotation.set(0.04 * fb, 0, 0.06 * fb);
         }
         if (handr) {
           // Right fist: Knuckles aligned directly forward toward camera
-          handr.rotation.set(0.20 * fb, 0, -0.25 * fb);
+          handr.rotation.set(0.20 * fb, 0, -0.22 * fb);
         }
         if (ual) {
           // Left arm: Natural forward flight reach aligned with shoulder lines
@@ -945,11 +945,11 @@ export function GLBCharacter({ characterData, onReady }) {
         }
         if (lal) {
           // Left forearm: Parallel forward reach matching flight vector
-          lal.rotation.set(0.04 * fb, 0, -0.12 * fb);
+          lal.rotation.set(0.04 * fb, 0, -0.06 * fb);
         }
         if (handl) {
           // Left fist: Knuckles aligned directly forward toward camera
-          handl.rotation.set(0.20 * fb, 0, 0.25 * fb);
+          handl.rotation.set(0.20 * fb, 0, 0.22 * fb);
         }
         if (ull) {
           // Streamlined trailing left leg
