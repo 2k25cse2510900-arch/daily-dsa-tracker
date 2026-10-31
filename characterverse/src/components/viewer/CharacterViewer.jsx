@@ -912,36 +912,36 @@ export function GLBCharacter({ characterData, onReady }) {
           head.rotation.set((-0.55 + Math.sin(ft * 2.0) * 0.01) * fb, 0, 0);
         }
         if (uar) {
-          // Right arm: Parallel forward Superman flight pose aligned with shoulder axis
+          // Right arm: Wide parallel forward flight pose with head-width knuckle clearance
           uar.rotation.set(
             (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
-            (-0.18 + Math.cos(ft * 2.5) * 0.003) * fb,
-            (0.08 + Math.sin(ft * 2.0) * 0.002) * fb
+            (-0.20 + Math.cos(ft * 2.5) * 0.003) * fb,
+            (0.40 + Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lar) {
-          // Right forearm: Level and parallel, preventing inward elbow bend
-          lar.rotation.set(0.04 * fb, 0, 0.04 * fb);
+          // Right forearm: Extends forward matching wide flight line
+          lar.rotation.set(0.04 * fb, 0, 0.20 * fb);
         }
         if (handr) {
-          // Right fist: Knuckles facing forward in flight direction
-          handr.rotation.set(0.35 * fb, 0.15 * fb, -0.10 * fb);
+          // Right fist: Knuckles facing directly forward in direction of flight
+          handr.rotation.set(0.35 * fb, -0.30 * fb, -0.60 * fb);
         }
         if (ual) {
-          // Left arm: Parallel forward Superman flight pose aligned with shoulder axis
+          // Left arm: Wide parallel forward flight pose with head-width knuckle clearance
           ual.rotation.set(
             (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
-            (0.18 - Math.cos(ft * 2.5) * 0.003) * fb,
-            (-0.08 - Math.sin(ft * 2.0) * 0.002) * fb
+            (0.20 - Math.cos(ft * 2.5) * 0.003) * fb,
+            (-0.40 - Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lal) {
-          // Left forearm: Level and parallel, preventing inward elbow bend
-          lal.rotation.set(0.04 * fb, 0, -0.04 * fb);
+          // Left forearm: Extends forward matching wide flight line
+          lal.rotation.set(0.04 * fb, 0, -0.20 * fb);
         }
         if (handl) {
-          // Left fist: Knuckles facing forward in flight direction
-          handl.rotation.set(0.35 * fb, -0.15 * fb, 0.10 * fb);
+          // Left fist: Knuckles facing directly forward in direction of flight
+          handl.rotation.set(0.35 * fb, 0.30 * fb, 0.60 * fb);
         }
         if (ull) {
           // Streamlined trailing left leg
