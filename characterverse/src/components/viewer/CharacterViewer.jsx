@@ -912,28 +912,36 @@ export function GLBCharacter({ characterData, onReady }) {
           head.rotation.set((-0.55 + Math.sin(ft * 2.0) * 0.01) * fb, 0, 0);
         }
         if (uar) {
-          // Right arm: Separated outward to prevent fist contact, reaching forward in flight
+          // Right arm: Parallel forward Superman flight pose aligned with shoulder axis
           uar.rotation.set(
             (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
-            (-0.05 + Math.cos(ft * 2.5) * 0.003) * fb,
-            (0.10 + Math.sin(ft * 2.0) * 0.002) * fb
+            (-0.18 + Math.cos(ft * 2.5) * 0.003) * fb,
+            (0.08 + Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lar) {
-          // Right forearm: Level forward reach with separated fist alignment
-          lar.rotation.set(0.04 * fb, 0, 0.10 * fb);
+          // Right forearm: Level and parallel, preventing inward elbow bend
+          lar.rotation.set(0.04 * fb, 0, 0.04 * fb);
+        }
+        if (handr) {
+          // Right fist: Knuckles facing forward in flight direction
+          handr.rotation.set(0.35 * fb, 0.15 * fb, -0.10 * fb);
         }
         if (ual) {
-          // Left arm: Separated outward to prevent fist contact, reaching forward in flight
+          // Left arm: Parallel forward Superman flight pose aligned with shoulder axis
           ual.rotation.set(
             (1.05 + Math.sin(ft * 3.0) * 0.008) * fb,
-            (0.05 - Math.cos(ft * 2.5) * 0.003) * fb,
-            (-0.10 - Math.sin(ft * 2.0) * 0.002) * fb
+            (0.18 - Math.cos(ft * 2.5) * 0.003) * fb,
+            (-0.08 - Math.sin(ft * 2.0) * 0.002) * fb
           );
         }
         if (lal) {
-          // Left forearm: Level forward reach with separated fist alignment
-          lal.rotation.set(0.04 * fb, 0, -0.10 * fb);
+          // Left forearm: Level and parallel, preventing inward elbow bend
+          lal.rotation.set(0.04 * fb, 0, -0.04 * fb);
+        }
+        if (handl) {
+          // Left fist: Knuckles facing forward in flight direction
+          handl.rotation.set(0.35 * fb, -0.15 * fb, 0.10 * fb);
         }
         if (ull) {
           // Streamlined trailing left leg
