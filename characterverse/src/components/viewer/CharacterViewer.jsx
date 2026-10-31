@@ -1068,6 +1068,8 @@ export function GLBCharacter({ characterData, onReady }) {
           shadowRef.current.scale.set(scale, scale, 1);
         }
       } else {
+        flightBlendRef.current = 0;
+        flightTimeRef.current = 0;
         // Reset to exact ground idle coordinates
         if (clonedScene.position.y !== 0) clonedScene.position.set(0, 0, 0);
         if (clonedScene.rotation.x !== 0 || clonedScene.rotation.z !== 0 || clonedScene.rotation.y !== 0) {
