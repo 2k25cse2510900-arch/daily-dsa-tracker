@@ -4,6 +4,7 @@ import TopNav from './navigation/TopNav';
 import CharacterCollection from './panels/CharacterCollection';
 import CharacterDetails from './panels/CharacterDetails';
 import CharacterViewer from './viewer/CharacterViewer';
+import RaceArena from './arena/RaceArena';
 import StudioControls from './panels/StudioControls';
 import CharacterRosterView from './views/CharacterRosterView';
 import WardrobeView from './views/WardrobeView';
@@ -12,6 +13,125 @@ import InventoryView from './views/InventoryView';
 import PlaceholderModal from './ui/PlaceholderModal';
 import Toast from './ui/Toast';
 import { getRarityConfig } from '../config/rarity';
+
+const LIVE_ARENA_STATE = {
+  targetMilestone: 700,
+  baseline: 0,
+  racers: [
+    {
+      id: "member_mvggb1nmx303va",
+      memberId: "member_mvggb1nmx303va",
+      name: "Krish (ADMIN)",
+      username: "KrishChaddha106",
+      laneIndex: 0,
+      solved: 571,
+      solvedCount: 571,
+      solvedAvailable: true,
+      stats: { total: 571, easy: 424, medium: 143, hard: 4 },
+      character: { equippedCharacterId: "superman", selectedCharacterId: "superman", characterId: "superman", outfitId: "outfit-default" },
+      progress: 0.8157,
+      rank: 1,
+    },
+    {
+      id: "member_mvggbpb5y8e3h9",
+      memberId: "member_mvggbpb5y8e3h9",
+      name: "Kartik Kumar",
+      username: "Kartik_kumar_29",
+      laneIndex: 1,
+      solved: 462,
+      solvedCount: 462,
+      solvedAvailable: true,
+      stats: { total: 462, easy: 398, medium: 62, hard: 2 },
+      character: { equippedCharacterId: "kartik-kumar", selectedCharacterId: "kartik-kumar", characterId: "kartik-kumar", outfitId: "outfit-default" },
+      progress: 0.66,
+      rank: 2,
+    },
+    {
+      id: "member_mvggcet3ogmjrn",
+      memberId: "member_mvggcet3ogmjrn",
+      name: "Tanmay Awasthi",
+      username: "tanmayawasthi_code",
+      laneIndex: 2,
+      solved: 340,
+      solvedCount: 340,
+      solvedAvailable: true,
+      stats: { total: 340, easy: 266, medium: 68, hard: 6 },
+      character: { equippedCharacterId: "buster-blitz", selectedCharacterId: "buster-blitz", characterId: "buster-blitz", outfitId: "outfit-warrior" },
+      progress: 0.4857,
+      rank: 3,
+    },
+    {
+      id: "member_mvggcs86gcby6t",
+      memberId: "member_mvggcs86gcby6t",
+      name: "Avantika Yadav",
+      username: "avan_tika2776",
+      laneIndex: 3,
+      solved: 209,
+      solvedCount: 209,
+      solvedAvailable: true,
+      stats: { total: 209, easy: 176, medium: 31, hard: 2 },
+      character: { equippedCharacterId: "avantika-yadav", selectedCharacterId: "avantika-yadav", characterId: "avantika-yadav", outfitId: "outfit-default" },
+      progress: 0.2986,
+      rank: 4,
+    },
+    {
+      id: "member_mvggeccjh94w6y",
+      memberId: "member_mvggeccjh94w6y",
+      name: "Deepanshu Sachan",
+      username: "Deepanshu_Sachan",
+      laneIndex: 7,
+      solved: 92,
+      solvedCount: 92,
+      solvedAvailable: true,
+      stats: { total: 92, easy: 66, medium: 25, hard: 1 },
+      character: { equippedCharacterId: "buster-blitz", selectedCharacterId: "buster-blitz", characterId: "buster-blitz", outfitId: "outfit-default" },
+      progress: 0.1314,
+      rank: 5,
+    },
+    {
+      id: "member_mvggd5du6db87b",
+      memberId: "member_mvggd5du6db87b",
+      name: "Kshitij Rajput",
+      username: "1729kshitij",
+      laneIndex: 4,
+      solved: 84,
+      solvedCount: 84,
+      solvedAvailable: true,
+      stats: { total: 84, easy: 60, medium: 24, hard: 0 },
+      character: { equippedCharacterId: "buster-blitz", selectedCharacterId: "buster-blitz", characterId: "buster-blitz", outfitId: "outfit-default" },
+      progress: 0.12,
+      rank: 6,
+    },
+    {
+      id: "member_mvggdgrdrgmkdf",
+      memberId: "member_mvggdgrdrgmkdf",
+      name: "Krishna Kumar Gaur",
+      username: "KrishnaKumarGaur",
+      laneIndex: 5,
+      solved: 58,
+      solvedCount: 58,
+      solvedAvailable: true,
+      stats: { total: 58, easy: 32, medium: 22, hard: 4 },
+      character: { equippedCharacterId: "buster-blitz", selectedCharacterId: "buster-blitz", characterId: "buster-blitz", outfitId: "outfit-default" },
+      progress: 0.0829,
+      rank: 7,
+    },
+    {
+      id: "member_mvggdw3xiz0d21",
+      memberId: "member_mvggdw3xiz0d21",
+      name: "Kanika Dwivedi",
+      username: "Kanika_Dwii",
+      laneIndex: 6,
+      solved: 28,
+      solvedCount: 28,
+      solvedAvailable: true,
+      stats: { total: 28, easy: 13, medium: 14, hard: 1 },
+      character: { equippedCharacterId: "buster-blitz", selectedCharacterId: "buster-blitz", characterId: "buster-blitz", outfitId: "outfit-default" },
+      progress: 0.04,
+      rank: 8,
+    },
+  ]
+};
 
 /* ─── Coming Soon screen (for Shop / Inventory tabs) ─── */
 function ComingSoonScreen({ tab }) {
@@ -68,6 +188,21 @@ function ViewerBackground({ character }) {
 function StudioView({ onPreviewReady, embedded = false }) {
   const { effectiveCharacter, isAutoRotating, cameraResetTrigger } = useStudio();
 
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isArenaMode = searchParams?.get('arena') === 'true';
+  const arenaCamera = searchParams?.get('cam') || 'leader';
+
+  if (isArenaMode) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 min-w-0 relative overflow-hidden bg-[#090d16]">
+        <RaceArena
+          arenaState={LIVE_ARENA_STATE}
+          cameraMode={arenaCamera}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 relative overflow-hidden">
       {/* Viewer Area */}
@@ -118,6 +253,20 @@ function StudioView({ onPreviewReady, embedded = false }) {
 /* ─── Root Layout ─── */
 export default function AppLayout({ embedded = false, onPreviewReady = null }) {
   const { activeTab } = useStudio();
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isArenaMode = searchParams?.get('arena') === 'true';
+  const arenaCamera = searchParams?.get('cam') || 'leader';
+
+  if (isArenaMode) {
+    return (
+      <div className="w-screen h-screen overflow-hidden bg-[#090d16] relative">
+        <RaceArena
+          arenaState={LIVE_ARENA_STATE}
+          cameraMode={arenaCamera}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col ${embedded ? 'min-h-[640px]' : 'h-screen'} bg-[#ebe6f0] text-[#261b35] overflow-hidden`}>

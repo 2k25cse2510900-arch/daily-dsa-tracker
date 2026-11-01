@@ -1,4 +1,4 @@
-﻿# Local secrets and environment files
+# Local secrets and environment files
 .env
 .env.*
 !.env.example
@@ -15,3 +15,11 @@ node_modules/
 .DS_Store
 npm-debug.log*
 characterverse/dist/
+backups/
+scratch/
+__pycache__/
+*.pyc
+scripts/capture_*.py
+scripts/test_admin_login.js
+
+

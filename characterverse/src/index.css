@@ -55,15 +55,159 @@ body {
 }
 
 #root {
-  width: 1126px;
+  width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   3D LIVE RACE ARENA STYLES
+───────────────────────────────────────────────────────────────── */
+.race-arena-host, .race-arena-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #7dd3fc;
+}
+
+.race-arena-root canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
+}
+
+.arena-minimap-container {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  right: 14px;
+  padding: 7px 14px 9px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  pointer-events: auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.minimap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.minimap-title {
+  color: #f8fafc;
+  text-transform: uppercase;
+}
+
+.minimap-milestone {
+  color: #fef08a;
+  font-size: 10px;
+}
+
+.minimap-track-rail {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+}
+
+.minimap-track-progress-line {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.35), rgba(245, 158, 11, 0.65));
+  transform: translateY(-50%);
+}
+
+.minimap-pin {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: #38bdf8;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 2;
+  padding: 0;
+}
+
+.minimap-pin:hover, .minimap-pin.focused {
+  transform: translate(-50%, -50%) scale(1.28);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.9), 0 3px 10px rgba(0, 0, 0, 0.6);
+  z-index: 5;
+}
+
+.minimap-pin.rank-1 {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-color: #fef08a;
+  width: 24px;
+  height: 24px;
+}
+
+.minimap-pin.rank-2 {
+  background: linear-gradient(135deg, #38bdf8, #0284c7);
+  border-color: #e0f2fe;
+}
+
+.minimap-pin.rank-3 {
+  background: linear-gradient(135deg, #ec4899, #be185d);
+  border-color: #fce7f3;
+}
+
+.minimap-pin.rank-other {
+  background: linear-gradient(135deg, #64748b, #475569);
+  border-color: #cbd5e1;
+}
+
+.minimap-crown {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.minimap-num {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.minimap-track-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
 }
 
 h1,

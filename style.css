@@ -3351,3 +3351,177 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
   color: var(--text-muted, #94a3b8);
   font-weight: 600;
 }
+
+
+/* ── Arena Standings Gap Row ── */
+.standings-gap-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+.standings-gap {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  letter-spacing: 0.02em;
+}
+.standings-gap.gap-leader {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.standings-gap.gap-behind {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+.standings-gap.gap-tied {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+.standings-gap.gap-leader-dist {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+/* ── Arena Weather Badge ── */
+.arena-weather-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary, #f8fafc);
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+  transition: background 0.3s ease;
+}
+.arena-weather-badge .weather-icon { font-size: 14px; }
+.arena-weather-badge .weather-label { color: #fef9c3; }
+.arena-weather-badge .weather-temp { color: var(--text-muted, #94a3b8); font-size: 10px; }
+
+.standings-gap.gap-ahead-count {
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+}
+
+/* ── Interactive 3D Arena Minimap HUD ── */
+.arena-minimap-container {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  right: 14px;
+  padding: 8px 14px 10px;
+  background: rgba(15, 23, 42, 0.84);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 10;
+  pointer-events: auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.minimap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.minimap-title {
+  color: #f8fafc;
+  text-transform: uppercase;
+}
+.minimap-milestone {
+  color: #fef08a;
+  font-size: 10px;
+}
+.minimap-track-rail {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+}
+.minimap-track-progress-line {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.35), rgba(245, 158, 11, 0.65));
+  transform: translateY(-50%);
+}
+.minimap-pin {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 2;
+}
+.minimap-pin:hover {
+  transform: translate(-50%, -50%) scale(1.35);
+  z-index: 10;
+}
+.minimap-pin.focused {
+  transform: translate(-50%, -50%) scale(1.4);
+  box-shadow: 0 0 0 3px #fde047, 0 4px 12px rgba(250, 204, 21, 0.6);
+  z-index: 5;
+}
+.minimap-pin.rank-1 {
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  border-color: #fef08a;
+}
+.minimap-pin.rank-2 {
+  background: linear-gradient(135deg, #38bdf8, #0369a1);
+  border-color: #e0f2fe;
+}
+.minimap-pin.rank-3 {
+  background: linear-gradient(135deg, #ec4899, #a855f7);
+  border-color: #fbcfe8;
+}
+.minimap-pin.rank-other {
+  background: #334155;
+  border-color: #94a3b8;
+}
+.minimap-crown { font-size: 11px; line-height: 1; }
+.minimap-num { line-height: 1; }
+.minimap-track-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}

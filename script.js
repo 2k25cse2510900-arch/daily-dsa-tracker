@@ -2468,8 +2468,12 @@ function renderArenaStandings(arena) {
   const countEl = $("arenaStandingsCount");
   if (countEl) countEl.textContent = `${arena.racers.length} Racers`;
 
+  // Sort by rank ascending for gap calculations
+  const sorted = [...arena.racers].sort((a, b) => a.rank - b.rank);
+  const leaderSolved = Number(sorted[0]?.solved ?? sorted[0]?.solvedCount ?? 0);
+
   listEl.innerHTML = "";
-  arena.racers.forEach((racer) => {
+  sorted.forEach((racer, idx) => {
     const memberId = racer.id || racer.memberId;
     const isFocused = memberId && memberId === arenaFocusedMemberId;
     const item = document.createElement("div");
@@ -2485,6 +2489,28 @@ function renderArenaStandings(arena) {
       ? `<span class="standings-pending">Pending sync</span>`
       : `${solvedNum} <small style="font-size:10px;color:var(--text-muted)">solved</small>`;
 
+    // Gap calculations
+    const nextRacer = sorted[idx - 1];
+    const aheadSolved = nextRacer ? Number(nextRacer.solved ?? nextRacer.solvedCount ?? 0) : null;
+    const gapToNext = (aheadSolved !== null && aheadSolved > solvedNum) ? aheadSolved - solvedNum : 0;
+    const gapToLeader = leaderSolved > solvedNum ? leaderSolved - solvedNum : 0;
+
+    // Gap and standings calculations
+    const racersAheadCount = idx;
+    const racersAheadText = idx === 0
+      ? "🥇 Race Leader"
+      : `${racersAheadCount} ${racersAheadCount === 1 ? 'racer' : 'racers'} ahead`;
+
+    const leaderDiffText = idx === 0
+      ? "Pacesetter"
+      : `${gapToLeader} questions behind leader`;
+
+    const nextDiffText = idx === 0
+      ? ""
+      : gapToNext > 0
+        ? `▲ ${gapToNext} behind #${sorted[idx - 1].rank}`
+        : "= Tied";
+
     item.innerHTML = `
       <div class="standings-rank-pill ${rankClass}">#${racer.rank}</div>
       <div class="standings-info">
@@ -2497,7 +2523,12 @@ function renderArenaStandings(arena) {
         </div>
         <div class="standings-meta">
           <span>Lane ${(racer.laneIndex || 0) + 1} · ${vehicleIcon}</span>
-          <span>${percent}%</span>
+          <span style="font-weight:700;color:var(--text-primary,#f8fafc)">${percent}% progress</span>
+        </div>
+        <div class="standings-gap-row">
+          <span class="standings-gap gap-ahead-count">${racersAheadText}</span>
+          ${idx > 0 ? `<span class="standings-gap gap-leader-dist">${leaderDiffText}</span>` : ""}
+          ${nextDiffText ? `<span class="standings-gap gap-behind">${nextDiffText}</span>` : ""}
         </div>
       </div>
     `;
@@ -2620,6 +2651,37 @@ function initArenaControls() {
       }
     });
   }
+
+
+  // Weather badge updater — syncs with RaceArena WEATHER_PRESETS cycling
+  const WEATHER_BADGE_PRESETS = [
+    { icon: "☀️", label: "Summer · Sunny", temp: "28°C", dur: 28 },
+    { icon: "🌅", label: "Golden Hour", temp: "24°C", dur: 18 },
+    { icon: "🌇", label: "Sunset · Dusk", temp: "19°C", dur: 16 },
+    { icon: "🌙", label: "Night · Stars", temp: "12°C", dur: 20 },
+    { icon: "❄️", label: "Winter · Snow", temp: "-3°C", dur: 22 },
+  ];
+  let _wBadgeIdx = 0;
+  let _wBadgeElapsed = 0;
+  let _wBadgeLast = Date.now();
+  function tickWeatherBadge() {
+    const now = Date.now();
+    _wBadgeElapsed += (now - _wBadgeLast) / 1000;
+    _wBadgeLast = now;
+    const preset = WEATHER_BADGE_PRESETS[_wBadgeIdx];
+    if (_wBadgeElapsed >= preset.dur) {
+      _wBadgeElapsed = 0;
+      _wBadgeIdx = (_wBadgeIdx + 1) % WEATHER_BADGE_PRESETS.length;
+    }
+    const p = WEATHER_BADGE_PRESETS[_wBadgeIdx];
+    const iconEl = $("arenaWeatherIcon");
+    const labelEl = $("arenaWeatherLabel");
+    const tempEl = $("arenaWeatherTemp");
+    if (iconEl) iconEl.textContent = p.icon;
+    if (labelEl) labelEl.textContent = p.label;
+    if (tempEl) tempEl.textContent = "Temp: " + p.temp;
+  }
+  setInterval(tickWeatherBadge, 3000);
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && activePage === "arena") {
