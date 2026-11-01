@@ -976,6 +976,499 @@ function AlpineMountainRanges() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
+   ANIMATED ALPINE LAKE, WATERFALL, AND CENTRAL INFIELD POND
+   Pristine mountain water bodies, animated cascading waterfall, and mist.
+───────────────────────────────────────────────────────────────── */
+function AlpineLakeAndWaterfall() {
+  const lakeMeshRef = useRef();
+  const waterfallMeshRef = useRef();
+  const mistMeshRef = useRef();
+  const infieldPondRef = useRef();
+
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    // Subtle water surface shimmer / ripple
+    if (lakeMeshRef.current) {
+      lakeMeshRef.current.position.y = -0.3 + Math.sin(t * 1.5) * 0.04;
+    }
+    if (infieldPondRef.current) {
+      infieldPondRef.current.position.y = -0.12 + Math.sin(t * 1.8 + 1.0) * 0.02;
+    }
+    // Waterfall animated flow (oscillate scale & slight position)
+    if (waterfallMeshRef.current) {
+      waterfallMeshRef.current.scale.x = 1.0 + Math.sin(t * 8.0) * 0.06;
+      waterfallMeshRef.current.scale.y = 1.0 + Math.cos(t * 10.0) * 0.04;
+    }
+    // Foaming plunge pool mist pulse
+    if (mistMeshRef.current) {
+      const mistScale = 1.0 + Math.sin(t * 4.5) * 0.15;
+      mistMeshRef.current.scale.set(mistScale, mistScale, mistScale);
+    }
+  });
+
+  return (
+    <group>
+      {/* ── 1. Pristine Northern Alpine Lake (Z = -61) ── */}
+      <mesh
+        ref={lakeMeshRef}
+        position={[0, -0.3, -61.0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <planeGeometry args={[84, 34, 32, 16]} />
+        <meshStandardMaterial
+          color="#0284c7"
+          roughness={0.12}
+          metalness={0.35}
+          transparent
+          opacity={0.88}
+        />
+      </mesh>
+
+      {/* Lake Shoreline Sandy Foam Fringe */}
+      <mesh position={[0, -0.29, -61.0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[14.0, 16.5, 32]} />
+        <meshBasicMaterial color="#38bdf8" transparent opacity={0.3} />
+      </mesh>
+
+      {/* ── 2. Cascading Cliffside Waterfall (From Castle Crag Notch to Lake) ── */}
+      <group position={[0, 9.2, -78.0]} rotation={[0.42, 0, 0]}>
+        <mesh ref={waterfallMeshRef}>
+          <planeGeometry args={[8.8, 22.0, 16, 32]} />
+          <meshStandardMaterial
+            color="#f0f9ff"
+            roughness={0.25}
+            metalness={0.1}
+            transparent
+            opacity={0.92}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        {/* Foaming Water Rushes Highlights */}
+        <mesh position={[0, 0, 0.08]}>
+          <planeGeometry args={[6.2, 21.0]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.7} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+
+      {/* ── 3. Waterfall Plunge Pool Spray & Mist ── */}
+      <group position={[0, 0.15, -73.0]}>
+        <mesh ref={mistMeshRef} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.5, 6.2, 24]} />
+          <meshBasicMaterial color="#e0f2fe" transparent opacity={0.65} side={THREE.DoubleSide} />
+        </mesh>
+        {/* Frothing splash base rocks */}
+        <mesh position={[-3.2, 0.4, 0]}>
+          <dodecahedronGeometry args={[1.1, 0]} />
+          <meshStandardMaterial color="#475569" roughness={0.8} />
+        </mesh>
+        <mesh position={[3.2, 0.4, 0]}>
+          <dodecahedronGeometry args={[1.1, 0]} />
+          <meshStandardMaterial color="#475569" roughness={0.8} />
+        </mesh>
+      </group>
+
+      {/* ── 4. Central Infield Reflective Lake / Park Pond (R ~ 10.8) ── */}
+      <mesh
+        ref={infieldPondRef}
+        position={[0, -0.12, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <circleGeometry args={[10.6, 48]} />
+        <meshStandardMaterial
+          color="#0284c7"
+          roughness={0.15}
+          metalness={0.3}
+          transparent
+          opacity={0.86}
+        />
+      </mesh>
+
+      {/* Central Pond Stepping Stones */}
+      {[
+        [-3.2, -0.06, 1.2],
+        [-1.0, -0.05, 2.8],
+        [1.8, -0.06, 2.0],
+        [3.6, -0.05, 0.2],
+        [2.2, -0.06, -2.4],
+        [-1.2, -0.05, -2.8],
+      ].map(([sx, sy, sz], idx) => (
+        <mesh key={idx} position={[sx, sy, sz]} rotation={[0, idx * 0.7, 0]}>
+          <cylinderGeometry args={[0.7, 0.85, 0.2, 7]} />
+          <meshStandardMaterial color="#64748b" roughness={0.85} flatShading />
+        </mesh>
+      ))}
+
+      {/* Shoreline Reeds & Cattails Clusters */}
+      {[
+        // Northern lake edge reeds
+        [-18, 0.1, -48],
+        [-14, 0.1, -47],
+        [14, 0.1, -47],
+        [18, 0.1, -48],
+        [-28, 0.1, -66],
+        [28, 0.1, -66],
+        // Infield pond reeds
+        [-7.5, 0.05, 7.5],
+        [7.5, 0.05, 7.5],
+        [-7.5, 0.05, -7.5],
+        [7.5, 0.05, -7.5],
+      ].map(([rx, ry, rz], ri) => (
+        <group key={ri} position={[rx, ry, rz]} scale={[0.85, 0.85, 0.85]}>
+          <mesh position={[0, 0.7, 0]}>
+            <coneGeometry args={[0.08, 1.4, 4]} />
+            <meshStandardMaterial color="#15803d" />
+          </mesh>
+          <mesh position={[0.2, 0.6, 0.1]} rotation={[0, 0, -0.15]}>
+            <coneGeometry args={[0.07, 1.2, 4]} />
+            <meshStandardMaterial color="#166534" />
+          </mesh>
+          <mesh position={[-0.2, 0.65, -0.1]} rotation={[0, 0, 0.18]}>
+            <coneGeometry args={[0.07, 1.3, 4]} />
+            <meshStandardMaterial color="#15803d" />
+          </mesh>
+          <mesh position={[0, 1.2, 0]}>
+            <cylinderGeometry args={[0.08, 0.08, 0.45, 5]} />
+            <meshStandardMaterial color="#78350f" roughness={0.9} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   DENSE NATURAL 3D FORESTS & VEGETATION
+   Layered alpine conifer pines, deciduous broadleaf trees, and meadow shrubs.
+───────────────────────────────────────────────────────────────── */
+function LayeredAlpinePine({ pos, scale = 1 }) {
+  return (
+    <group position={pos} scale={[scale, scale, scale]}>
+      {/* Natural Bark Trunk */}
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <cylinderGeometry args={[0.28, 0.44, 2.4, 6]} />
+        <meshStandardMaterial color="#582f0e" roughness={0.95} />
+      </mesh>
+      {/* Tier 1 (Lowest, Widest Needle Canopy) */}
+      <mesh position={[0, 2.4, 0]} castShadow>
+        <coneGeometry args={[2.5, 2.6, 7]} />
+        <meshStandardMaterial color="#14532d" roughness={0.85} flatShading />
+      </mesh>
+      {/* Tier 2 (Middle Canopy) */}
+      <mesh position={[0, 3.8, 0]} castShadow>
+        <coneGeometry args={[2.0, 2.4, 7]} />
+        <meshStandardMaterial color="#166534" roughness={0.82} flatShading />
+      </mesh>
+      {/* Tier 3 (Upper Canopy) */}
+      <mesh position={[0, 5.0, 0]} castShadow>
+        <coneGeometry args={[1.5, 2.0, 7]} />
+        <meshStandardMaterial color="#15803d" roughness={0.8} flatShading />
+      </mesh>
+      {/* Tier 4 (Spire Tip) */}
+      <mesh position={[0, 6.0, 0]} castShadow>
+        <coneGeometry args={[0.9, 1.4, 6]} />
+        <meshStandardMaterial color="#16a34a" roughness={0.78} flatShading />
+      </mesh>
+    </group>
+  );
+}
+
+function LushBroadleafTree({ pos, scale = 1 }) {
+  return (
+    <group position={pos} scale={[scale, scale, scale]}>
+      {/* Gnarled Oak Trunk */}
+      <mesh position={[0, 1.4, 0]} castShadow>
+        <cylinderGeometry args={[0.32, 0.48, 2.8, 6]} />
+        <meshStandardMaterial color="#78350f" roughness={0.95} />
+      </mesh>
+      {/* Cluster of Foliage Dodecahedrons */}
+      <mesh position={[0, 3.4, 0]} castShadow>
+        <dodecahedronGeometry args={[2.0, 1]} />
+        <meshStandardMaterial color="#16a34a" roughness={0.85} flatShading />
+      </mesh>
+      <mesh position={[-0.8, 3.8, 0.5]} castShadow>
+        <dodecahedronGeometry args={[1.4, 1]} />
+        <meshStandardMaterial color="#22c55e" roughness={0.82} flatShading />
+      </mesh>
+      <mesh position={[0.8, 3.6, -0.4]} castShadow>
+        <dodecahedronGeometry args={[1.5, 1]} />
+        <meshStandardMaterial color="#15803d" roughness={0.84} flatShading />
+      </mesh>
+      <mesh position={[0, 4.6, 0]} castShadow>
+        <dodecahedronGeometry args={[1.3, 1]} />
+        <meshStandardMaterial color="#4ade80" roughness={0.8} flatShading />
+      </mesh>
+    </group>
+  );
+}
+
+function MeadowFlowerBush({ pos, scale = 1, flowerColor = "#fbbf24" }) {
+  return (
+    <group position={pos} scale={[scale, scale, scale]}>
+      <mesh position={[0, 0.6, 0]} castShadow>
+        <dodecahedronGeometry args={[0.9, 0]} />
+        <meshStandardMaterial color="#16a34a" roughness={0.9} flatShading />
+      </mesh>
+      {/* Tiny flower accents */}
+      <mesh position={[0.4, 1.0, 0.3]}>
+        <sphereGeometry args={[0.2, 5, 4]} />
+        <meshBasicMaterial color={flowerColor} />
+      </mesh>
+      <mesh position={[-0.4, 0.9, 0.2]}>
+        <sphereGeometry args={[0.18, 5, 4]} />
+        <meshBasicMaterial color="#f43f5e" />
+      </mesh>
+      <mesh position={[0.1, 1.2, -0.3]}>
+        <sphereGeometry args={[0.18, 5, 4]} />
+        <meshBasicMaterial color="#38bdf8" />
+      </mesh>
+    </group>
+  );
+}
+
+function DenseNaturalForests() {
+  const trees = useMemo(() => {
+    const list = [];
+
+    // ── 1. Castle Mountain Slopes & Waterfall Crags (Z = -75 to -108) ──
+    const cliffPines = [
+      { pos: [-24, 7.5, -82], s: 1.1 },
+      { pos: [-20, 6.2, -78], s: 0.95 },
+      { pos: [-28, 9.8, -88], s: 1.25 },
+      { pos: [-16, 5.0, -75], s: 0.9 },
+      { pos: [16, 5.0, -75], s: 0.9 },
+      { pos: [20, 6.2, -78], s: 0.95 },
+      { pos: [24, 7.5, -82], s: 1.1 },
+      { pos: [28, 9.8, -88], s: 1.25 },
+      { pos: [-14, 15.0, -96], s: 1.1 },
+      { pos: [14, 15.0, -96], s: 1.1 },
+      { pos: [-22, 17.5, -104], s: 1.3 },
+      { pos: [22, 17.5, -104], s: 1.3 },
+      { pos: [0, 18.0, -112], s: 1.2 },
+    ];
+    cliffPines.forEach((p, idx) => list.push({ ...p, type: 'pine', key: `cp_${idx}` }));
+
+    // ── 2. North Shoreline Forest Flanking the Lake (Z = -45 to -68) ──
+    const northFlank = [
+      { pos: [-42, 0.3, -54], s: 1.2, type: 'pine' },
+      { pos: [-36, 0.2, -60], s: 1.1, type: 'broadleaf' },
+      { pos: [-32, 0.2, -50], s: 1.0, type: 'pine' },
+      { pos: [-26, 0.1, -45], s: 0.9, type: 'broadleaf' },
+      { pos: [26, 0.1, -45], s: 0.9, type: 'broadleaf' },
+      { pos: [32, 0.2, -50], s: 1.0, type: 'pine' },
+      { pos: [36, 0.2, -60], s: 1.1, type: 'broadleaf' },
+      { pos: [42, 0.3, -54], s: 1.2, type: 'pine' },
+    ];
+    northFlank.forEach((p, idx) => list.push({ ...p, key: `nf_${idx}` }));
+
+    // ── 3. Central Infield Park & Garden (R = 12 to 25) ──
+    const infieldAngles = [0.3, 0.8, 1.4, 2.1, 2.7, 3.5, 4.1, 4.8, 5.4, 6.0];
+    infieldAngles.forEach((ang, idx) => {
+      const r = 16.5 + (idx % 3) * 3.5;
+      const x = r * Math.cos(ang);
+      const z = r * Math.sin(ang);
+      const isPine = idx % 2 === 0;
+      list.push({
+        pos: [x, 0.05, z],
+        s: 0.75 + (idx % 4) * 0.1,
+        type: isPine ? 'pine' : 'broadleaf',
+        key: `inf_${idx}`,
+      });
+    });
+
+    // ── 4. Outer Valley Foothills & Mountain Approaches (X = ±52 to ±72) ──
+    const outerValley = [
+      { pos: [-55, 1.5, -28], s: 1.3, type: 'pine' },
+      { pos: [-62, 2.5, -12], s: 1.4, type: 'pine' },
+      { pos: [-58, 2.0, 15], s: 1.3, type: 'broadleaf' },
+      { pos: [-64, 3.0, 35], s: 1.4, type: 'pine' },
+      { pos: [55, 1.5, -28], s: 1.3, type: 'pine' },
+      { pos: [62, 2.5, -12], s: 1.4, type: 'pine' },
+      { pos: [58, 2.0, 15], s: 1.3, type: 'broadleaf' },
+      { pos: [64, 3.0, 35], s: 1.4, type: 'pine' },
+    ];
+    outerValley.forEach((p, idx) => list.push({ ...p, key: `ov_${idx}` }));
+
+    // ── 5. Southern Foreground Meadow (Z = 52 to 74) ──
+    const southMeadow = [
+      { pos: [-28, 0.8, 56], s: 1.05, type: 'pine' },
+      { pos: [-16, 0.4, 54], s: 0.9, type: 'broadleaf' },
+      { pos: [16, 0.4, 54], s: 0.9, type: 'broadleaf' },
+      { pos: [28, 0.8, 56], s: 1.05, type: 'pine' },
+      { pos: [-40, 1.5, 66], s: 1.3, type: 'pine' },
+      { pos: [40, 1.5, 66], s: 1.3, type: 'pine' },
+    ];
+    southMeadow.forEach((p, idx) => list.push({ ...p, key: `sm_${idx}` }));
+
+    return list;
+  }, []);
+
+  const bushes = useMemo(() => {
+    return [
+      // Trackside flowering shrubs along outer rim
+      { pos: [-46, 0.05, -15], s: 1.0, f: '#fbbf24' },
+      { pos: [-47, 0.05, 12], s: 1.1, f: '#f43f5e' },
+      { pos: [46, 0.05, -15], s: 1.0, f: '#38bdf8' },
+      { pos: [47, 0.05, 12], s: 1.1, f: '#fbbf24' },
+      { pos: [-22, 0.05, 49], s: 0.9, f: '#f43f5e' },
+      { pos: [22, 0.05, 49], s: 0.9, f: '#38bdf8' },
+      // Central infield shrubs
+      { pos: [-8, 0.02, 11], s: 0.8, f: '#fbbf24' },
+      { pos: [9, 0.02, 10], s: 0.85, f: '#f43f5e' },
+      { pos: [10, 0.02, -8], s: 0.8, f: '#38bdf8' },
+      { pos: [-10, 0.02, -9], s: 0.85, f: '#fbbf24' },
+    ];
+  }, []);
+
+  return (
+    <group>
+      {trees.map((t) =>
+        t.type === 'pine' ? (
+          <LayeredAlpinePine key={t.key} pos={t.pos} scale={t.s} />
+        ) : (
+          <LushBroadleafTree key={t.key} pos={t.pos} scale={t.s} />
+        )
+      )}
+      {bushes.map((b, i) => (
+        <MeadowFlowerBush key={i} pos={b.pos} scale={b.s} flowerColor={b.f} />
+      ))}
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   TRACKSIDE TIMBER FENCING, STONE BRIDGE, AND EVENT BANNERS
+   Continuous rustic timber guard fence (Prompt 2 reference) and stone bridge.
+───────────────────────────────────────────────────────────────── */
+function TracksideFencingAndProps() {
+  const outerFencePosts = useMemo(() => {
+    const posts = [];
+    const count = 48;
+    const r = 47.6;
+    for (let i = 0; i < count; i++) {
+      const theta = (i / count) * Math.PI * 2;
+      const diffFromStart = Math.abs(theta - TRACK_CONFIG.startAngle);
+      if (diffFromStart > 0.08 && Math.abs(diffFromStart - Math.PI * 2) > 0.08) {
+        posts.push({
+          x: r * Math.sin(theta),
+          z: r * Math.cos(theta),
+          ang: theta,
+        });
+      }
+    }
+    return posts;
+  }, []);
+
+  const outerFenceRails = useMemo(() => {
+    const r = 47.6;
+    const geom1 = new THREE.TorusGeometry(r, 0.05, 6, 96);
+    geom1.rotateX(Math.PI / 2);
+    const geom2 = new THREE.TorusGeometry(r, 0.05, 6, 96);
+    geom2.rotateX(Math.PI / 2);
+    return { geom1, geom2 };
+  }, []);
+
+  const infieldFencePosts = useMemo(() => {
+    const posts = [];
+    const count = 36;
+    const r = 28.5;
+    for (let i = 0; i < count; i++) {
+      const theta = (i / count) * Math.PI * 2;
+      const diffFromStart = Math.abs(theta - TRACK_CONFIG.startAngle);
+      if (diffFromStart > 0.1 && Math.abs(diffFromStart - Math.PI * 2) > 0.1) {
+        posts.push({
+          x: r * Math.sin(theta),
+          z: r * Math.cos(theta),
+        });
+      }
+    }
+    return posts;
+  }, []);
+
+  return (
+    <group>
+      {/* ── 1. Outer Rustic Timber Guard Fence (Prompt 2 Match) ── */}
+      {outerFencePosts.map((p, i) => (
+        <mesh key={i} position={[p.x, 0.65, p.z]} castShadow>
+          <cylinderGeometry args={[0.11, 0.13, 1.3, 6]} />
+          <meshStandardMaterial color="#78350f" roughness={0.9} />
+        </mesh>
+      ))}
+      <mesh geometry={outerFenceRails.geom1} position={[0, 0.5, 0]}>
+        <meshStandardMaterial color="#854d0e" roughness={0.88} />
+      </mesh>
+      <mesh geometry={outerFenceRails.geom2} position={[0, 1.05, 0]}>
+        <meshStandardMaterial color="#854d0e" roughness={0.88} />
+      </mesh>
+
+      {/* ── 2. Infield Low Timber Perimeter Barrier ── */}
+      {infieldFencePosts.map((p, i) => (
+        <mesh key={i} position={[p.x, 0.45, p.z]} castShadow>
+          <cylinderGeometry args={[0.08, 0.1, 0.9, 6]} />
+          <meshStandardMaterial color="#78350f" roughness={0.9} />
+        </mesh>
+      ))}
+
+      {/* ── 3. Rustic Stone Arch Bridge crossing the Valley Inlet (Prompt 2) ── */}
+      <group position={[32.0, 0.4, -45.0]} rotation={[0, -0.4, 0]}>
+        <mesh position={[0, 0.6, 0]} castShadow receiveShadow>
+          <boxGeometry args={[4.2, 0.5, 12.0]} />
+          <meshStandardMaterial color="#94a3b8" roughness={0.85} />
+        </mesh>
+        <mesh position={[-2.0, 1.1, 0]} castShadow>
+          <boxGeometry args={[0.4, 0.7, 12.0]} />
+          <meshStandardMaterial color="#64748b" roughness={0.9} />
+        </mesh>
+        <mesh position={[2.0, 1.1, 0]} castShadow>
+          <boxGeometry args={[0.4, 0.7, 12.0]} />
+          <meshStandardMaterial color="#64748b" roughness={0.9} />
+        </mesh>
+        <mesh position={[0, -0.6, -3.5]} castShadow>
+          <cylinderGeometry args={[1.2, 1.4, 2.2, 8]} />
+          <meshStandardMaterial color="#475569" roughness={0.95} />
+        </mesh>
+        <mesh position={[0, -0.6, 3.5]} castShadow>
+          <cylinderGeometry args={[1.2, 1.4, 2.2, 8]} />
+          <meshStandardMaterial color="#475569" roughness={0.95} />
+        </mesh>
+      </group>
+
+      {/* ── 4. Festive Circuit Pennant Flags & Banner Poles ── */}
+      {[
+        { theta: 0.8, color: '#3b82f6' },
+        { theta: 1.6, color: '#ef4444' },
+        { theta: 2.4, color: '#eab308' },
+        { theta: 3.2, color: '#10b981' },
+        { theta: 4.0, color: '#8b5cf6' },
+        { theta: 4.8, color: '#f97316' },
+        { theta: 5.6, color: '#06b6d4' },
+      ].map((flag, idx) => {
+        const r = 48.8;
+        const fx = r * Math.sin(flag.theta);
+        const fz = r * Math.cos(flag.theta);
+        return (
+          <group key={idx} position={[fx, 0, fz]}>
+            <mesh position={[0, 2.8, 0]} castShadow>
+              <cylinderGeometry args={[0.07, 0.09, 5.6, 6]} />
+              <meshStandardMaterial color="#cbd5e1" metalness={0.7} roughness={0.3} />
+            </mesh>
+            <mesh position={[0.7, 5.0, 0]} rotation={[0, flag.theta, 0]}>
+              <planeGeometry args={[1.3, 0.8]} />
+              <meshStandardMaterial
+                color={flag.color}
+                roughness={0.5}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
    COMPLETE 3D CIRCULAR RACING CIRCUIT GEOMETRY
    Preserves all 8 lanes, kerbs, checkered start line, and gantry arch.
 ───────────────────────────────────────────────────────────────── */
@@ -1518,6 +2011,15 @@ const RaceArena = forwardRef(function RaceArena(
 
         {/* Continuous Sculpted Mountain-Valley Terrain Mesh */}
         <MountainValleyTerrain />
+
+        {/* Animated Alpine Lake, Cascading Cliffside Waterfall & Infield Pond */}
+        <AlpineLakeAndWaterfall />
+
+        {/* Dense 3D Forests: Layered Alpine Pines, Broadleaf Trees & Meadow Flora */}
+        <DenseNaturalForests />
+
+        {/* Trackside Rustic Timber Fencing, Stone Bridge, and Event Banners */}
+        <TracksideFencingAndProps />
 
         {/* Complete 3D circular racing circuit with 8 lanes, kerbs, and gantry */}
         <CircularRaceCircuit />
