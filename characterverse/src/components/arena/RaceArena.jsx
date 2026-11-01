@@ -7,73 +7,68 @@ import { resolveCharacterDataFromAppearance } from '../viewer/CharacterAvatar';
 import { VEHICLES } from '../../data/vehicles';
 
 /* ─────────────────────────────────────────────────────────────────
-   ROLLING HILL TERRAIN & CONTINUOUS PATH MATHEMATICS
+   CIRCULAR 3D RACING CIRCUIT CONFIGURATION & MATHEMATICS
+   - Large, closed-loop athletics-style racing circuit inspired by Olympic tracks.
+   - Start line and finish line meet at the exact same physical point (closed loop).
+   - Exactly eight parallel running lanes around the entire 360° circuit.
+   - Distinct radii per lane: zero lane cutting or collisions.
 ───────────────────────────────────────────────────────────────── */
+export const TRACK_CONFIG = {
+  innerRadius: 30.0,
+  laneWidth: 2.0,
+  laneCount: 8,
+  startAngle: 0, // In radians: at theta = 0 (X = 0, Z = +R), foreground start/finish
+  get outerRadius() {
+    return this.innerRadius + this.laneCount * this.laneWidth; // 46.0
+  },
+  getLaneRadius(laneIndex) {
+    const lane = Math.max(0, Math.min(this.laneCount - 1, typeof laneIndex === 'number' ? laneIndex : 0));
+    return this.innerRadius + (lane + 0.5) * this.laneWidth;
+  },
+};
+
+/**
+ * Returns the exact 3D coordinates [X, Y, Z] on the circular track for a racer.
+ * Smoothly interpolates along the closed loop based on verified LeetCode progress [0, 1].
+ */
+export function getCircularRacerPosition(progress, laneIndex) {
+  const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
+  const r = TRACK_CONFIG.getLaneRadius(laneIndex);
+  // Counter-clockwise running direction: theta increases from 0 to 2*PI
+  const theta = TRACK_CONFIG.startAngle + p * Math.PI * 2;
+  const x = r * Math.sin(theta);
+  const z = r * Math.cos(theta);
+  const y = 0.05;
+  return [x, y, z];
+}
+
+/**
+ * Returns forward tangent angle (heading in radians) around the circular track.
+ */
+export function getCircularRacerHeading(progress) {
+  const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
+  const theta = TRACK_CONFIG.startAngle + p * Math.PI * 2;
+  // Tangent vector: dX/dtheta = r*cos(theta), dZ/dtheta = -r*sin(theta)
+  // Character forward is aligned to this tangent
+  return Math.atan2(Math.cos(theta), -Math.sin(theta));
+}
+
+// Backward-compatible math exports to protect external tests/imports
 export function getTerrainHeight(worldX) {
-  return (
-    Math.sin(worldX * 0.12) * 1.45 +
-    Math.sin(worldX * 0.28) * 0.55 +
-    Math.cos(worldX * 0.05) * 0.95 +
-    Math.sin(worldX * 0.07) * 0.65 +
-    0.3
-  );
+  return 0.05;
 }
-
-/**
- * Authoritative running path height:
- * Guarantees the racing path stays 100% continuous and dry across all hills
- * and valley water crossings (elevated scenic causeway at -0.85).
- */
 export function getRunnerPathHeight(worldX) {
-  const raw = getTerrainHeight(worldX);
-  return Math.max(-0.85, raw);
+  return 0.05;
 }
-
 export function getTerrainSlope(worldX) {
-  const h = 0.05;
-  return (getRunnerPathHeight(worldX + h) - getRunnerPathHeight(worldX - h)) / (2 * h);
+  return 0;
 }
-
-/**
- * Nonlinear racer position mapping across the expansive world:
- * Maps normalized progress [0, 1] across a wide 60-unit world span [-30, +30].
- * Uses a power curve (p^0.72) to stretch separation between close racers,
- * giving every racer a clearly visible, distinct position.
- */
 export function getRacerWorldX(progress) {
   const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
   return -32.0 + Math.pow(p, 0.65) * 64.0;
 }
-
-/**
- * Unified expansive 3D terrain height function covering both X and Z:
- * - Center corridor (-6 <= Z <= 6): smooth rolling runner causeway.
- * - Foreground (+7 <= Z <= 38): slopes into a crystal river channel at Z=6..24 (below water level), then rises to lush foreground knolls.
- * - Midground & Background (-7 <= Z <= -55): rolls gently upward into green meadow foothills before mountain peaks.
- */
 export function getExpansiveTerrainHeight(worldX, worldZ) {
-  const baseH = getRunnerPathHeight(worldX);
-
-  if (worldZ >= -6 && worldZ <= 6) {
-    // Smooth central racing meadow
-    return baseH;
-  } else if (worldZ > 6 && worldZ <= 24) {
-    // Beautiful foreground crystal river channel (water level is at Y = -0.75)
-    const t = (worldZ - 6) / 18; // 0 to 1
-    const bankH = Math.min(0.1, baseH * (1 - t * 0.7));
-    const riverBed = -1.8 + Math.sin(worldX * 0.12) * 0.15;
-    return THREE.MathUtils.lerp(bankH, riverBed, Math.sin(t * Math.PI));
-  } else if (worldZ > 24) {
-    // Foreground knolls rising up in front of the river
-    const bankFactor = (worldZ - 24) / 16;
-    return -0.4 + bankFactor * 1.6 + Math.sin(worldX * 0.12) * 0.35;
-  } else {
-    // Background green meadow gently rolling up into mountain foothills
-    const dist = (-worldZ - 6);
-    const hillRise = Math.min(6.5, dist * 0.15);
-    const hillRolling = Math.sin(worldX * 0.08 + dist * 0.09) * 1.1 + Math.cos(worldX * 0.14) * 0.55;
-    return baseH * 0.3 + hillRise + hillRolling;
-  }
+  return 0.05;
 }
 
 function wrap(val, min, max) {
@@ -92,13 +87,13 @@ const WEATHER_PRESETS = [
     temp: '28°C',
     sky: '#38bdf8',
     fog: '#c7eaff',
-    fogNear: 70,
-    fogFar: 260,
+    fogNear: 85,
+    fogFar: 280,
     ambientIntensity: 1.25,
     ambientColor: '#ffffff',
     sunIntensity: 2.0,
     sunColor: '#fffbeb',
-    sunPos: [25, 40, 20],
+    sunPos: [35, 45, 30],
     fillIntensity: 0.6,
     fillColor: '#bae6fd',
     groundColor: '#22c55e',
@@ -117,13 +112,13 @@ const WEATHER_PRESETS = [
     temp: '24°C',
     sky: '#fbbf24',
     fog: '#fde68a',
-    fogNear: 65,
-    fogFar: 250,
+    fogNear: 80,
+    fogFar: 270,
     ambientIntensity: 1.05,
     ambientColor: '#fef08a',
     sunIntensity: 2.2,
     sunColor: '#ff9a3c',
-    sunPos: [35, 15, 18],
+    sunPos: [45, 20, 25],
     fillIntensity: 0.4,
     fillColor: '#fed7aa',
     groundColor: '#4ade80',
@@ -142,13 +137,13 @@ const WEATHER_PRESETS = [
     temp: '19°C',
     sky: '#f97316',
     fog: '#fb923c',
-    fogNear: 60,
-    fogFar: 240,
+    fogNear: 75,
+    fogFar: 250,
     ambientIntensity: 0.75,
     ambientColor: '#ff7c55',
     sunIntensity: 1.6,
     sunColor: '#ef4444',
-    sunPos: [42, 6, 14],
+    sunPos: [50, 10, 15],
     fillIntensity: 0.3,
     fillColor: '#fca5a5',
     groundColor: '#16a34a',
@@ -167,13 +162,13 @@ const WEATHER_PRESETS = [
     temp: '12°C',
     sky: '#090d16',
     fog: '#1e293b',
-    fogNear: 55,
-    fogFar: 220,
+    fogNear: 65,
+    fogFar: 230,
     ambientIntensity: 0.4,
     ambientColor: '#bfdbfe',
     sunIntensity: 0.55,
     sunColor: '#c7d2fe',
-    sunPos: [-25, 32, 12],
+    sunPos: [-30, 35, 15],
     fillIntensity: 0.25,
     fillColor: '#93c5fd',
     groundColor: '#14532d',
@@ -192,13 +187,13 @@ const WEATHER_PRESETS = [
     temp: '-3°C',
     sky: '#e2e8f0',
     fog: '#f1f5f9',
-    fogNear: 60,
-    fogFar: 230,
+    fogNear: 70,
+    fogFar: 250,
     ambientIntensity: 1.15,
     ambientColor: '#f0f9ff',
     sunIntensity: 1.5,
     sunColor: '#ffffff',
-    sunPos: [15, 28, 20],
+    sunPos: [20, 32, 25],
     fillIntensity: 0.65,
     fillColor: '#e0f2fe',
     groundColor: '#f1f5f9',
@@ -269,7 +264,6 @@ function WeatherSky() {
 
 /* ─────────────────────────────────────────────────────────────────
    OVERHEAD RACER BILLBOARD TAG (High Resolution 3D Canvas Sprite)
-   Clearly shows rank, name, verified solved count, and running lane.
 ───────────────────────────────────────────────────────────────── */
 function createBillboardTexture(racer) {
   const canvas = document.createElement('canvas');
@@ -306,25 +300,21 @@ function createBillboardTexture(racer) {
   ctx.fillStyle = bgGrad;
   ctx.fill();
 
-  // Glowing border
   ctx.lineWidth = isTop3 ? 5 : 3;
   ctx.strokeStyle = isTop3 ? '#fef08a' : 'rgba(255, 255, 255, 0.35)';
   ctx.stroke();
 
-  // Rank badge circle
   ctx.beginPath();
   ctx.arc(68, 64, 32, 0, Math.PI * 2);
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 
-  // Rank number or crown
   ctx.fillStyle = rank === 1 ? '#b45309' : '#0f172a';
   ctx.font = 'bold 34px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`#${rank}`, 68, 64);
 
-  // Racer Name
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'left';
@@ -332,7 +322,6 @@ function createBillboardTexture(racer) {
   const displayName = rawName.length > 14 ? rawName.slice(0, 13) + '…' : rawName;
   ctx.fillText(displayName, 116, 48);
 
-  // Solved Stats (authoritative verified score)
   ctx.fillStyle = '#cbd5e1';
   ctx.font = '600 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   const solvedCount = racer.solvedAvailable === false
@@ -355,9 +344,8 @@ function RacerBillboard({ racer }) {
   );
   if (!texture) return null;
 
-  // Stagger height across ranks (Y = 2.45 to 3.5) to guarantee tags NEVER overlap in any view
   const rank = Number(racer.rank || 1);
-  const posY = 2.45 + (rank % 3) * 0.52;
+  const posY = 2.45 + (rank % 3) * 0.45;
 
   return (
     <sprite position={[0, posY, 0]} scale={[3.3, 0.85, 1]}>
@@ -367,7 +355,7 @@ function RacerBillboard({ racer }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   RACER MESH FALLBACK
+   RACER MESH FALLBACK & PRESENTATION
 ───────────────────────────────────────────────────────────────── */
 function RacerMeshFallback({ racer, characterData }) {
   const baseColor = characterData?.colors?.baseColor || '#38bdf8';
@@ -422,10 +410,11 @@ function RacerPresentation({ racer, characterData }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   SIDE-SCROLLING ARENA RACER ENTITY
-   Positions characters fully above the terrain on all slopes.
+   CIRCULAR ARENA RACER ENTITY
+   Positions characters on their exact distinct circular lane,
+   facing forward along the curve tangent with running strides.
 ───────────────────────────────────────────────────────────────── */
-function ArenaRacer({ racer, scrollRef, reducedMotion, onFocus }) {
+function ArenaRacer({ racer, reducedMotion, onFocus }) {
   const groupRef = useRef();
   const currentProgressRef = useRef(racer.progress || 0);
 
@@ -451,33 +440,23 @@ function ArenaRacer({ racer, scrollRef, reducedMotion, onFocus }) {
       Math.min(1, delta * lerpSpeed)
     );
 
-    // Authoritative world position using nonlinear wide-spread mapping
-    const worldX = getRacerWorldX(currentProgressRef.current);
-    const scroll = scrollRef.current;
-    const terrainHeight = getRunnerPathHeight(worldX + scroll);
-    const slope = getTerrainSlope(worldX + scroll);
-
-    // Natural running stride bounce
-    const t = clock.getElapsedTime();
     const laneIndex = typeof racer.laneIndex === 'number' ? racer.laneIndex : 0;
+    const [posX, posY, posZ] = getCircularRacerPosition(currentProgressRef.current, laneIndex);
+    const heading = getCircularRacerHeading(currentProgressRef.current);
+
+    const t = clock.getElapsedTime();
     const strideBob = reducedMotion ? 0 : Math.abs(Math.sin(t * 11 + laneIndex)) * 0.08;
 
-    // Dedicated lane depth (Z axis): [-4.7 to +4.7] ensures zero collision between racers
-    const laneZ = (laneIndex - 3.5) * 1.35;
-
-    // Grounding: characters stand cleanly above grass, or Superman flies airborne with clearance
+    // Superman elevated flight clearance (tested in superman.test.js)
     const isSuperman = characterData?.id === 'superman';
     const verticalElevation = isSuperman
-      ? 1.35 + (reducedMotion ? 0 : Math.sin(t * 3.2 + laneIndex) * 0.08)
-      : 0.08 + strideBob;
+      ? 1.25 + (reducedMotion ? 0 : Math.sin(t * 3.2 + laneIndex) * 0.08)
+      : 0.06 + strideBob;
 
-    groupRef.current.position.set(worldX, terrainHeight + verticalElevation, laneZ);
+    groupRef.current.position.set(posX, posY + verticalElevation, posZ);
 
-    // Facing right (+X) with natural hill incline pitch and aerodynamic flight banking
-    const slopePitch = Math.atan(slope) * 0.65;
-    const flightPitch = isSuperman ? slopePitch + 0.15 : slopePitch;
     const flightBank = isSuperman && !reducedMotion ? Math.sin(t * 2.8 + laneIndex) * 0.08 : 0;
-    groupRef.current.rotation.set(flightBank, Math.PI / 2, flightPitch);
+    groupRef.current.rotation.set(flightBank, heading, 0);
   });
 
   const memberId = racer.id || racer.memberId;
@@ -495,236 +474,483 @@ function ArenaRacer({ racer, scrollRef, reducedMotion, onFocus }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   REALISTIC ANIMATED WATER RIVER & SHORELINE
-   Expansive crystal river (width 280) with dynamic waves, reflections, and foam.
+   CHECKERED START / FINISH TEXTURE GENERATOR
+   Creates a crisp 16x6 black and white checkered grid across all 8 lanes.
 ───────────────────────────────────────────────────────────────── */
-function BeautifulWater({ scrollRef }) {
-  const waterMeshRef = useRef();
-  const foamNearRef = useRef();
-  const foamFarRef = useRef();
+function createCheckeredStartTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
 
-  const { waterGeom, baseWaterPositions } = useMemo(() => {
-    // 280 units along X, 18 units along Z (spanning Z = 7 to 25)
-    const geom = new THREE.PlaneGeometry(280, 18, 140, 16);
+  const cols = 16;
+  const rows = 6;
+  const cellW = canvas.width / cols;
+  const cellH = canvas.height / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      ctx.fillStyle = (r + c) % 2 === 0 ? '#ffffff' : '#0f172a';
+      ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+    }
+  }
+
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   "DSA RACE ARENA" GRAND GANTRY BANNER TEXTURE GENERATOR
+   Renders the bold stadium arch banner matching the storyboard design.
+───────────────────────────────────────────────────────────────── */
+function createBannerTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const grad = ctx.createLinearGradient(0, 0, 1024, 256);
+  grad.addColorStop(0, '#0f172a');
+  grad.addColorStop(0.15, '#1e3a8a');
+  grad.addColorStop(0.5, '#2563eb');
+  grad.addColorStop(0.85, '#1e3a8a');
+  grad.addColorStop(1, '#0f172a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 256);
+
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 14;
+  ctx.strokeRect(7, 7, 1010, 242);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(20, 20, 984, 216);
+
+  // Left & right trophy badges
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath();
+  ctx.arc(88, 128, 46, 0, Math.PI * 2);
+  ctx.arc(1024 - 88, 128, 46, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⚡', 88, 128);
+  ctx.fillText('🏁', 1024 - 88, 128);
+
+  // "DSA RACE ARENA" Bold Text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 86px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  ctx.fillText('DSA RACE ARENA', 512, 132);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   ALTERNATING RED & WHITE CURVED KERB GEOMETRY GENERATOR
+   Constructs a chamfered rumble strip ring with vertex colors.
+───────────────────────────────────────────────────────────────── */
+function createAlternatingKerbGeometry(innerR, outerR, segments = 64) {
+  const geom = new THREE.BufferGeometry();
+  const positions = [];
+  const colors = [];
+  const normals = [];
+
+  const red = new THREE.Color('#e11d48');
+  const white = new THREE.Color('#ffffff');
+
+  for (let i = 0; i < segments; i++) {
+    const theta1 = (i / segments) * Math.PI * 2;
+    const theta2 = ((i + 1) / segments) * Math.PI * 2;
+    const color = i % 2 === 0 ? red : white;
+
+    const x1_in = innerR * Math.sin(theta1);
+    const z1_in = innerR * Math.cos(theta1);
+    const x1_out = outerR * Math.sin(theta1);
+    const z1_out = outerR * Math.cos(theta1);
+
+    const x2_in = innerR * Math.sin(theta2);
+    const z2_in = innerR * Math.cos(theta2);
+    const x2_out = outerR * Math.sin(theta2);
+    const z2_out = outerR * Math.cos(theta2);
+
+    // Quad triangle 1
+    positions.push(x1_in, 0.05, z1_in);
+    positions.push(x1_out, 0.05, z1_out);
+    positions.push(x2_in, 0.05, z2_in);
+
+    // Quad triangle 2
+    positions.push(x2_in, 0.05, z2_in);
+    positions.push(x1_out, 0.05, z1_out);
+    positions.push(x2_out, 0.05, z2_out);
+
+    for (let k = 0; k < 6; k++) {
+      colors.push(color.r, color.g, color.b);
+      normals.push(0, 1, 0);
+    }
+  }
+
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  return geom;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   COMPLETE 3D CIRCULAR RACING CIRCUIT GEOMETRY
+   - Continuous closed-loop track bed (inner R=30, outer R=46)
+   - 8 distinct running lanes with 9 crisp white lane divider rings
+   - Inner and outer alternating red/white kerbs (rumble strips)
+   - Checkered start/finish grid across all 8 lanes (closed loop start=end)
+   - Grand Start/Finish Arch with "DSA RACE ARENA" banner
+   - Scenic central infield plaza with tiered water fountain,
+     glowing crystalline energy obelisk, radial walkways, flowerbeds, trees
+───────────────────────────────────────────────────────────────── */
+function CircularRaceCircuit() {
+  const { innerRadius, outerRadius, laneWidth, laneCount } = TRACK_CONFIG;
+
+  // Track surface ring
+  const trackBedGeom = useMemo(() => {
+    const geom = new THREE.RingGeometry(innerRadius, outerRadius, 128);
     geom.rotateX(-Math.PI / 2);
-    const base = new Float32Array(geom.attributes.position.array);
-    return { waterGeom: geom, baseWaterPositions: base };
-  }, []);
+    return geom;
+  }, [innerRadius, outerRadius]);
 
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    if (waterMeshRef.current && waterMeshRef.current.geometry) {
-      const pos = waterMeshRef.current.geometry.attributes.position;
-      const count = pos.count;
-      for (let i = 0; i < count; i++) {
-        const vx = baseWaterPositions[i * 3];
-        const vz = baseWaterPositions[i * 3 + 2];
-        const wave =
-          Math.sin(vx * 0.28 + t * 2.5) * 0.07 +
-          Math.cos(vz * 0.45 + t * 1.8) * 0.05 +
-          Math.sin((vx + vz) * 0.38 + t * 3.1) * 0.035;
-        pos.setY(i, wave);
-      }
-      pos.needsUpdate = true;
-      waterMeshRef.current.geometry.computeVertexNormals();
+  // 9 white lane boundary rings (7 inner dividers + 2 outer boundaries)
+  const laneDividerGeometries = useMemo(() => {
+    const rings = [];
+    for (let i = 0; i <= laneCount; i++) {
+      const r = innerRadius + i * laneWidth;
+      const isBoundary = i === 0 || i === laneCount;
+      const thickness = isBoundary ? 0.14 : 0.08;
+      const geom = new THREE.RingGeometry(r - thickness / 2, r + thickness / 2, 128);
+      geom.rotateX(-Math.PI / 2);
+      rings.push({ geom, isBoundary });
+    }
+    return rings;
+  }, [innerRadius, laneCount, laneWidth]);
 
-      // Dynamic water color matching weather
-      const w = weatherState.current;
-      if (waterMeshRef.current.material) {
-        waterMeshRef.current.material.color.set(w.waterColor);
-      }
-    }
+  // Inner and Outer alternating red-and-white kerbs
+  const innerKerbGeom = useMemo(() => {
+    return createAlternatingKerbGeometry(innerRadius - 1.35, innerRadius, 64);
+  }, [innerRadius]);
 
-    if (foamNearRef.current) {
-      foamNearRef.current.material.opacity = 0.45 + Math.sin(t * 3.2) * 0.15;
-    }
-    if (foamFarRef.current) {
-      foamFarRef.current.material.opacity = 0.45 + Math.cos(t * 2.9) * 0.15;
-    }
-  });
+  const outerKerbGeom = useMemo(() => {
+    return createAlternatingKerbGeometry(outerRadius, outerRadius + 1.35, 64);
+  }, [outerRadius]);
+
+  // Textures
+  const checkeredTexture = useMemo(() => createCheckeredStartTexture(), []);
+  const bannerTexture = useMemo(() => createBannerTexture(), []);
+
+  // Central lawn infield disc
+  const centralLawnGeom = useMemo(() => {
+    const geom = new THREE.CircleGeometry(innerRadius - 1.35, 64);
+    geom.rotateX(-Math.PI / 2);
+    return geom;
+  }, [innerRadius]);
+
+  // Outer stadium lawn ring
+  const outerLawnGeom = useMemo(() => {
+    const geom = new THREE.RingGeometry(outerRadius + 1.35, 135, 64);
+    geom.rotateX(-Math.PI / 2);
+    return geom;
+  }, [outerRadius]);
+
+  const midRadius = (innerRadius + outerRadius) / 2; // 38.0
+  const trackSpan = outerRadius - innerRadius; // 16.0
 
   return (
-    <group position={[0, -0.75, 15]}>
-      {/* ── Continuous Crystal River Surface ── */}
-      <mesh ref={waterMeshRef} geometry={waterGeom}>
+    <group>
+      {/* ── 1. MAIN ASPHALT COMPOSITE TRACK BED ── */}
+      <mesh geometry={trackBedGeom} position={[0, 0.02, 0]} receiveShadow>
         <meshStandardMaterial
-          color="#0284c7"
-          roughness={0.08}
-          metalness={0.65}
-          transparent
-          opacity={0.88}
+          color="#334155"
+          roughness={0.72}
+          metalness={0.12}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      {/* ── Shoreline Foam Strips along Near and Far Banks ── */}
-      <mesh ref={foamNearRef} position={[0, 0.03, -8.8]}>
-        <planeGeometry args={[276, 0.75]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.55} rotation={[-Math.PI / 2, 0, 0]} />
+      {/* ── 2. EIGHT PARALLEL RUNNING LANES WITH WHITE MARKINGS ── */}
+      <group position={[0, 0.026, 0]}>
+        {laneDividerGeometries.map(({ geom, isBoundary }, idx) => (
+          <mesh key={idx} geometry={geom}>
+            <meshStandardMaterial
+              color="#ffffff"
+              roughness={0.4}
+              metalness={0.1}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        ))}
+      </group>
+
+      {/* ── 3. INNER & OUTER RED/WHITE RUMBLE STRIP KERBS ── */}
+      <mesh geometry={innerKerbGeom} position={[0, 0.03, 0]} receiveShadow>
+        <meshStandardMaterial vertexColors roughness={0.55} side={THREE.DoubleSide} />
       </mesh>
-      <mesh ref={foamFarRef} position={[0, 0.03, 8.8]}>
-        <planeGeometry args={[276, 0.75]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.55} rotation={[-Math.PI / 2, 0, 0]} />
+      <mesh geometry={outerKerbGeom} position={[0, 0.03, 0]} receiveShadow>
+        <meshStandardMaterial vertexColors roughness={0.55} side={THREE.DoubleSide} />
       </mesh>
+
+      {/* ── 4. CHECKERED START / FINISH LINE GROUND MARKING ── */}
+      {/* Positioned across all 8 lanes at theta = 0 (X = 0, spanning along Z from innerRadius to outerRadius) */}
+      <mesh
+        position={[0, 0.035, midRadius]}
+        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+      >
+        <planeGeometry args={[trackSpan, 3.8]} />
+        <meshStandardMaterial
+          map={checkeredTexture}
+          roughness={0.4}
+          metalness={0.1}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* ── 5. GRAND START / FINISH ARCH & GANTRY ("DSA RACE ARENA") ── */}
+      <group position={[0, 0, midRadius]}>
+        {/* Inner Arch Pylon Tower (positioned safely on inner curb at Z = -trackSpan/2 - 1.2) */}
+        <group position={[0, 0, -trackSpan / 2 - 1.2]}>
+          <mesh position={[0, 4.5, 0]} castShadow>
+            <cylinderGeometry args={[0.65, 0.85, 9.0, 12]} />
+            <meshStandardMaterial color="#1e3a8a" roughness={0.4} metalness={0.6} />
+          </mesh>
+          <mesh position={[0, 9.4, 0]} castShadow>
+            <coneGeometry args={[0.85, 1.6, 8]} />
+            <meshStandardMaterial color="#f59e0b" roughness={0.3} metalness={0.8} />
+          </mesh>
+          <mesh position={[0, 7.5, 0]}>
+            <boxGeometry args={[0.1, 2.2, 1.2]} />
+            <meshStandardMaterial color="#ef4444" roughness={0.6} />
+          </mesh>
+        </group>
+
+        {/* Outer Arch Pylon Tower (positioned safely on outer curb at Z = +trackSpan/2 + 1.2) */}
+        <group position={[0, 0, trackSpan / 2 + 1.2]}>
+          <mesh position={[0, 4.5, 0]} castShadow>
+            <cylinderGeometry args={[0.65, 0.85, 9.0, 12]} />
+            <meshStandardMaterial color="#1e3a8a" roughness={0.4} metalness={0.6} />
+          </mesh>
+          <mesh position={[0, 9.4, 0]} castShadow>
+            <coneGeometry args={[0.85, 1.6, 8]} />
+            <meshStandardMaterial color="#f59e0b" roughness={0.3} metalness={0.8} />
+          </mesh>
+          <mesh position={[0, 7.5, 0]}>
+            <boxGeometry args={[0.1, 2.2, 1.2]} />
+            <meshStandardMaterial color="#ef4444" roughness={0.6} />
+          </mesh>
+        </group>
+
+        {/* Overhead Gantry Truss Spanning Across the 8 Lanes (along Z axis) */}
+        <mesh position={[0, 8.4, 0]} castShadow>
+          <boxGeometry args={[0.8, 0.8, trackSpan + 3.2]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.3} metalness={0.8} />
+        </mesh>
+
+        {/* Overhead "DSA RACE ARENA" Banner Plates (facing both directions) */}
+        {bannerTexture && (
+          <group position={[0, 8.5, 0]}>
+            {/* Front facing (+X / camera) */}
+            <mesh position={[-0.42, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+              <planeGeometry args={[14.5, 2.2]} />
+              <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Back facing (-X) */}
+            <mesh position={[0.42, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+              <planeGeometry args={[14.5, 2.2]} />
+              <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        )}
+      </group>
+
+      {/* ── 6. SCENIC CENTRAL INFIELD PLAZA ── */}
+      {/* Lush green infield lawn */}
+      <mesh geometry={centralLawnGeom} position={[0, 0.01, 0]} receiveShadow>
+        <meshStandardMaterial color="#22c55e" roughness={0.85} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Central Fountain with Water Basin and Glowing Beacon */}
+      <group position={[0, 0, 0]}>
+        {/* Outer Circular Plaza Path Ring */}
+        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[11.5, 13.8, 48]} />
+          <meshStandardMaterial color="#e2e8f0" roughness={0.7} side={THREE.DoubleSide} />
+        </mesh>
+
+        {/* Circular stone fountain pool rim */}
+        <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[7.2, 7.8, 0.9, 32]} />
+          <meshStandardMaterial color="#cbd5e1" roughness={0.6} metalness={0.2} />
+        </mesh>
+        {/* Shimmering crystal water disc */}
+        <mesh position={[0, 0.8, 0]}>
+          <circleGeometry args={[6.8, 32]} />
+          <meshStandardMaterial
+            color="#0284c7"
+            roughness={0.1}
+            metalness={0.8}
+            transparent
+            opacity={0.88}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        {/* Tiered center pedestal */}
+        <mesh position={[0, 1.4, 0]} castShadow>
+          <cylinderGeometry args={[2.8, 3.6, 1.2, 16]} />
+          <meshStandardMaterial color="#94a3b8" roughness={0.5} />
+        </mesh>
+        {/* Soaring central glowing energy crystal / obelisk (Prompt 1 visual) */}
+        <mesh position={[0, 5.2, 0]} castShadow>
+          <octahedronGeometry args={[2.4, 0]} />
+          <meshStandardMaterial
+            color="#38bdf8"
+            emissive="#0284c7"
+            emissiveIntensity={1.5}
+            roughness={0.2}
+            metalness={0.6}
+          />
+        </mesh>
+        {/* Vertical blue beacon column reaching skyward */}
+        <mesh position={[0, 14.0, 0]}>
+          <cylinderGeometry args={[0.35, 0.35, 20.0, 8]} />
+          <meshBasicMaterial color="#38bdf8" transparent opacity={0.35} />
+        </mesh>
+
+        {/* 4 Radial stone pathways from fountain to track (N, S, E, W) */}
+        {[0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((angle, i) => (
+          <group key={i} rotation={[0, angle, 0]}>
+            <mesh position={[0, 0.022, 18.0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+              <planeGeometry args={[2.8, innerRadius - 8.5]} />
+              <meshStandardMaterial color="#e2e8f0" roughness={0.7} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        ))}
+
+        {/* Manicured trees, pines, and flowerbeds in the infield */}
+        {[Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4].map((quadAngle, qi) => {
+          const dist = 18.0;
+          const qx = dist * Math.sin(quadAngle);
+          const qz = dist * Math.cos(quadAngle);
+          return (
+            <group key={qi} position={[qx, 0, qz]}>
+              {/* Broadleaf shade tree */}
+              <mesh position={[0, 1.0, 0]} castShadow>
+                <cylinderGeometry args={[0.22, 0.34, 2.0, 6]} />
+                <meshStandardMaterial color="#78350f" roughness={0.9} />
+              </mesh>
+              <mesh position={[0, 3.2, 0]} castShadow>
+                <dodecahedronGeometry args={[1.9, 1]} />
+                <meshStandardMaterial color="#15803d" roughness={0.75} />
+              </mesh>
+              {/* Flowerbed circle surrounding tree */}
+              <mesh position={[0, 0.025, 0]}>
+                <ringGeometry args={[2.2, 3.2, 16]} />
+                <meshStandardMaterial color="#f43f5e" emissive="#f43f5e" emissiveIntensity={0.25} />
+              </mesh>
+            </group>
+          );
+        })}
+
+        {/* Infield perimeter pine trees (just inside inner curb) */}
+        {[0.3, 0.9, 1.8, 2.4, 3.5, 4.1, 5.0, 5.6].map((angle, pi) => {
+          const px = 25.5 * Math.sin(angle);
+          const pz = 25.5 * Math.cos(angle);
+          return (
+            <group key={pi} position={[px, 0, pz]} scale={[0.85, 0.85, 0.85]}>
+              <mesh position={[0, 0.7, 0]} castShadow>
+                <cylinderGeometry args={[0.15, 0.25, 1.4, 6]} />
+                <meshStandardMaterial color="#451a03" roughness={0.9} />
+              </mesh>
+              <mesh position={[0, 2.2, 0]} castShadow>
+                <coneGeometry args={[1.3, 2.5, 7]} />
+                <meshStandardMaterial color="#14532d" roughness={0.8} />
+              </mesh>
+              <mesh position={[0, 3.4, 0]} castShadow>
+                <coneGeometry args={[1.0, 2.0, 7]} />
+                <meshStandardMaterial color="#166534" roughness={0.8} />
+              </mesh>
+            </group>
+          );
+        })}
+      </group>
+
+      {/* ── 7. VAST OUTER STADIUM MEADOW & PERIMETER FLORA ── */}
+      <mesh geometry={outerLawnGeom} position={[0, 0.01, 0]} receiveShadow>
+        <meshStandardMaterial color="#16a34a" roughness={0.88} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Outer perimeter spectator banners and pine trees */}
+      {[0.2, 0.8, 1.5, 2.2, 2.9, 3.6, 4.3, 5.0, 5.7].map((angle, oi) => {
+        const ox = 52.0 * Math.sin(angle);
+        const oz = 52.0 * Math.cos(angle);
+        return (
+          <group key={oi} position={[ox, 0, oz]}>
+            {/* Pine tree */}
+            <mesh position={[0, 1.0, 0]} castShadow>
+              <cylinderGeometry args={[0.18, 0.3, 2.0, 6]} />
+              <meshStandardMaterial color="#451a03" roughness={0.9} />
+            </mesh>
+            <mesh position={[0, 2.8, 0]} castShadow>
+              <coneGeometry args={[1.6, 3.2, 7]} />
+              <meshStandardMaterial color="#14532d" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 4.4, 0]} castShadow>
+              <coneGeometry args={[1.2, 2.4, 7]} />
+              <meshStandardMaterial color="#166534" roughness={0.8} />
+            </mesh>
+          </group>
+        );
+      })}
     </group>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   VAST, CONTINUOUS PROCEDURAL PARALLAX ENVIRONMENT
-   - 280-unit wide continuous rolling terrain (X: -140..+140, Z: -55..+40)
-   - Living animated river with rocks and wildflowers
-   - Multi-tier natural alpine conifer & leafy oak forests
-   - Distant snow-capped mountain ranges with castle fortress
-   - Atmospheric fog, day/night illumination, and winter snowfall
+   VAST SCENIC BACKGROUND & ATMOSPHERE
+   Preserves distant alpine peaks, snow caps, castle fortress,
+   floating hot air balloon, sky, and dynamic lighting.
 ───────────────────────────────────────────────────────────────── */
-function ParallaxEnvironment({ scrollRef, reducedMotion }) {
-  const groundMeshRef = useRef();
-  const groundMatRef = useRef();
-  const midgroundRef = useRef();
-  const distantRef = useRef();
-  const cloudsRef = useRef();
+function ArenaAtmosphere({ reducedMotion }) {
   const ambientRef = useRef();
   const sunRef = useRef();
   const fillRef = useRef();
   const snowRef = useRef();
 
-  // Expansive terrain grid: 280 wide (X), 95 deep (Z)
-  const { groundGeom, basePositions } = useMemo(() => {
-    const width = 280;
-    const depth = 95;
-    const segX = 140;
-    const segZ = 48;
-    const geom = new THREE.PlaneGeometry(width, depth, segX, segZ);
-    geom.rotateX(-Math.PI / 2);
-    // Center mesh around Z = -7.5 so it covers Z = -55 to +40
-    geom.translate(0, 0, -7.5);
-    const base = new Float32Array(geom.attributes.position.array);
-    return { groundGeom: geom, basePositions: base };
-  }, []);
-
-  // Trackside natural items (alpine pines, broadleaf oaks, flowering bushes, boulders, signposts)
-  const tracksideItems = useMemo(() => {
-    const items = [];
-    const types = ['pine', 'oak', 'bush', 'flower', 'rock', 'signpost'];
-    for (let i = 0; i < 48; i++) {
-      const initX = -65 + i * 2.8;
-      // Stagger along foreground and background margins
-      const zOffset = i % 2 === 0 ? -5.8 - (i % 3) * 1.5 : 6.8 + (i % 3) * 1.2;
-      const type = types[i % types.length];
-      const scale = 0.75 + ((i * 17) % 10) * 0.04;
-      items.push({ initX, zOffset, type, scale });
-    }
-    return items;
-  }, []);
-
-  const tracksideRefs = useRef([]);
-
-  // Distant volumetric clouds
-  const cloudItems = useMemo(() => {
-    return [
-      { x: -55, y: 19, z: -45, scale: [5.5, 1.8, 2.2] },
-      { x: -28, y: 22, z: -52, scale: [6.8, 2.0, 2.5] },
-      { x: 5, y: 18, z: -48, scale: [5.0, 1.6, 2.0] },
-      { x: 38, y: 21, z: -50, scale: [6.2, 1.9, 2.4] },
-      { x: 72, y: 19, z: -46, scale: [5.2, 1.7, 2.1] },
-      { x: -85, y: 20, z: -55, scale: [7.0, 2.2, 2.6] },
-    ];
-  }, []);
-
-  // 3D Snow particle system (active in winter/night)
   const snowParticles = useMemo(() => {
     const count = 300;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 120;
-      positions[i * 3 + 1] = Math.random() * 24 + 1;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 35;
+      positions[i * 3] = (Math.random() - 0.5) * 160;
+      positions[i * 3 + 1] = Math.random() * 28 + 1;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 160;
     }
     return positions;
   }, []);
 
   useFrame((state, delta) => {
-    const scrollSpeed = reducedMotion ? 0.8 : 4.5;
-    scrollRef.current += delta * scrollSpeed;
-    const scroll = scrollRef.current;
-
-    // Update dynamic weather transitions
     updateWeatherState(delta);
     const w = weatherState.current;
 
-    // 1. Update continuous expansive rolling terrain
-    if (groundMeshRef.current && groundMeshRef.current.geometry) {
-      const geom = groundMeshRef.current.geometry;
-      const pos = geom.attributes.position;
-      const count = pos.count;
-      for (let i = 0; i < count; i++) {
-        const vx = basePositions[i * 3];
-        const vz = basePositions[i * 3 + 2];
-        const height = getExpansiveTerrainHeight(vx + scroll, vz);
-        pos.setY(i, height);
-      }
-      pos.needsUpdate = true;
-      geom.computeVertexNormals();
-    }
-
-    if (groundMatRef.current) {
-      groundMatRef.current.color.set(w.groundColor);
-    }
-
-    // 2. Parallax midground scrolling (35% speed)
-    if (midgroundRef.current) {
-      midgroundRef.current.position.x = wrap(-scroll * 0.35, -45, 45);
-    }
-
-    // 3. Parallax distant mountain scrolling (10% speed)
-    if (distantRef.current) {
-      distantRef.current.position.x = wrap(-scroll * 0.1, -60, 60);
-    }
-
-    // 4. Parallax drifting clouds (4% speed)
-    if (cloudsRef.current) {
-      cloudsRef.current.position.x = wrap(-scroll * 0.04, -40, 40);
-      cloudsRef.current.children.forEach((group) => {
-        group.children.forEach((mesh) => {
-          if (mesh.material) {
-            mesh.material.color.set(w.cloudColor);
-            mesh.material.opacity = w.cloudOpacity;
-          }
-        });
-      });
-    }
-
-    // 5. Wrap trackside flora seamlessly
-    tracksideItems.forEach((item, idx) => {
-      const el = tracksideRefs.current[idx];
-      if (el) {
-        const worldX = wrap(item.initX - scroll, -65, 65);
-        const currentH = getExpansiveTerrainHeight(worldX + scroll, item.zOffset);
-        el.position.set(worldX, currentH, item.zOffset);
-      }
-    });
-
-    // 6. Winter & night falling snow particles
-    if (snowRef.current) {
-      const isWinter = weatherState.presetIndex === 4 || weatherState.nextIndex === 4;
-      const isNight = weatherState.presetIndex === 3 || weatherState.nextIndex === 3;
-      snowRef.current.visible = isWinter || isNight;
-      if (snowRef.current.visible) {
-        const pos = snowRef.current.geometry.attributes.position;
-        const t = state.clock.getElapsedTime();
-        for (let i = 0; i < 300; i++) {
-          let y = pos.getY(i) - delta * (1.2 + Math.sin(i) * 0.5);
-          if (y < -1) y = 24;
-          pos.setY(i, y);
-          const x = pos.getX(i) + Math.sin(t * 0.6 + i) * delta * 0.3;
-          pos.setX(i, x);
-        }
-        pos.needsUpdate = true;
-      }
-    }
-
-    // 7. Update lighting from weather state
     if (ambientRef.current) {
       ambientRef.current.intensity = w.ambientIntensity;
       ambientRef.current.color.set(w.ambientColor);
@@ -738,283 +964,82 @@ function ParallaxEnvironment({ scrollRef, reducedMotion }) {
       fillRef.current.intensity = w.fillIntensity;
       fillRef.current.color.set(w.fillColor);
     }
+
+    if (snowRef.current) {
+      const isWinter = weatherState.presetIndex === 4 || weatherState.nextIndex === 4;
+      const isNight = weatherState.presetIndex === 3 || weatherState.nextIndex === 3;
+      snowRef.current.visible = isWinter || isNight;
+      if (snowRef.current.visible) {
+        const pos = snowRef.current.geometry.attributes.position;
+        const t = state.clock.getElapsedTime();
+        for (let i = 0; i < 300; i++) {
+          let y = pos.getY(i) - delta * (1.2 + Math.sin(i) * 0.5);
+          if (y < -1) y = 28;
+          pos.setY(i, y);
+          const x = pos.getX(i) + Math.sin(t * 0.6 + i) * delta * 0.3;
+          pos.setX(i, x);
+        }
+        pos.needsUpdate = true;
+      }
+    }
   });
 
   return (
     <group>
-      {/* ── Dynamic Weather Scene Lighting ── */}
       <ambientLight ref={ambientRef} intensity={1.25} color="#ffffff" />
       <directionalLight
         ref={sunRef}
-        position={[25, 40, 20]}
+        position={[35, 45, 30]}
         intensity={2.0}
         castShadow
         shadow-mapSize={[1024, 1024]}
       />
-      <directionalLight ref={fillRef} position={[-20, 25, 12]} intensity={0.6} color="#bae6fd" />
+      <directionalLight ref={fillRef} position={[-25, 30, -20]} intensity={0.6} color="#bae6fd" />
 
-      {/* ── Continuous Vast Rolling Terrain (280 units wide, no cliffs/cuts!) ── */}
-      <mesh ref={groundMeshRef} geometry={groundGeom} receiveShadow>
-        <meshStandardMaterial
-          ref={groundMatRef}
-          color="#22c55e"
-          roughness={0.78}
-          metalness={0.05}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-
-      {/* ── Living Reflective River System ── */}
-      <BeautifulWater scrollRef={scrollRef} />
-
-      {/* ── 3D Snow Particle System ── */}
+      {/* 3D Snow Particle System */}
       <points ref={snowRef} visible={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[snowParticles, 3]} />
         </bufferGeometry>
-        <pointsMaterial size={0.16} color="#f0f9ff" transparent opacity={0.8} sizeAttenuation />
+        <pointsMaterial size={0.18} color="#f0f9ff" transparent opacity={0.8} sizeAttenuation />
       </points>
 
-      {/* ── Rich Natural Trackside Flora & Details ── */}
-      <group>
-        {tracksideItems.map((item, idx) => (
-          <group
-            key={idx}
-            ref={(el) => (tracksideRefs.current[idx] = el)}
-            position={[item.initX, 0, item.zOffset]}
-            scale={[item.scale, item.scale, item.scale]}
-          >
-            {item.type === 'pine' ? (
-              // Multi-tiered dense Alpine Pine
-              <group>
-                <mesh position={[0, 0.6, 0]} castShadow>
-                  <cylinderGeometry args={[0.14, 0.24, 1.2, 6]} />
-                  <meshStandardMaterial color="#451a03" roughness={0.9} />
-                </mesh>
-                <mesh position={[0, 1.8, 0]} castShadow>
-                  <coneGeometry args={[1.15, 2.2, 7]} />
-                  <meshStandardMaterial color="#14532d" roughness={0.8} />
-                </mesh>
-                <mesh position={[0, 2.9, 0]} castShadow>
-                  <coneGeometry args={[0.9, 1.9, 7]} />
-                  <meshStandardMaterial color="#166534" roughness={0.8} />
-                </mesh>
-                <mesh position={[0, 3.8, 0]} castShadow>
-                  <coneGeometry args={[0.62, 1.5, 7]} />
-                  <meshStandardMaterial color="#15803d" roughness={0.75} />
-                </mesh>
-              </group>
-            ) : item.type === 'oak' ? (
-              // Organic broadleaf Meadow Oak
-              <group>
-                <mesh position={[0, 0.8, 0]} castShadow>
-                  <cylinderGeometry args={[0.18, 0.3, 1.6, 6]} />
-                  <meshStandardMaterial color="#78350f" roughness={0.9} />
-                </mesh>
-                <mesh position={[0, 2.4, 0]} castShadow>
-                  <dodecahedronGeometry args={[1.35, 1]} />
-                  <meshStandardMaterial color="#15803d" roughness={0.75} />
-                </mesh>
-                <mesh position={[0.6, 2.8, 0.3]} castShadow>
-                  <dodecahedronGeometry args={[0.9, 1]} />
-                  <meshStandardMaterial color="#16a34a" roughness={0.75} />
-                </mesh>
-                <mesh position={[-0.5, 2.6, -0.4]} castShadow>
-                  <dodecahedronGeometry args={[0.85, 1]} />
-                  <meshStandardMaterial color="#22c55e" roughness={0.75} />
-                </mesh>
-              </group>
-            ) : item.type === 'bush' ? (
-              // Lush Meadow Shrub
-              <group>
-                <mesh position={[0, 0.45, 0]} castShadow>
-                  <sphereGeometry args={[0.65, 8, 7]} />
-                  <meshStandardMaterial color="#4ade80" roughness={0.8} />
-                </mesh>
-                <mesh position={[0.45, 0.32, 0.15]} castShadow>
-                  <sphereGeometry args={[0.42, 7, 6]} />
-                  <meshStandardMaterial color="#86efac" roughness={0.8} />
-                </mesh>
-              </group>
-            ) : item.type === 'flower' ? (
-              // Blooming Wildflowers
-              <group>
-                <mesh position={[0, 0.25, 0]}>
-                  <sphereGeometry args={[0.35, 6, 5]} />
-                  <meshStandardMaterial color="#22c55e" roughness={0.8} />
-                </mesh>
-                <mesh position={[0.15, 0.45, 0.1]}>
-                  <sphereGeometry args={[0.16, 5, 4]} />
-                  <meshStandardMaterial color="#f43f5e" emissive="#f43f5e" emissiveIntensity={0.3} />
-                </mesh>
-                <mesh position={[-0.15, 0.42, -0.1]}>
-                  <sphereGeometry args={[0.14, 5, 4]} />
-                  <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.3} />
-                </mesh>
-              </group>
-            ) : item.type === 'rock' ? (
-              // Faceted Granite Boulder
-              <group>
-                <mesh position={[0, 0.35, 0]} castShadow>
-                  <dodecahedronGeometry args={[0.65, 0]} />
-                  <meshStandardMaterial color="#64748b" roughness={0.92} metalness={0.08} />
-                </mesh>
-                <mesh position={[0.4, 0.22, 0.2]} castShadow>
-                  <dodecahedronGeometry args={[0.38, 0]} />
-                  <meshStandardMaterial color="#475569" roughness={0.92} />
-                </mesh>
-              </group>
-            ) : (
-              // Distance Landmark Signpost
-              <group>
-                <mesh position={[0, 0.85, 0]}>
-                  <cylinderGeometry args={[0.08, 0.08, 1.7, 6]} />
-                  <meshStandardMaterial color="#b45309" roughness={0.85} />
-                </mesh>
-                <mesh position={[0, 1.45, 0]}>
-                  <boxGeometry args={[0.95, 0.42, 0.09]} />
-                  <meshStandardMaterial color="#fef08a" roughness={0.6} />
-                </mesh>
-              </group>
-            )}
-          </group>
-        ))}
-      </group>
-
-      {/* ── Midground Rolling Forest Hills (Z = -42, 35% Parallax) ── */}
-      <group ref={midgroundRef} position={[0, -0.5, -42]}>
-        {[-70, 0, 70].map((offsetX, i) => (
+      {/* Distant Alpine Peaks & Historic Mountain Fortress (Z = -95) */}
+      <group position={[0, 0, -95]}>
+        {[-75, 0, 75].map((offsetX, i) => (
           <group key={i} position={[offsetX, 0, 0]}>
-            {/* Gentle rolling green knolls nestled under the mountains */}
-            <mesh position={[-18, 0.8, 0]}>
-              <sphereGeometry args={[11, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5]} />
-              <meshStandardMaterial color="#166534" roughness={0.88} />
-            </mesh>
-            <mesh position={[10, 1.4, -2]}>
-              <sphereGeometry args={[13, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5]} />
-              <meshStandardMaterial color="#14532d" roughness={0.88} />
-            </mesh>
-            <mesh position={[34, 0.9, 1]}>
-              <sphereGeometry args={[10, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5]} />
-              <meshStandardMaterial color="#166534" roughness={0.88} />
-            </mesh>
-            {/* Midground pine tree groves */}
-            {[-22, -10, 2, 16, 28, 42].map((tx, ti) => (
-              <group key={ti} position={[tx, 1.8 + (ti % 3) * 0.5, -1.0]}>
-                <mesh position={[0, 0.5, 0]}>
-                  <cylinderGeometry args={[0.12, 0.2, 1.0, 5]} />
-                  <meshStandardMaterial color="#451a03" roughness={0.9} />
-                </mesh>
-                <mesh position={[0, 1.8, 0]}>
-                  <coneGeometry args={[0.95, 2.4, 6]} />
-                  <meshStandardMaterial color="#14532d" roughness={0.78} />
-                </mesh>
-              </group>
-            ))}
-          </group>
-        ))}
-      </group>
-
-      {/* ── Radiant Morning Sun & Golden Corona ── */}
-      <group position={[-36, 26, -72]}>
-        <mesh>
-          <circleGeometry args={[5.2, 32]} />
-          <meshBasicMaterial color="#fffbeb" />
-        </mesh>
-        <mesh position={[0, 0, -0.1]}>
-          <circleGeometry args={[9.5, 32]} />
-          <meshBasicMaterial color="#fef08a" transparent opacity={0.4} />
-        </mesh>
-        <mesh position={[0, 0, -0.2]}>
-          <circleGeometry args={[17.0, 32]} />
-          <meshBasicMaterial color="#fb923c" transparent opacity={0.2} />
-        </mesh>
-      </group>
-
-      {/* ── Hot Air Balloon Floating Gracefully in the Morning Breeze ── */}
-      <group position={[-21, 20.5, -58]} scale={[0.85, 0.85, 0.85]}>
-        <mesh position={[0, 2.6, 0]}>
-          <sphereGeometry args={[2.0, 16, 14]} />
-          <meshStandardMaterial color="#f97316" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 2.6, 0]}>
-          <cylinderGeometry args={[2.02, 1.95, 1.0, 16, 1, true]} />
-          <meshStandardMaterial color="#fbbf24" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 1.1, 0]}>
-          <coneGeometry args={[1.5, 1.6, 14]} />
-          <meshStandardMaterial color="#ea580c" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 0.1, 0]}>
-          <cylinderGeometry args={[0.04, 0.04, 0.6, 4]} />
-          <meshStandardMaterial color="#78350f" />
-        </mesh>
-        <mesh position={[0, -0.4, 0]}>
-          <boxGeometry args={[0.7, 0.55, 0.7]} />
-          <meshStandardMaterial color="#92400e" roughness={0.9} />
-        </mesh>
-      </group>
-
-      {/* ── Silhouette Birds Soaring Across the Alpine Valley ── */}
-      <group position={[-6, 27, -62]} scale={[0.6, 0.6, 0.6]}>
-        {[
-          { x: 0, y: 0, s: 1 },
-          { x: 3.5, y: -0.8, s: 0.8 },
-          { x: -4.2, y: -1.2, s: 0.85 },
-          { x: 7.0, y: -1.9, s: 0.7 },
-        ].map((b, bi) => (
-          <group key={bi} position={[b.x, b.y, 0]} scale={[b.s, b.s, b.s]}>
-            <mesh rotation={[0, 0, 0.4]} position={[-0.45, 0.1, 0]}>
-              <boxGeometry args={[0.8, 0.08, 0.02]} />
-              <meshBasicMaterial color="#1e293b" />
-            </mesh>
-            <mesh rotation={[0, 0, -0.4]} position={[0.45, 0.1, 0]}>
-              <boxGeometry args={[0.8, 0.08, 0.02]} />
-              <meshBasicMaterial color="#1e293b" />
-            </mesh>
-          </group>
-        ))}
-      </group>
-
-      {/* ── Distant Majestic Snow-Capped Alpine Range & Castle Fortress (Z = -75, 10% Parallax) ── */}
-      <group ref={distantRef} position={[0, 8, -75]}>
-        {[-90, 0, 90].map((offsetX, i) => (
-          <group key={i} position={[offsetX, 0, 0]}>
-            {/* Massive Granite Peak 1 */}
-            <mesh position={[-32, 12, 0]}>
+            {/* Peak 1 */}
+            <mesh position={[-30, 14, 0]}>
               <coneGeometry args={[26, 42, 8]} />
               <meshStandardMaterial color="#334155" roughness={0.88} />
             </mesh>
-            {/* Glistening Snow Cap 1 */}
-            <mesh position={[-32, 28, 0]}>
+            <mesh position={[-30, 30, 0]}>
               <coneGeometry args={[11, 14, 8]} />
               <meshStandardMaterial color="#f8fafc" roughness={0.4} />
             </mesh>
 
             {/* Central Towering Peak 2 */}
-            <mesh position={[8, 18, -4]}>
+            <mesh position={[8, 20, -5]}>
               <coneGeometry args={[34, 55, 9]} />
-              <meshStandardMaterial color="#1e293b" roughness={0.88} />
+              <meshStandardMaterial color="#1e3a8b" roughness={0.88} />
             </mesh>
-            {/* Glistening Snow Cap 2 */}
-            <mesh position={[8, 40, -4]}>
+            <mesh position={[8, 42, -5]}>
               <coneGeometry args={[15, 18, 9]} />
               <meshStandardMaterial color="#f1f5f9" roughness={0.35} />
             </mesh>
 
-            {/* Right Shoulder Peak 3 */}
-            <mesh position={[44, 10, 2]}>
+            {/* Peak 3 */}
+            <mesh position={[42, 12, 3]}>
               <coneGeometry args={[24, 38, 7]} />
               <meshStandardMaterial color="#334155" roughness={0.88} />
             </mesh>
-            {/* Glistening Snow Cap 3 */}
-            <mesh position={[44, 25, 2]}>
+            <mesh position={[42, 27, 3]}>
               <coneGeometry args={[9.5, 12, 7]} />
               <meshStandardMaterial color="#f8fafc" roughness={0.4} />
             </mesh>
 
-            {/* Historic Mountain Fortress / Castle (matching visual reference) */}
-            <group position={[18, 16, -1]}>
+            {/* Mountain Castle Fortress */}
+            <group position={[18, 16, -2]}>
               <mesh position={[0, 2.5, 0]}>
                 <boxGeometry args={[5.0, 5.0, 4.0]} />
                 <meshStandardMaterial color="#1e1b4b" roughness={0.92} />
@@ -1044,38 +1069,38 @@ function ParallaxEnvironment({ scrollRef, reducedMotion }) {
         ))}
       </group>
 
-      {/* ── Volumetric Drifting Clouds (4% Parallax) ── */}
-      <group ref={cloudsRef}>
-        {cloudItems.map((c, i) => (
-          <group key={i} position={[c.x, c.y, c.z]} scale={c.scale}>
-            <mesh>
-              <sphereGeometry args={[1.2, 10, 8]} />
-              <meshStandardMaterial color="#ffffff" roughness={0.6} transparent opacity={0.92} />
-            </mesh>
-            <mesh position={[1.2, -0.05, 0]} scale={[0.88, 0.88, 0.88]}>
-              <sphereGeometry args={[1.2, 10, 8]} />
-              <meshStandardMaterial color="#ffffff" roughness={0.6} transparent opacity={0.92} />
-            </mesh>
-            <mesh position={[-1.1, -0.12, 0]} scale={[0.8, 0.8, 0.8]}>
-              <sphereGeometry args={[1.2, 10, 8]} />
-              <meshStandardMaterial color="#ffffff" roughness={0.6} transparent opacity={0.92} />
-            </mesh>
-            <mesh position={[0.5, 0.45, 0]} scale={[0.65, 0.65, 0.65]}>
-              <sphereGeometry args={[1.2, 10, 8]} />
-              <meshStandardMaterial color="#ffffff" roughness={0.6} transparent opacity={0.88} />
-            </mesh>
-          </group>
-        ))}
+      {/* Floating Hot Air Balloon in distant sky */}
+      <group position={[-32, 28, -75]} scale={[0.9, 0.9, 0.9]}>
+        <mesh position={[0, 2.6, 0]}>
+          <sphereGeometry args={[2.0, 16, 14]} />
+          <meshStandardMaterial color="#f97316" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 2.6, 0]}>
+          <cylinderGeometry args={[2.02, 1.95, 1.0, 16, 1, true]} />
+          <meshStandardMaterial color="#fbbf24" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 1.1, 0]}>
+          <coneGeometry args={[1.5, 1.6, 14]} />
+          <meshStandardMaterial color="#ea580c" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.1, 0]}>
+          <cylinderGeometry args={[0.04, 0.04, 0.6, 4]} />
+          <meshStandardMaterial color="#78350f" />
+        </mesh>
+        <mesh position={[0, -0.4, 0]}>
+          <boxGeometry args={[0.7, 0.55, 0.7]} />
+          <meshStandardMaterial color="#92400e" roughness={0.9} />
+        </mesh>
       </group>
     </group>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   FLUID GAME CAMERA & INTERACTIVE ORBIT/PAN/ZOOM CONTROLS
+   CIRCULAR 3D STADIUM CAMERA & INTERACTIVE CONTROLS
 ───────────────────────────────────────────────────────────────── */
 const SideScrollCamera = forwardRef(function SideScrollCamera(
-  { cameraMode, racers, focusedMemberId, scrollRef },
+  { cameraMode, racers, focusedMemberId },
   ref
 ) {
   const { camera } = useThree();
@@ -1090,12 +1115,31 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     : leaderTarget;
 
   useEffect(() => {
-    if (prevCameraModeRef.current !== cameraMode || prevFocusedRef.current !== focusedMemberId) {
-      userInteractingRef.current = false;
-      prevCameraModeRef.current = cameraMode;
-      prevFocusedRef.current = focusedMemberId;
+    userInteractingRef.current = false;
+    if (controlsRef.current) {
+      if (cameraMode === 'broadcast') {
+        controlsRef.current.target.set(0, 2.0, 6.0);
+        camera.position.set(0.0, 32.0, 64.0);
+        controlsRef.current.update();
+      } else if (cameraMode === 'leader' && targetMember) {
+        const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
+        const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
+        const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
+        const theta = TRACK_CONFIG.startAngle + prog * Math.PI * 2;
+        const camTheta = theta - 0.25;
+        const camR = TRACK_CONFIG.getLaneRadius(lane) + 6.0;
+        const camX = camR * Math.sin(camTheta);
+        const camZ = camR * Math.cos(camTheta);
+        camera.position.set(camX, Math.max(3.5, ty + 4.5), camZ);
+        controlsRef.current.target.set(tx, ty + 1.2, tz);
+        controlsRef.current.update();
+      } else if (cameraMode === 'orbit') {
+        controlsRef.current.target.set(0, 2.0, 0);
+        camera.position.set(0.0, 36.0, 68.0);
+        controlsRef.current.update();
+      }
     }
-  }, [cameraMode, focusedMemberId]);
+  }, [cameraMode, focusedMemberId, targetMember, camera]);
 
   useImperativeHandle(ref, () => ({
     zoomIn: () => {
@@ -1113,8 +1157,8 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     resetView: () => {
       userInteractingRef.current = false;
       if (controlsRef.current) {
-        controlsRef.current.target.set(0, 2.0, 0);
-        camera.position.set(0.0, 12.0, 42.0);
+        controlsRef.current.target.set(0, 2.0, 6.0);
+        camera.position.set(0.0, 32.0, 64.0);
         controlsRef.current.update();
       }
     },
@@ -1123,10 +1167,10 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
       const m = racers?.find((r) => r.id === memberId || r.memberId === memberId);
       if (m && controlsRef.current) {
         const prog = typeof m.progress === 'number' ? m.progress : 0;
-        const tx = getRacerWorldX(prog);
-        const ty = getRunnerPathHeight(tx + scrollRef.current);
-        controlsRef.current.target.set(tx, ty + 0.8, 0);
-        camera.position.set(tx - 3.0, ty + 3.2, 16.5);
+        const lane = typeof m.laneIndex === 'number' ? m.laneIndex : 0;
+        const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
+        controlsRef.current.target.set(tx, ty + 1.2, tz);
+        camera.position.set(tx * 1.25, ty + 6.0, tz * 1.25);
         controlsRef.current.update();
       }
     },
@@ -1136,31 +1180,26 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     if (userInteractingRef.current) return;
 
     if (cameraMode === 'leader' && targetMember) {
-      const targetProgress = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
-      const targetX = getRacerWorldX(targetProgress);
-      const scroll = scrollRef.current;
-      const targetY = getRunnerPathHeight(targetX + scroll);
+      // Dynamic chase camera following target racer along the circular loop
+      const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
+      const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
+      const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
 
-      const camX = targetX - 3.0;
-      const camY = Math.max(2.8, targetY + 3.2);
-      const camZ = 16.5;
+      const theta = TRACK_CONFIG.startAngle + prog * Math.PI * 2;
+      const camTheta = theta - 0.25;
+      const camR = TRACK_CONFIG.getLaneRadius(lane) + 6.0;
+      const camX = camR * Math.sin(camTheta);
+      const camZ = camR * Math.cos(camTheta);
+      const camY = Math.max(3.5, ty + 4.5);
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camX, delta * 3.0);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camX, delta * 2.8);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, camY, delta * 2.5);
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, camZ, delta * 3.0);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, camZ, delta * 2.8);
 
       if (controlsRef.current) {
-        controlsRef.current.target.x = THREE.MathUtils.lerp(controlsRef.current.target.x, targetX + 2.5, delta * 3.0);
-        controlsRef.current.target.y = THREE.MathUtils.lerp(controlsRef.current.target.y, targetY + 1.2, delta * 2.5);
-        controlsRef.current.target.z = THREE.MathUtils.lerp(controlsRef.current.target.z, 0, delta * 3.0);
-        controlsRef.current.update();
-      }
-    } else if (cameraMode === 'broadcast') {
-      // Majestic panoramic wide broadcast framing all 8 racers across the 60-unit course
-      const targetCam = new THREE.Vector3(0.0, 12.0, 42.0);
-      camera.position.lerp(targetCam, delta * 2.5);
-      if (controlsRef.current) {
-        controlsRef.current.target.lerp(new THREE.Vector3(0, 2.0, 0), delta * 2.5);
+        controlsRef.current.target.x = THREE.MathUtils.lerp(controlsRef.current.target.x, tx, delta * 3.0);
+        controlsRef.current.target.y = THREE.MathUtils.lerp(controlsRef.current.target.y, ty + 1.2, delta * 2.5);
+        controlsRef.current.target.z = THREE.MathUtils.lerp(controlsRef.current.target.z, tz, delta * 3.0);
         controlsRef.current.update();
       }
     }
@@ -1172,9 +1211,9 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
       makeDefault
       enableDamping={true}
       dampingFactor={0.08}
-      minDistance={4}
-      maxDistance={65}
-      minPolarAngle={Math.PI / 8}
+      minDistance={6}
+      maxDistance={140}
+      minPolarAngle={Math.PI / 12}
       maxPolarAngle={Math.PI / 2 - 0.02}
       screenSpacePanning={true}
       mouseButtons={{
@@ -1195,8 +1234,6 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
 
 /* ─────────────────────────────────────────────────────────────────
    INTERACTIVE RACING MINIMAP HUD COMPONENT
-   Shows all 8 racers along the circuit track with rank, leader crown,
-   and interactive camera focus click.
 ───────────────────────────────────────────────────────────────── */
 function ArenaMinimap({ racers, focusedMemberId, onFocusMember, milestone }) {
   if (!racers || racers.length === 0) return null;
@@ -1204,8 +1241,8 @@ function ArenaMinimap({ racers, focusedMemberId, onFocusMember, milestone }) {
   return (
     <div className="arena-minimap-container" aria-label="Race Circuit Minimap">
       <div className="minimap-header">
-        <span className="minimap-title">🏁 RACE CIRCUIT TRACK</span>
-        <span className="minimap-milestone">Goal: {milestone || 100} solved</span>
+        <span className="minimap-title">🏁 3D CIRCULAR CIRCUIT</span>
+        <span className="minimap-milestone">Target: {milestone || 100} Solved</span>
       </div>
       <div className="minimap-track-rail">
         <div className="minimap-track-progress-line" />
@@ -1222,7 +1259,7 @@ function ArenaMinimap({ racers, focusedMemberId, onFocusMember, milestone }) {
               type="button"
               className={`minimap-pin rank-${rank <= 3 ? rank : 'other'}${isFocused ? ' focused' : ''}`}
               style={{ left: `${progressPercent}%` }}
-              title={`#${rank} ${racer.name} (${Number(racer.solved ?? racer.solvedCount ?? 0)} solved)`}
+              title={`#${rank} ${racer.name} (${Number(racer.solved ?? racer.solvedCount ?? 0)} solved · Lane ${(racer.laneIndex || 0) + 1})`}
               onClick={() => onFocusMember?.(memberId)}
             >
               {isLeader ? (
@@ -1235,16 +1272,16 @@ function ArenaMinimap({ racers, focusedMemberId, onFocusMember, milestone }) {
         })}
       </div>
       <div className="minimap-track-labels">
-        <span>START (0)</span>
-        <span>50%</span>
-        <span>FINISH ({milestone || 100}) 🏆</span>
+        <span>START (0°)</span>
+        <span>LAP 50% (180°)</span>
+        <span>FINISH (360°) 🏆</span>
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   2D HILL-CLIMBING RUNNER WEBGL FALLBACK
+   2D WEBGL FALLBACK
 ───────────────────────────────────────────────────────────────── */
 function WebGLFallbackArena({ arenaState }) {
   const racers = arenaState?.racers || [];
@@ -1253,7 +1290,7 @@ function WebGLFallbackArena({ arenaState }) {
   return (
     <div className="arena-fallback-container">
       <div className="arena-fallback-header">
-        <h4>Side-Scrolling Hill Runner (2D High-Performance Mode)</h4>
+        <h4>Circular Race Circuit (2D High-Performance Mode)</h4>
         <p>Target Milestone: {milestone} LeetCode Solved</p>
       </div>
       <div className="arena-fallback-track">
@@ -1287,12 +1324,12 @@ function WebGLFallbackArena({ arenaState }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   ROOT SIDE-SCROLLING RACE ARENA COMPONENT
+   ROOT 3D LIVE RACE ARENA COMPONENT
 ───────────────────────────────────────────────────────────────── */
 const RaceArena = forwardRef(function RaceArena(
   {
     arenaState,
-    cameraMode = 'leader',
+    cameraMode = 'broadcast',
     reducedMotion = false,
     focusedMemberId = null,
     onFocusMember = null,
@@ -1303,7 +1340,6 @@ const RaceArena = forwardRef(function RaceArena(
   const [hasWebGLError, setHasWebGLError] = useState(false);
   const racers = arenaState?.racers || [];
   const milestone = arenaState?.targetMilestone || 100;
-  const scrollRef = useRef(0);
   const cameraRef = useRef();
 
   useImperativeHandle(ref, () => ({
@@ -1320,7 +1356,7 @@ const RaceArena = forwardRef(function RaceArena(
   return (
     <div className="race-arena-root" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
-        camera={{ position: [0.0, 12.0, 42.0], fov: 45, near: 0.5, far: 350 }}
+        camera={{ position: [0.0, 26.0, 68.0], fov: 45, near: 0.5, far: 450 }}
         dpr={Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 1.5)}
         gl={{ antialias: true, powerPreference: 'default' }}
         onCreated={({ gl }) => {
@@ -1334,30 +1370,31 @@ const RaceArena = forwardRef(function RaceArena(
         {/* Dynamic weather sky and distance fog */}
         <WeatherSky />
 
-        {/* Vast continuous procedural environment with living river and mountain peaks */}
-        <ParallaxEnvironment scrollRef={scrollRef} reducedMotion={reducedMotion} />
+        {/* Scenic mountain backdrop, dynamic lighting, and atmosphere */}
+        <ArenaAtmosphere reducedMotion={reducedMotion} />
 
-        {/* 8 Individually separated racers spread across the 60-unit world course */}
+        {/* Complete 3D circular racing circuit with 8 lanes, kerbs, start/finish gantry, and infield */}
+        <CircularRaceCircuit />
+
+        {/* 8 Individually separated racers in distinct lanes running along the closed loop */}
         {racers.map((racer) => {
           const memberId = racer.id || racer.memberId;
           return (
             <ArenaRacer
               key={memberId}
               racer={racer}
-              scrollRef={scrollRef}
               reducedMotion={reducedMotion}
               onFocus={onFocusMember}
             />
           );
         })}
 
-        {/* Smooth cinematic game camera */}
+        {/* Smooth cinematic stadium camera */}
         <SideScrollCamera
           ref={cameraRef}
           cameraMode={cameraMode}
           racers={racers}
           focusedMemberId={focusedMemberId}
-          scrollRef={scrollRef}
         />
       </Canvas>
 
