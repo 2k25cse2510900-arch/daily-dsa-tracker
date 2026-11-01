@@ -75,6 +75,50 @@ function getUniformSplineT(progress) {
   return (idx + alpha) / SPLINE_SAMPLE_COUNT;
 }
 
+/**
+ * Normalizes any continuous progress number into [0, 1) periodically.
+ * Allows infinite continuous laps without jumping or overflow.
+ */
+export function normalizeTrackProgress(prog) {
+  let p = typeof prog === 'number' && !isNaN(prog) ? prog % 1.0 : 0.0;
+  if (p < 0) p += 1.0;
+  return p;
+}
+
+/**
+ * Calculates continuous visual simulated progress for a racer along the F1 circuit.
+ * - Translates forward continuously even when LeetCode data is unchanged.
+ * - Preserves authoritative leaderboard rankings and relative gaps on track.
+ * - Generates natural micro-stride variations so runners feel organic.
+ */
+export function getSimulatedRacerProgress(racer, elapsedTime = 0, racers = []) {
+  // Base running pace: ~1 lap per 48 seconds on ~538-unit circuit (~11.2 world units/second)
+  const LAP_RATE = 0.021;
+  const t = typeof elapsedTime === 'number' && !isNaN(elapsedTime) ? elapsedTime : 0;
+
+  // Find leader from authoritative data (rank 1 or highest progress)
+  const leader = (racers && racers.length > 0)
+    ? (racers.find((r) => r.rank === 1) || racers[0])
+    : racer;
+  const leaderAuthoritative = typeof leader?.progress === 'number' ? leader.progress : 1.0;
+  const racerAuthoritative = typeof racer?.progress === 'number' ? racer.progress : 0.0;
+
+  // Authoritative gap between leader and this racer
+  const rawGap = Math.max(0, leaderAuthoritative - racerAuthoritative);
+  // Stagger runners visually according to authoritative solved gap + rank spacing
+  const rankOffset = Math.max(0, ((racer?.rank || 1) - 1)) * 0.035;
+  const visualGap = Math.min(0.82, rawGap * 0.55 + rankOffset);
+
+  // Continuous visual lap advancement
+  const baseLap = t * LAP_RATE;
+
+  // Organic micro-cadence variation per lane (~0.0025 of track = ~1.3m)
+  const lane = typeof racer?.laneIndex === 'number' ? racer.laneIndex : 0;
+  const microStride = Math.sin(t * 1.8 + lane * 1.2) * 0.0025;
+
+  return normalizeTrackProgress(baseLap - visualGap + microStride);
+}
+
 export const TRACK_CONFIG = {
   innerRadius: 30.0,     // kept for backward-compat; not used for new spline track
   laneWidth: 2.0,
@@ -97,12 +141,12 @@ export const TRACK_CONFIG = {
 
 /**
  * Returns the exact 3D coordinates [X, Y, Z] on the F1 spline track for a racer.
- * progress ∈ [0, 1], laneIndex ∈ [0, 7].
+ * progress ∈ [0, 1) or continuous, laneIndex ∈ [0, 7].
  * The racer is placed on the spline centre-line, then offset perpendicular to the
  * track tangent by their assigned lane distance.
  */
 export function getCircularRacerPosition(progress, laneIndex) {
-  const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
+  const p = normalizeTrackProgress(progress);
   const t = getUniformSplineT(p);
   const centre = CENTRE_SPLINE.getPoint(t);
 
@@ -120,7 +164,7 @@ export function getCircularRacerPosition(progress, laneIndex) {
  * When rotation.y = heading, local (0, 0, 1) aligns with tangent (Tx, 0, Tz).
  */
 export function getCircularRacerHeading(progress) {
-  const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
+  const p = normalizeTrackProgress(progress);
   const t = getUniformSplineT(p);
   const tangent = CENTRE_SPLINE.getTangent(t).normalize();
   return Math.atan2(tangent.x, tangent.z);
@@ -533,9 +577,8 @@ function RacerPresentation({ racer, characterData }) {
    Positions characters on their exact distinct circular lane,
    facing forward along the curve tangent with running strides.
 ───────────────────────────────────────────────────────────────── */
-function ArenaRacer({ racer, reducedMotion, onFocus }) {
+function ArenaRacer({ racer, racers = [], reducedMotion, onFocus }) {
   const groupRef = useRef();
-  const currentProgressRef = useRef(racer.progress || 0);
 
   const characterData = useMemo(() => {
     const appearance = racer.character || {};
@@ -548,24 +591,19 @@ function ArenaRacer({ racer, reducedMotion, onFocus }) {
     };
   }, [racer.character]);
 
-  useFrame(({ clock }, delta) => {
+  useFrame(({ clock }) => {
     if (!groupRef.current) return;
-    const targetProgress = typeof racer.progress === 'number' ? racer.progress : 0;
-    const lerpSpeed = reducedMotion ? 25 : 3.0;
-
-    currentProgressRef.current = THREE.MathUtils.lerp(
-      currentProgressRef.current,
-      targetProgress,
-      Math.min(1, delta * lerpSpeed)
-    );
-
-    const laneIndex = typeof racer.laneIndex === 'number' ? racer.laneIndex : 0;
-    const [posX, posY, posZ] = getCircularRacerPosition(currentProgressRef.current, laneIndex);
-    const heading = getCircularRacerHeading(currentProgressRef.current);
-
     const t = clock.getElapsedTime();
-    const strideBob = reducedMotion ? 0 : Math.abs(Math.sin(t * 11 + laneIndex)) * 0.08;
-    const stridePhase = reducedMotion ? 0 : Math.sin(t * 11 + laneIndex) * 0.04;
+
+    // Continuous visual simulated progress along closed-loop F1 circuit
+    const simProgress = getSimulatedRacerProgress(racer, t, racers);
+    const laneIndex = typeof racer.laneIndex === 'number' ? racer.laneIndex : 0;
+    const [posX, posY, posZ] = getCircularRacerPosition(simProgress, laneIndex);
+    const heading = getCircularRacerHeading(simProgress);
+
+    const strideFreq = 12.0;
+    const strideBob = reducedMotion ? 0 : Math.abs(Math.sin(t * strideFreq + laneIndex)) * 0.08;
+    const stridePhase = reducedMotion ? 0 : Math.sin(t * strideFreq + laneIndex) * 0.04;
 
     // Superman elevated flight clearance (tested in superman.test.js)
     const isSuperman = characterData?.id === 'superman';
@@ -1960,14 +1998,15 @@ function ArenaAtmosphere({ reducedMotion }) {
    CIRCULAR 3D STADIUM CAMERA & INTERACTIVE CONTROLS
 ───────────────────────────────────────────────────────────────── */
 const SideScrollCamera = forwardRef(function SideScrollCamera(
-  { cameraMode, racers, focusedMemberId },
+  { cameraMode = 'leader', racers = [], focusedMemberId },
   ref
 ) {
   const { camera } = useThree();
   const controlsRef = useRef();
   const userInteractingRef = useRef(false);
+  const userInteractingTimeout = useRef(null);
 
-  const leaderTarget = racers?.[0];
+  const leaderTarget = racers?.find((r) => r.rank === 1) || racers?.[0];
   const targetMember = focusedMemberId
     ? racers?.find((r) => r.id === focusedMemberId || r.memberId === focusedMemberId) || leaderTarget
     : leaderTarget;
@@ -1977,17 +2016,17 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     if (controlsRef.current) {
       if (cameraMode === 'broadcast') {
         controlsRef.current.target.set(0, 6.0, 15.0);
-        camera.position.set(0.0, 75.0, 140.0);
+        camera.position.set(0.0, 78.0, 145.0);
         controlsRef.current.update();
       } else if (cameraMode === 'leader' && targetMember) {
-        const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
+        const simProg = getSimulatedRacerProgress(targetMember, 0, racers);
         const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
-        const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
-        const heading = getCircularRacerHeading(prog);
+        const [tx, ty, tz] = getCircularRacerPosition(simProg, lane);
+        const heading = getCircularRacerHeading(simProg);
         const forwardX = Math.sin(heading);
         const forwardZ = Math.cos(heading);
-        camera.position.set(tx - forwardX * 15.0, Math.max(4.5, ty + 6.5), tz - forwardZ * 15.0);
-        controlsRef.current.target.set(tx, ty + 1.4, tz);
+        camera.position.set(tx - forwardX * 12.5, Math.max(3.8, ty + 4.8), tz - forwardZ * 12.5);
+        controlsRef.current.target.set(tx + forwardX * 2.5, ty + 1.35, tz + forwardZ * 2.5);
         controlsRef.current.update();
       } else if (cameraMode === 'orbit') {
         controlsRef.current.target.set(0, 6.0, 15.0);
@@ -2013,50 +2052,70 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     resetView: () => {
       userInteractingRef.current = false;
       if (controlsRef.current) {
-        controlsRef.current.target.set(0, 6.0, 15.0);
-        camera.position.set(0.0, 75.0, 140.0);
-        controlsRef.current.update();
+        if (cameraMode === 'broadcast') {
+          controlsRef.current.target.set(0, 6.0, 15.0);
+          camera.position.set(0.0, 78.0, 145.0);
+          controlsRef.current.update();
+        } else if (targetMember) {
+          const simProg = getSimulatedRacerProgress(targetMember, 0, racers);
+          const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
+          const [tx, ty, tz] = getCircularRacerPosition(simProg, lane);
+          const heading = getCircularRacerHeading(simProg);
+          const forwardX = Math.sin(heading);
+          const forwardZ = Math.cos(heading);
+          camera.position.set(tx - forwardX * 12.5, Math.max(3.8, ty + 4.8), tz - forwardZ * 12.5);
+          controlsRef.current.target.set(tx + forwardX * 2.5, ty + 1.35, tz + forwardZ * 2.5);
+          controlsRef.current.update();
+        }
       }
     },
     focusMember: (memberId) => {
       userInteractingRef.current = false;
       const m = racers?.find((r) => r.id === memberId || r.memberId === memberId);
       if (m && controlsRef.current) {
-        const prog = typeof m.progress === 'number' ? m.progress : 0;
+        const simProg = getSimulatedRacerProgress(m, 0, racers);
         const lane = typeof m.laneIndex === 'number' ? m.laneIndex : 0;
-        const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
-        const heading = getCircularRacerHeading(prog);
+        const [tx, ty, tz] = getCircularRacerPosition(simProg, lane);
+        const heading = getCircularRacerHeading(simProg);
         const forwardX = Math.sin(heading);
         const forwardZ = Math.cos(heading);
-        controlsRef.current.target.set(tx, ty + 1.4, tz);
-        camera.position.set(tx - forwardX * 12.0, ty + 5.5, tz - forwardZ * 12.0);
+        controlsRef.current.target.set(tx + forwardX * 2.5, ty + 1.35, tz + forwardZ * 2.5);
+        camera.position.set(tx - forwardX * 12.5, Math.max(3.8, ty + 4.8), tz - forwardZ * 12.5);
         controlsRef.current.update();
       }
     },
   }));
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (userInteractingRef.current) return;
 
     if (cameraMode === 'leader' && targetMember) {
-      const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
+      const t = state.clock.getElapsedTime();
+      const simProg = getSimulatedRacerProgress(targetMember, t, racers);
       const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
-      const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
-      const heading = getCircularRacerHeading(prog);
+      const [tx, ty, tz] = getCircularRacerPosition(simProg, lane);
+      const heading = getCircularRacerHeading(simProg);
       const forwardX = Math.sin(heading);
       const forwardZ = Math.cos(heading);
-      const camX = tx - forwardX * 15.0;
-      const camY = Math.max(4.5, ty + 6.5);
-      const camZ = tz - forwardZ * 15.0;
 
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camX, delta * 3.0);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, camY, delta * 2.8);
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, camZ, delta * 3.0);
+      // Close-up follow camera: positioned behind and slightly above the racer
+      const camX = tx - forwardX * 12.5;
+      const camY = Math.max(3.8, ty + 4.8);
+      const camZ = tz - forwardZ * 12.5;
+
+      const targetX = tx + forwardX * 2.5;
+      const targetY = ty + 1.35;
+      const targetZ = tz + forwardZ * 2.5;
+
+      const followFactor = Math.min(1.0, delta * 8.0);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camX, followFactor);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, camY, followFactor);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, camZ, followFactor);
 
       if (controlsRef.current) {
-        controlsRef.current.target.x = THREE.MathUtils.lerp(controlsRef.current.target.x, tx, delta * 3.5);
-        controlsRef.current.target.y = THREE.MathUtils.lerp(controlsRef.current.target.y, ty + 1.4, delta * 3.0);
-        controlsRef.current.target.z = THREE.MathUtils.lerp(controlsRef.current.target.z, tz, delta * 3.5);
+        controlsRef.current.target.x = THREE.MathUtils.lerp(controlsRef.current.target.x, targetX, followFactor);
+        controlsRef.current.target.y = THREE.MathUtils.lerp(controlsRef.current.target.y, targetY, followFactor);
+        controlsRef.current.target.z = THREE.MathUtils.lerp(controlsRef.current.target.z, targetZ, followFactor);
         controlsRef.current.update();
       }
     }
@@ -2084,6 +2143,12 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
       }}
       onStart={() => {
         userInteractingRef.current = true;
+      }}
+      onEnd={() => {
+        if (userInteractingTimeout.current) clearTimeout(userInteractingTimeout.current);
+        userInteractingTimeout.current = setTimeout(() => {
+          userInteractingRef.current = false;
+        }, 3500);
       }}
     />
   );
@@ -2186,7 +2251,7 @@ function WebGLFallbackArena({ arenaState }) {
 const RaceArena = forwardRef(function RaceArena(
   {
     arenaState,
-    cameraMode = 'broadcast',
+    cameraMode = 'leader',
     reducedMotion = false,
     focusedMemberId = null,
     onFocusMember = null,
@@ -2213,7 +2278,7 @@ const RaceArena = forwardRef(function RaceArena(
   return (
     <div className="race-arena-root" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
-        camera={{ position: [0.0, 75.0, 140.0], fov: 45, near: 0.5, far: 550 }}
+        camera={{ position: [0.0, 15.0, 75.0], fov: 48, near: 0.5, far: 550 }}
         dpr={Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 1.5)}
         gl={{ antialias: true, powerPreference: 'default' }}
         onCreated={({ gl }) => {
@@ -2261,6 +2326,7 @@ const RaceArena = forwardRef(function RaceArena(
             <ArenaRacer
               key={memberId}
               racer={racer}
+              racers={racers}
               reducedMotion={reducedMotion}
               onFocus={onFocusMember}
             />
