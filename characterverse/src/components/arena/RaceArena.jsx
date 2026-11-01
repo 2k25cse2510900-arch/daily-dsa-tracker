@@ -49,7 +49,6 @@ export function getCircularRacerHeading(progress) {
   const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
   const theta = TRACK_CONFIG.startAngle + p * Math.PI * 2;
   // Tangent vector: dX/dtheta = r*cos(theta), dZ/dtheta = -r*sin(theta)
-  // Character forward is aligned to this tangent
   return Math.atan2(Math.cos(theta), -Math.sin(theta));
 }
 
@@ -68,12 +67,105 @@ export function getRacerWorldX(progress) {
   return -32.0 + Math.pow(p, 0.65) * 64.0;
 }
 export function getExpansiveTerrainHeight(worldX, worldZ) {
-  return 0.05;
+  return getMountainValleyHeight(worldX, worldZ);
 }
 
-function wrap(val, min, max) {
-  const range = max - min;
-  return ((((val - min) % range) + range) % range) + min;
+/* ─────────────────────────────────────────────────────────────────
+   MASSIVE 3D MOUNTAIN-VALLEY PROCEDURAL TERRAIN MATHEMATICS
+   - Perfect flat terrace for the 8-lane racing circuit at Y = 0.
+   - Natural sculpted central infield park with an inner lake/pond.
+   - Pristine alpine lake basin in the northern valley (Z = -45 to -76).
+   - Towering rocky cliff crag & plateau (Z = -80 to -118, Y = 16 to 24).
+   - High alpine mountain ranges with jagged snow-capped peaks (360° horizon).
+───────────────────────────────────────────────────────────────── */
+export function getMountainValleyHeight(x, z) {
+  const r = Math.sqrt(x * x + z * z);
+
+  // 1. Perfectly flat, smooth racing track corridor (R = 28.0 to 48.0)
+  if (r >= 28.0 && r <= 48.0) {
+    return 0.0;
+  }
+
+  // 2. Central Infield Park & Scenic Basin (R < 28.0)
+  if (r < 28.0) {
+    if (r < 11.5) {
+      // Natural central pond basin depression
+      const t = r / 11.5;
+      return -0.55 * (1 - t * t) - 0.1;
+    }
+    // Gentle grassy slope rising up to track level
+    const t = (r - 11.5) / (28.0 - 11.5);
+    return THREE.MathUtils.lerp(-0.1, 0.02, t);
+  }
+
+  // 3. Northern Valley: Alpine Lake Basin & Waterfall Cliff Crag (Z < -44)
+  if (z < -44 && z >= -78 && Math.abs(x) < 52) {
+    // Alpine Lake basin depression
+    const normX = Math.abs(x) / 52;
+    const normZ = (z + 61) / 17;
+    const distSq = normX * normX + normZ * normZ;
+    if (distSq < 1.0) {
+      return THREE.MathUtils.lerp(-1.8, 0.0, Math.sqrt(distSq));
+    }
+  }
+
+  // Waterfall & Castle Cliff Promontory (Z = -78 to -122, |X| < 58)
+  if (z < -78 && z >= -122 && Math.abs(x) < 58) {
+    const cliffT = Math.min(1, (-z - 78) / 12); // Steep rise
+    const plateauT = Math.min(1, Math.max(0, (-z - 90) / 32));
+    const cliffBase = THREE.MathUtils.lerp(0.0, 18.5, Math.pow(cliffT, 0.65));
+    const cragVariation = Math.sin(x * 0.18) * 2.2 + Math.cos(z * 0.15) * 1.8;
+
+    // Waterfall notch carved into center of cliff
+    if (Math.abs(x) < 6.0 && z > -88) {
+      const notchT = Math.abs(x) / 6.0;
+      return THREE.MathUtils.lerp(-0.2, cliffBase, notchT);
+    }
+    return cliffBase + cragVariation;
+  }
+
+  // 4. Distant Alpine Mountain Ranges (North, East, West, South)
+  let mountainRise = 0;
+  const distFromCenter = Math.max(0, r - 50.0);
+
+  // Far North main massif (Z < -115)
+  if (z < -115) {
+    const northDist = -z - 115;
+    const peakWave1 = Math.sin(x * 0.055) * 18.0;
+    const peakWave2 = Math.cos(x * 0.11 + z * 0.04) * 11.0;
+    const peakWave3 = Math.abs(Math.sin(x * 0.03)) * 24.0;
+    mountainRise += Math.min(58.0, northDist * 0.65) + peakWave1 + peakWave2 + peakWave3;
+  }
+
+  // West Flank Mountain Ridge (X < -50)
+  if (x < -50) {
+    const westDist = -x - 50;
+    const ridgeWave = Math.sin(z * 0.065) * 8.5 + Math.cos(x * 0.08) * 6.0;
+    mountainRise += Math.min(32.0, westDist * 0.45) + ridgeWave;
+  }
+
+  // East Flank Mountain Ridge (X > 50)
+  if (x > 50) {
+    const eastDist = x - 50;
+    const ridgeWave = Math.cos(z * 0.065) * 8.5 + Math.sin(x * 0.08) * 6.0;
+    mountainRise += Math.min(32.0, eastDist * 0.45) + ridgeWave;
+  }
+
+  // South Foreground & Backdrop Knolls (Z > 48)
+  if (z > 48) {
+    const southDist = z - 48;
+    const meadowRolling = Math.sin(x * 0.075) * 2.8 + Math.cos(z * 0.09) * 2.2;
+    if (southDist < 45) {
+      mountainRise += Math.min(6.5, southDist * 0.12) + meadowRolling;
+    } else {
+      // Distant southern enclosure ridge
+      mountainRise += 6.5 + Math.min(28.0, (southDist - 45) * 0.4) + meadowRolling * 2.0;
+    }
+  }
+
+  // Micro-topography natural harmonics
+  const naturalNoise = Math.sin(x * 0.14) * Math.cos(z * 0.14) * 0.45;
+  return Math.max(-1.8, mountainRise + naturalNoise);
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -87,23 +179,15 @@ const WEATHER_PRESETS = [
     temp: '28°C',
     sky: '#38bdf8',
     fog: '#c7eaff',
-    fogNear: 85,
-    fogFar: 280,
+    fogNear: 110,
+    fogFar: 360,
     ambientIntensity: 1.25,
     ambientColor: '#ffffff',
-    sunIntensity: 2.0,
+    sunIntensity: 2.1,
     sunColor: '#fffbeb',
-    sunPos: [35, 45, 30],
-    fillIntensity: 0.6,
+    sunPos: [45, 55, 35],
+    fillIntensity: 0.65,
     fillColor: '#bae6fd',
-    groundColor: '#22c55e',
-    hillColor1: '#166534',
-    hillColor2: '#14532d',
-    mountainColor: '#3b82f6',
-    snowColor: '#ffffff',
-    waterColor: '#0284c7',
-    cloudOpacity: 0.92,
-    cloudColor: '#ffffff',
     duration: 30,
   },
   {
@@ -112,23 +196,15 @@ const WEATHER_PRESETS = [
     temp: '24°C',
     sky: '#fbbf24',
     fog: '#fde68a',
-    fogNear: 80,
-    fogFar: 270,
-    ambientIntensity: 1.05,
+    fogNear: 100,
+    fogFar: 340,
+    ambientIntensity: 1.1,
     ambientColor: '#fef08a',
-    sunIntensity: 2.2,
+    sunIntensity: 2.3,
     sunColor: '#ff9a3c',
-    sunPos: [45, 20, 25],
-    fillIntensity: 0.4,
+    sunPos: [55, 25, 30],
+    fillIntensity: 0.45,
     fillColor: '#fed7aa',
-    groundColor: '#4ade80',
-    hillColor1: '#15803d',
-    hillColor2: '#166534',
-    mountainColor: '#78350f',
-    snowColor: '#fef3c7',
-    waterColor: '#f59e0b',
-    cloudOpacity: 0.75,
-    cloudColor: '#fde68a',
     duration: 20,
   },
   {
@@ -137,23 +213,15 @@ const WEATHER_PRESETS = [
     temp: '19°C',
     sky: '#f97316',
     fog: '#fb923c',
-    fogNear: 75,
-    fogFar: 250,
-    ambientIntensity: 0.75,
+    fogNear: 95,
+    fogFar: 320,
+    ambientIntensity: 0.8,
     ambientColor: '#ff7c55',
-    sunIntensity: 1.6,
+    sunIntensity: 1.7,
     sunColor: '#ef4444',
-    sunPos: [50, 10, 15],
-    fillIntensity: 0.3,
+    sunPos: [60, 14, 20],
+    fillIntensity: 0.35,
     fillColor: '#fca5a5',
-    groundColor: '#16a34a',
-    hillColor1: '#1e3a2f',
-    hillColor2: '#14532d',
-    mountainColor: '#581c87',
-    snowColor: '#fecdd3',
-    waterColor: '#c2410c',
-    cloudOpacity: 0.7,
-    cloudColor: '#fed7aa',
     duration: 18,
   },
   {
@@ -162,23 +230,15 @@ const WEATHER_PRESETS = [
     temp: '12°C',
     sky: '#090d16',
     fog: '#1e293b',
-    fogNear: 65,
-    fogFar: 230,
-    ambientIntensity: 0.4,
+    fogNear: 85,
+    fogFar: 300,
+    ambientIntensity: 0.45,
     ambientColor: '#bfdbfe',
-    sunIntensity: 0.55,
+    sunIntensity: 0.6,
     sunColor: '#c7d2fe',
-    sunPos: [-30, 35, 15],
-    fillIntensity: 0.25,
+    sunPos: [-35, 42, 20],
+    fillIntensity: 0.3,
     fillColor: '#93c5fd',
-    groundColor: '#14532d',
-    hillColor1: '#0f2d1e',
-    hillColor2: '#082515',
-    mountainColor: '#1e1b4b',
-    snowColor: '#cbd5e1',
-    waterColor: '#1e3a8a',
-    cloudOpacity: 0.3,
-    cloudColor: '#e0e7ff',
     duration: 22,
   },
   {
@@ -187,23 +247,15 @@ const WEATHER_PRESETS = [
     temp: '-3°C',
     sky: '#e2e8f0',
     fog: '#f1f5f9',
-    fogNear: 70,
-    fogFar: 250,
-    ambientIntensity: 1.15,
+    fogNear: 90,
+    fogFar: 320,
+    ambientIntensity: 1.2,
     ambientColor: '#f0f9ff',
-    sunIntensity: 1.5,
+    sunIntensity: 1.6,
     sunColor: '#ffffff',
-    sunPos: [20, 32, 25],
-    fillIntensity: 0.65,
+    sunPos: [25, 38, 30],
+    fillIntensity: 0.7,
     fillColor: '#e0f2fe',
-    groundColor: '#f1f5f9',
-    hillColor1: '#cbd5e1',
-    hillColor2: '#94a3b8',
-    mountainColor: '#64748b',
-    snowColor: '#ffffff',
-    waterColor: '#38bdf8',
-    cloudOpacity: 0.88,
-    cloudColor: '#ffffff',
     duration: 24,
   },
 ];
@@ -570,7 +622,6 @@ function createBannerTexture() {
 
 /* ─────────────────────────────────────────────────────────────────
    ALTERNATING RED & WHITE CURVED KERB GEOMETRY GENERATOR
-   Constructs a chamfered rumble strip ring with vertex colors.
 ───────────────────────────────────────────────────────────────── */
 function createAlternatingKerbGeometry(innerR, outerR, segments = 64) {
   const geom = new THREE.BufferGeometry();
@@ -619,14 +670,314 @@ function createAlternatingKerbGeometry(innerR, outerR, segments = 64) {
 }
 
 /* ─────────────────────────────────────────────────────────────────
+   SCULPTED 3D MOUNTAIN-VALLEY TERRAIN MESH
+   - Vast 320x320 procedural terrain with custom vertex colors
+   - Granite slate cliffs, snow-capped peaks, lush valley meadows,
+     and sandy shorelines seamlessly rendered with high performance.
+───────────────────────────────────────────────────────────────── */
+function MountainValleyTerrain() {
+  const { terrainGeom } = useMemo(() => {
+    const width = 320;
+    const depth = 320;
+    const segX = 110;
+    const segZ = 110;
+    const geom = new THREE.PlaneGeometry(width, depth, segX, segZ);
+    geom.rotateX(-Math.PI / 2);
+
+    const pos = geom.attributes.position;
+    const count = pos.count;
+    const colors = new Float32Array(count * 3);
+
+    const colSnow = new THREE.Color('#f8fafc');
+    const colPeakRock = new THREE.Color('#334155');
+    const colCliffRock = new THREE.Color('#475569');
+    const colHighGrass = new THREE.Color('#14532d');
+    const colLushGrass = new THREE.Color('#16a34a');
+    const colValleyMeadow = new THREE.Color('#22c55e');
+    const colShoreSand = new THREE.Color('#b45309');
+
+    for (let i = 0; i < count; i++) {
+      const vx = pos.getX(i);
+      const vz = pos.getZ(i);
+      const vy = getMountainValleyHeight(vx, vz);
+      pos.setY(i, vy);
+
+      // Procedural natural vertex color blending
+      let c = colLushGrass;
+      if (vy < -0.3) {
+        c = colShoreSand;
+      } else if (vy > 34.0) {
+        c = colSnow;
+      } else if (vy > 18.0) {
+        const t = (vy - 18.0) / 16.0;
+        c = new THREE.Color().lerpColors(colCliffRock, colPeakRock, t);
+      } else if (vy > 7.0) {
+        const t = (vy - 7.0) / 11.0;
+        c = new THREE.Color().lerpColors(colHighGrass, colCliffRock, t);
+      } else if (vy > 0.05) {
+        const t = vy / 7.0;
+        c = new THREE.Color().lerpColors(colValleyMeadow, colHighGrass, t);
+      }
+
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geom.computeVertexNormals();
+    return { terrainGeom: geom };
+  }, []);
+
+  return (
+    <mesh geometry={terrainGeom} receiveShadow>
+      <meshStandardMaterial
+        vertexColors
+        roughness={0.82}
+        metalness={0.06}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   GRAND CASTLE FORTRESS PERCHED ATOP WATERFALL CRAG (Prompt 2 Reference)
+───────────────────────────────────────────────────────────────── */
+function GrandCliffCastle() {
+  return (
+    <group position={[0, 18.5, -96]}>
+      {/* Stone Foundation Bastion anchoring into the cliff rock */}
+      <mesh position={[0, -2.5, 0]} castShadow receiveShadow>
+        <boxGeometry args={[32.0, 7.0, 22.0]} />
+        <meshStandardMaterial color="#334155" roughness={0.92} metalness={0.15} />
+      </mesh>
+
+      {/* Main Citadel Keep */}
+      <mesh position={[0, 5.0, -2.0]} castShadow receiveShadow>
+        <boxGeometry args={[18.0, 11.0, 14.0]} />
+        <meshStandardMaterial color="#cbd5e1" roughness={0.78} metalness={0.1} />
+      </mesh>
+      {/* Citadel Pitched Slate Roof */}
+      <mesh position={[0, 12.5, -2.0]} castShadow>
+        <coneGeometry args={[11.5, 6.0, 4]} rotation={[0, Math.PI / 4, 0]} />
+        <meshStandardMaterial color="#475569" roughness={0.65} />
+      </mesh>
+
+      {/* Central Soaring Spire Tower (matching fairytale castle in Prompt 2) */}
+      <group position={[0, 10.0, 0]}>
+        <mesh position={[0, 6.0, 0]} castShadow>
+          <cylinderGeometry args={[2.8, 3.4, 14.0, 10]} />
+          <meshStandardMaterial color="#e2e8f0" roughness={0.7} />
+        </mesh>
+        <mesh position={[0, 15.5, 0]} castShadow>
+          <coneGeometry args={[3.2, 7.0, 10]} />
+          <meshStandardMaterial color="#3b82f6" roughness={0.5} metalness={0.3} />
+        </mesh>
+        {/* Glowing Beacon Spire Finial */}
+        <mesh position={[0, 19.5, 0]}>
+          <octahedronGeometry args={[0.7, 0]} />
+          <meshBasicMaterial color="#fef08a" />
+        </mesh>
+      </group>
+
+      {/* Flanking Western Round Watchtower */}
+      <group position={[-11.5, 4.0, 4.0]}>
+        <mesh position={[0, 4.0, 0]} castShadow>
+          <cylinderGeometry args={[3.0, 3.4, 12.0, 10]} />
+          <meshStandardMaterial color="#cbd5e1" roughness={0.75} />
+        </mesh>
+        <mesh position={[0, 11.5, 0]} castShadow>
+          <coneGeometry args={[3.4, 5.5, 10]} />
+          <meshStandardMaterial color="#475569" roughness={0.6} />
+        </mesh>
+        {/* Watchtower Flag */}
+        <mesh position={[0, 14.8, 0]}>
+          <cylinderGeometry args={[0.08, 0.08, 2.0, 4]} />
+          <meshStandardMaterial color="#b45309" />
+        </mesh>
+        <mesh position={[0.7, 15.2, 0]}>
+          <boxGeometry args={[1.2, 0.7, 0.05]} />
+          <meshStandardMaterial color="#ef4444" />
+        </mesh>
+      </group>
+
+      {/* Flanking Eastern Round Watchtower */}
+      <group position={[11.5, 4.0, 4.0]}>
+        <mesh position={[0, 4.0, 0]} castShadow>
+          <cylinderGeometry args={[3.0, 3.4, 12.0, 10]} />
+          <meshStandardMaterial color="#cbd5e1" roughness={0.75} />
+        </mesh>
+        <mesh position={[0, 11.5, 0]} castShadow>
+          <coneGeometry args={[3.4, 5.5, 10]} />
+          <meshStandardMaterial color="#475569" roughness={0.6} />
+        </mesh>
+        {/* Watchtower Flag */}
+        <mesh position={[0, 14.8, 0]}>
+          <cylinderGeometry args={[0.08, 0.08, 2.0, 4]} />
+          <meshStandardMaterial color="#b45309" />
+        </mesh>
+        <mesh position={[-0.7, 15.2, 0]}>
+          <boxGeometry args={[1.2, 0.7, 0.05]} />
+          <meshStandardMaterial color="#ef4444" />
+        </mesh>
+      </group>
+
+      {/* Arched Stone Entrance Gate & Canyon Bridge */}
+      <group position={[0, 0.5, 8.5]}>
+        <mesh position={[-2.8, 2.0, 0]} castShadow>
+          <boxGeometry args={[2.0, 5.0, 2.0]} />
+          <meshStandardMaterial color="#94a3b8" />
+        </mesh>
+        <mesh position={[2.8, 2.0, 0]} castShadow>
+          <boxGeometry args={[2.0, 5.0, 2.0]} />
+          <meshStandardMaterial color="#94a3b8" />
+        </mesh>
+        <mesh position={[0, 4.5, 0]} castShadow>
+          <boxGeometry args={[7.6, 1.2, 2.2]} />
+          <meshStandardMaterial color="#94a3b8" />
+        </mesh>
+        {/* Arched stone bridge extension projecting over the waterfall canyon */}
+        <mesh position={[0, 0.4, 6.0]} castShadow receiveShadow>
+          <boxGeometry args={[5.2, 1.0, 10.0]} />
+          <meshStandardMaterial color="#64748b" roughness={0.88} />
+        </mesh>
+      </group>
+
+      {/* Warm Glowing Castle Windows */}
+      {[
+        [-4.5, 6.5, 5.2],
+        [4.5, 6.5, 5.2],
+        [0, 8.5, 5.2],
+        [-11.5, 5.5, 7.2],
+        [11.5, 5.5, 7.2],
+      ].map(([wx, wy, wz], wi) => (
+        <mesh key={wi} position={[wx, wy, wz]}>
+          <boxGeometry args={[0.9, 1.4, 0.1]} />
+          <meshBasicMaterial color="#fef08a" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   NATURAL ROCK FORMATIONS & CLIFF OUT CROPPINGS
+   Faceted granite ridges along waterfall cliffs, lake shorelines, and valley verges.
+───────────────────────────────────────────────────────────────── */
+function RockyCragsAndFormations() {
+  const rockPositions = useMemo(() => {
+    return [
+      // Waterfall cliff flanks (Z = -78 to -84)
+      { pos: [-10.5, 12.0, -82.0], scale: [5.5, 8.0, 4.5], rot: [0.3, 0.5, -0.2] },
+      { pos: [10.5, 12.0, -82.0], scale: [5.5, 8.0, 4.5], rot: [-0.3, -0.5, 0.2] },
+      { pos: [-18.0, 8.5, -79.0], scale: [7.0, 7.0, 5.0], rot: [0.1, 0.8, 0.4] },
+      { pos: [18.0, 8.5, -79.0], scale: [7.0, 7.0, 5.0], rot: [0.2, -0.8, -0.4] },
+      { pos: [-5.5, 3.2, -74.0], scale: [3.5, 4.2, 3.0], rot: [0.4, 0.2, 0.1] },
+      { pos: [5.5, 3.2, -74.0], scale: [3.5, 4.2, 3.0], rot: [-0.4, -0.2, -0.1] },
+
+      // Alpine Lake shoreline boulders (Z = -50 to -72)
+      { pos: [-38.0, 0.2, -62.0], scale: [4.2, 2.5, 4.0], rot: [0.2, 1.1, 0.3] },
+      { pos: [38.0, 0.2, -62.0], scale: [4.2, 2.5, 4.0], rot: [-0.2, -1.1, -0.3] },
+      { pos: [-24.0, 0.1, -48.0], scale: [2.8, 1.6, 2.5], rot: [0.1, 0.4, 0.2] },
+      { pos: [24.0, 0.1, -48.0], scale: [2.8, 1.6, 2.5], rot: [-0.1, -0.4, -0.2] },
+
+      // Outer track roadside granite boulders
+      { pos: [-48.5, 0.4, 18.0], scale: [3.2, 2.2, 2.8], rot: [0.3, 0.6, 0.1] },
+      { pos: [48.5, 0.4, 18.0], scale: [3.2, 2.2, 2.8], rot: [-0.3, -0.6, -0.1] },
+      { pos: [-36.0, 0.3, 46.0], scale: [2.6, 1.8, 2.4], rot: [0.1, 0.9, 0.2] },
+      { pos: [36.0, 0.3, 46.0], scale: [2.6, 1.8, 2.4], rot: [-0.1, -0.9, -0.2] },
+    ];
+  }, []);
+
+  return (
+    <group>
+      {rockPositions.map((r, i) => (
+        <mesh
+          key={i}
+          position={r.pos}
+          scale={r.scale}
+          rotation={r.rot}
+          castShadow
+          receiveShadow
+        >
+          <dodecahedronGeometry args={[1.0, 1]} />
+          <meshStandardMaterial
+            color="#475569"
+            roughness={0.9}
+            metalness={0.12}
+            flatShading
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   LAYERED 360° ALPINE MOUNTAIN RANGES
+   Natural sculpted polygonal mountain massifs encircling the arena.
+───────────────────────────────────────────────────────────────── */
+function AlpineMountainRanges() {
+  const peaks = useMemo(() => {
+    return [
+      // ── Main Northern Alps (Behind Castle, Z = -140 to -175) ──
+      { pos: [-65, 32, -150], args: [38, 62, 7], snowArgs: [18, 22, 7], snowY: 21 },
+      { pos: [-24, 40, -165], args: [46, 75, 8], snowArgs: [22, 28, 8], snowY: 25 },
+      { pos: [0, 45, -170], args: [52, 85, 9], snowArgs: [26, 32, 9], snowY: 28 },
+      { pos: [32, 38, -160], args: [44, 72, 8], snowArgs: [20, 26, 8], snowY: 24 },
+      { pos: [72, 30, -148], args: [36, 58, 7], snowArgs: [16, 20, 7], snowY: 20 },
+
+      // ── Western Mountain Flank (X = -85 to -125) ──
+      { pos: [-105, 24, -80], args: [32, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
+      { pos: [-110, 26, 0], args: [35, 52, 7], snowArgs: [15, 19, 7], snowY: 17 },
+      { pos: [-100, 22, 80], args: [30, 44, 6], snowArgs: [12, 16, 6], snowY: 15 },
+
+      // ── Eastern Mountain Flank (X = 85 to 125) ──
+      { pos: [105, 24, -80], args: [32, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
+      { pos: [110, 26, 0], args: [35, 52, 7], snowArgs: [15, 19, 7], snowY: 17 },
+      { pos: [100, 22, 80], args: [30, 44, 6], snowArgs: [12, 16, 6], snowY: 15 },
+
+      // ── Southern Distant Horizon Ridge (Behind Camera, Z = 135 to 165) ──
+      { pos: [-55, 20, 145], args: [32, 42, 6], snowArgs: [12, 15, 6], snowY: 14 },
+      { pos: [0, 22, 155], args: [36, 46, 7], snowArgs: [14, 17, 7], snowY: 15 },
+      { pos: [55, 20, 145], args: [32, 42, 6], snowArgs: [12, 15, 6], snowY: 14 },
+    ];
+  }, []);
+
+  return (
+    <group>
+      {peaks.map((p, i) => (
+        <group key={i} position={p.pos}>
+          {/* Granite Rock Massif */}
+          <mesh castShadow receiveShadow>
+            <coneGeometry args={p.args} />
+            <meshStandardMaterial
+              color="#334155"
+              roughness={0.88}
+              metalness={0.08}
+              flatShading
+            />
+          </mesh>
+          {/* Glistening Alpine Snowcap */}
+          <mesh position={[0, p.snowY, 0]}>
+            <coneGeometry args={p.snowArgs} />
+            <meshStandardMaterial
+              color="#f8fafc"
+              roughness={0.4}
+              metalness={0.05}
+              flatShading
+            />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────
    COMPLETE 3D CIRCULAR RACING CIRCUIT GEOMETRY
-   - Continuous closed-loop track bed (inner R=30, outer R=46)
-   - 8 distinct running lanes with 9 crisp white lane divider rings
-   - Inner and outer alternating red/white kerbs (rumble strips)
-   - Checkered start/finish grid across all 8 lanes (closed loop start=end)
-   - Grand Start/Finish Arch with "DSA RACE ARENA" banner
-   - Scenic central infield plaza with tiered water fountain,
-     glowing crystalline energy obelisk, radial walkways, flowerbeds, trees
+   Preserves all 8 lanes, kerbs, checkered start line, and gantry arch.
 ───────────────────────────────────────────────────────────────── */
 function CircularRaceCircuit() {
   const { innerRadius, outerRadius, laneWidth, laneCount } = TRACK_CONFIG;
@@ -664,20 +1015,6 @@ function CircularRaceCircuit() {
   // Textures
   const checkeredTexture = useMemo(() => createCheckeredStartTexture(), []);
   const bannerTexture = useMemo(() => createBannerTexture(), []);
-
-  // Central lawn infield disc
-  const centralLawnGeom = useMemo(() => {
-    const geom = new THREE.CircleGeometry(innerRadius - 1.35, 64);
-    geom.rotateX(-Math.PI / 2);
-    return geom;
-  }, [innerRadius]);
-
-  // Outer stadium lawn ring
-  const outerLawnGeom = useMemo(() => {
-    const geom = new THREE.RingGeometry(outerRadius + 1.35, 135, 64);
-    geom.rotateX(-Math.PI / 2);
-    return geom;
-  }, [outerRadius]);
 
   const midRadius = (innerRadius + outerRadius) / 2; // 38.0
   const trackSpan = outerRadius - innerRadius; // 16.0
@@ -717,7 +1054,6 @@ function CircularRaceCircuit() {
       </mesh>
 
       {/* ── 4. CHECKERED START / FINISH LINE GROUND MARKING ── */}
-      {/* Positioned across all 8 lanes at theta = 0 (X = 0, spanning along Z from innerRadius to outerRadius) */}
       <mesh
         position={[0, 0.035, midRadius]}
         rotation={[-Math.PI / 2, 0, Math.PI / 2]}
@@ -771,20 +1107,17 @@ function CircularRaceCircuit() {
           <meshStandardMaterial color="#0f172a" roughness={0.3} metalness={0.8} />
         </mesh>
 
-        {/* Overhead "DSA RACE ARENA" Banner Plates (facing runner approach, exit, and overhead broadcast) */}
+        {/* Overhead "DSA RACE ARENA" Banner Plates (facing approach, exit, and overhead broadcast) */}
         {bannerTexture && (
           <group position={[0, 8.5, 0]}>
-            {/* Front facing (+X / runner approach) */}
             <mesh position={[-0.42, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
               <planeGeometry args={[14.5, 2.2]} />
               <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
             </mesh>
-            {/* Back facing (-X / runner exit) */}
             <mesh position={[0.42, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
               <planeGeometry args={[14.5, 2.2]} />
               <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
             </mesh>
-            {/* Overhead angled plate (visible from elevated broadcast stadium cameras) */}
             <mesh position={[0, 0.45, 0]} rotation={[-Math.PI / 3, 0, 0]}>
               <planeGeometry args={[14.5, 2.0]} />
               <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
@@ -792,153 +1125,12 @@ function CircularRaceCircuit() {
           </group>
         )}
       </group>
-
-      {/* ── 6. SCENIC CENTRAL INFIELD PLAZA ── */}
-      {/* Lush green infield lawn */}
-      <mesh geometry={centralLawnGeom} position={[0, 0.01, 0]} receiveShadow>
-        <meshStandardMaterial color="#22c55e" roughness={0.85} side={THREE.DoubleSide} />
-      </mesh>
-
-      {/* Central Fountain with Water Basin and Glowing Beacon */}
-      <group position={[0, 0, 0]}>
-        {/* Outer Circular Plaza Path Ring */}
-        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[11.5, 13.8, 48]} />
-          <meshStandardMaterial color="#e2e8f0" roughness={0.7} side={THREE.DoubleSide} />
-        </mesh>
-
-        {/* Circular stone fountain pool rim */}
-        <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[7.2, 7.8, 0.9, 32]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.6} metalness={0.2} />
-        </mesh>
-        {/* Shimmering crystal water disc */}
-        <mesh position={[0, 0.8, 0]}>
-          <circleGeometry args={[6.8, 32]} />
-          <meshStandardMaterial
-            color="#0284c7"
-            roughness={0.1}
-            metalness={0.8}
-            transparent
-            opacity={0.88}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-        {/* Tiered center pedestal */}
-        <mesh position={[0, 1.4, 0]} castShadow>
-          <cylinderGeometry args={[2.8, 3.6, 1.2, 16]} />
-          <meshStandardMaterial color="#94a3b8" roughness={0.5} />
-        </mesh>
-        {/* Soaring central glowing energy crystal / obelisk (Prompt 1 visual) */}
-        <mesh position={[0, 5.2, 0]} castShadow>
-          <octahedronGeometry args={[2.4, 0]} />
-          <meshStandardMaterial
-            color="#38bdf8"
-            emissive="#0284c7"
-            emissiveIntensity={1.5}
-            roughness={0.2}
-            metalness={0.6}
-          />
-        </mesh>
-        {/* Vertical blue beacon column reaching skyward */}
-        <mesh position={[0, 14.0, 0]}>
-          <cylinderGeometry args={[0.35, 0.35, 20.0, 8]} />
-          <meshBasicMaterial color="#38bdf8" transparent opacity={0.35} />
-        </mesh>
-
-        {/* 4 Radial stone pathways from fountain to track (N, S, E, W) */}
-        {[0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((angle, i) => (
-          <group key={i} rotation={[0, angle, 0]}>
-            <mesh position={[0, 0.022, 18.0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-              <planeGeometry args={[2.8, innerRadius - 8.5]} />
-              <meshStandardMaterial color="#e2e8f0" roughness={0.7} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-        ))}
-
-        {/* Manicured trees, pines, and flowerbeds in the infield */}
-        {[Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4].map((quadAngle, qi) => {
-          const dist = 18.0;
-          const qx = dist * Math.sin(quadAngle);
-          const qz = dist * Math.cos(quadAngle);
-          return (
-            <group key={qi} position={[qx, 0, qz]}>
-              {/* Broadleaf shade tree */}
-              <mesh position={[0, 1.0, 0]} castShadow>
-                <cylinderGeometry args={[0.22, 0.34, 2.0, 6]} />
-                <meshStandardMaterial color="#78350f" roughness={0.9} />
-              </mesh>
-              <mesh position={[0, 3.2, 0]} castShadow>
-                <dodecahedronGeometry args={[1.9, 1]} />
-                <meshStandardMaterial color="#15803d" roughness={0.75} />
-              </mesh>
-              {/* Flowerbed circle surrounding tree */}
-              <mesh position={[0, 0.025, 0]}>
-                <ringGeometry args={[2.2, 3.2, 16]} />
-                <meshStandardMaterial color="#f43f5e" emissive="#f43f5e" emissiveIntensity={0.25} />
-              </mesh>
-            </group>
-          );
-        })}
-
-        {/* Infield perimeter pine trees (just inside inner curb) */}
-        {[0.3, 0.9, 1.8, 2.4, 3.5, 4.1, 5.0, 5.6].map((angle, pi) => {
-          const px = 25.5 * Math.sin(angle);
-          const pz = 25.5 * Math.cos(angle);
-          return (
-            <group key={pi} position={[px, 0, pz]} scale={[0.85, 0.85, 0.85]}>
-              <mesh position={[0, 0.7, 0]} castShadow>
-                <cylinderGeometry args={[0.15, 0.25, 1.4, 6]} />
-                <meshStandardMaterial color="#451a03" roughness={0.9} />
-              </mesh>
-              <mesh position={[0, 2.2, 0]} castShadow>
-                <coneGeometry args={[1.3, 2.5, 7]} />
-                <meshStandardMaterial color="#14532d" roughness={0.8} />
-              </mesh>
-              <mesh position={[0, 3.4, 0]} castShadow>
-                <coneGeometry args={[1.0, 2.0, 7]} />
-                <meshStandardMaterial color="#166534" roughness={0.8} />
-              </mesh>
-            </group>
-          );
-        })}
-      </group>
-
-      {/* ── 7. VAST OUTER STADIUM MEADOW & PERIMETER FLORA ── */}
-      <mesh geometry={outerLawnGeom} position={[0, 0.01, 0]} receiveShadow>
-        <meshStandardMaterial color="#16a34a" roughness={0.88} side={THREE.DoubleSide} />
-      </mesh>
-
-      {/* Outer perimeter spectator banners and pine trees */}
-      {[0.2, 0.8, 1.5, 2.2, 2.9, 3.6, 4.3, 5.0, 5.7].map((angle, oi) => {
-        const ox = 52.0 * Math.sin(angle);
-        const oz = 52.0 * Math.cos(angle);
-        return (
-          <group key={oi} position={[ox, 0, oz]}>
-            {/* Pine tree */}
-            <mesh position={[0, 1.0, 0]} castShadow>
-              <cylinderGeometry args={[0.18, 0.3, 2.0, 6]} />
-              <meshStandardMaterial color="#451a03" roughness={0.9} />
-            </mesh>
-            <mesh position={[0, 2.8, 0]} castShadow>
-              <coneGeometry args={[1.6, 3.2, 7]} />
-              <meshStandardMaterial color="#14532d" roughness={0.8} />
-            </mesh>
-            <mesh position={[0, 4.4, 0]} castShadow>
-              <coneGeometry args={[1.2, 2.4, 7]} />
-              <meshStandardMaterial color="#166534" roughness={0.8} />
-            </mesh>
-          </group>
-        );
-      })}
     </group>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   VAST SCENIC BACKGROUND & ATMOSPHERE
-   Preserves distant alpine peaks, snow caps, castle fortress,
-   floating hot air balloon, sky, and dynamic lighting.
+   DYNAMIC SCENIC ENVIRONMENT & ATMOSPHERIC LIGHTING
 ───────────────────────────────────────────────────────────────── */
 function ArenaAtmosphere({ reducedMotion }) {
   const ambientRef = useRef();
@@ -950,9 +1142,9 @@ function ArenaAtmosphere({ reducedMotion }) {
     const count = 300;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 160;
-      positions[i * 3 + 1] = Math.random() * 28 + 1;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 160;
+      positions[i * 3] = (Math.random() - 0.5) * 180;
+      positions[i * 3 + 1] = Math.random() * 32 + 1;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 180;
     }
     return positions;
   }, []);
@@ -984,7 +1176,7 @@ function ArenaAtmosphere({ reducedMotion }) {
         const t = state.clock.getElapsedTime();
         for (let i = 0; i < 300; i++) {
           let y = pos.getY(i) - delta * (1.2 + Math.sin(i) * 0.5);
-          if (y < -1) y = 28;
+          if (y < -1) y = 32;
           pos.setY(i, y);
           const x = pos.getX(i) + Math.sin(t * 0.6 + i) * delta * 0.3;
           pos.setX(i, x);
@@ -999,12 +1191,12 @@ function ArenaAtmosphere({ reducedMotion }) {
       <ambientLight ref={ambientRef} intensity={1.25} color="#ffffff" />
       <directionalLight
         ref={sunRef}
-        position={[35, 45, 30]}
-        intensity={2.0}
+        position={[45, 55, 35]}
+        intensity={2.1}
         castShadow
         shadow-mapSize={[1024, 1024]}
       />
-      <directionalLight ref={fillRef} position={[-25, 30, -20]} intensity={0.6} color="#bae6fd" />
+      <directionalLight ref={fillRef} position={[-35, 35, -25]} intensity={0.65} color="#bae6fd" />
 
       {/* 3D Snow Particle System */}
       <points ref={snowRef} visible={false}>
@@ -1014,73 +1206,8 @@ function ArenaAtmosphere({ reducedMotion }) {
         <pointsMaterial size={0.18} color="#f0f9ff" transparent opacity={0.8} sizeAttenuation />
       </points>
 
-      {/* Distant Alpine Peaks & Historic Mountain Fortress (Z = -95) */}
-      <group position={[0, 0, -95]}>
-        {[-75, 0, 75].map((offsetX, i) => (
-          <group key={i} position={[offsetX, 0, 0]}>
-            {/* Peak 1 */}
-            <mesh position={[-30, 14, 0]}>
-              <coneGeometry args={[26, 42, 8]} />
-              <meshStandardMaterial color="#334155" roughness={0.88} />
-            </mesh>
-            <mesh position={[-30, 30, 0]}>
-              <coneGeometry args={[11, 14, 8]} />
-              <meshStandardMaterial color="#f8fafc" roughness={0.4} />
-            </mesh>
-
-            {/* Central Towering Peak 2 */}
-            <mesh position={[8, 20, -5]}>
-              <coneGeometry args={[34, 55, 9]} />
-              <meshStandardMaterial color="#1e3a8b" roughness={0.88} />
-            </mesh>
-            <mesh position={[8, 42, -5]}>
-              <coneGeometry args={[15, 18, 9]} />
-              <meshStandardMaterial color="#f1f5f9" roughness={0.35} />
-            </mesh>
-
-            {/* Peak 3 */}
-            <mesh position={[42, 12, 3]}>
-              <coneGeometry args={[24, 38, 7]} />
-              <meshStandardMaterial color="#334155" roughness={0.88} />
-            </mesh>
-            <mesh position={[42, 27, 3]}>
-              <coneGeometry args={[9.5, 12, 7]} />
-              <meshStandardMaterial color="#f8fafc" roughness={0.4} />
-            </mesh>
-
-            {/* Mountain Castle Fortress */}
-            <group position={[18, 16, -2]}>
-              <mesh position={[0, 2.5, 0]}>
-                <boxGeometry args={[5.0, 5.0, 4.0]} />
-                <meshStandardMaterial color="#1e1b4b" roughness={0.92} />
-              </mesh>
-              <mesh position={[-3.2, 4.5, 0]}>
-                <boxGeometry args={[2.0, 7.0, 2.0]} />
-                <meshStandardMaterial color="#1e1b4b" roughness={0.92} />
-              </mesh>
-              <mesh position={[3.2, 4.5, 0]}>
-                <boxGeometry args={[2.0, 7.0, 2.0]} />
-                <meshStandardMaterial color="#1e1b4b" roughness={0.92} />
-              </mesh>
-              <mesh position={[-3.2, 9.0, 0]}>
-                <coneGeometry args={[1.5, 3.2, 4]} />
-                <meshStandardMaterial color="#7c3aed" roughness={0.8} />
-              </mesh>
-              <mesh position={[3.2, 9.0, 0]}>
-                <coneGeometry args={[1.5, 3.2, 4]} />
-                <meshStandardMaterial color="#7c3aed" roughness={0.8} />
-              </mesh>
-              <mesh position={[0, 6.5, 0]}>
-                <coneGeometry args={[2.6, 4.0, 4]} />
-                <meshStandardMaterial color="#9333ea" roughness={0.8} />
-              </mesh>
-            </group>
-          </group>
-        ))}
-      </group>
-
       {/* Floating Hot Air Balloon in distant sky */}
-      <group position={[-32, 28, -75]} scale={[0.9, 0.9, 0.9]}>
+      <group position={[-42, 34, -85]} scale={[0.9, 0.9, 0.9]}>
         <mesh position={[0, 2.6, 0]}>
           <sphereGeometry args={[2.0, 16, 14]} />
           <meshStandardMaterial color="#f97316" roughness={0.6} />
@@ -1116,8 +1243,6 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
   const { camera } = useThree();
   const controlsRef = useRef();
   const userInteractingRef = useRef(false);
-  const prevCameraModeRef = useRef(cameraMode);
-  const prevFocusedRef = useRef(focusedMemberId);
 
   const leaderTarget = racers?.[0];
   const targetMember = focusedMemberId
@@ -1128,8 +1253,8 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     userInteractingRef.current = false;
     if (controlsRef.current) {
       if (cameraMode === 'broadcast') {
-        controlsRef.current.target.set(0, 2.0, 6.0);
-        camera.position.set(0.0, 32.0, 64.0);
+        controlsRef.current.target.set(0, 5.0, -10.0);
+        camera.position.set(0.0, 34.0, 68.0);
         controlsRef.current.update();
       } else if (cameraMode === 'leader' && targetMember) {
         const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
@@ -1144,8 +1269,8 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
         controlsRef.current.target.set(tx, ty + 1.2, tz);
         controlsRef.current.update();
       } else if (cameraMode === 'orbit') {
-        controlsRef.current.target.set(0, 2.0, 0);
-        camera.position.set(0.0, 36.0, 68.0);
+        controlsRef.current.target.set(0, 4.0, 0);
+        camera.position.set(0.0, 42.0, 78.0);
         controlsRef.current.update();
       }
     }
@@ -1167,8 +1292,8 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     resetView: () => {
       userInteractingRef.current = false;
       if (controlsRef.current) {
-        controlsRef.current.target.set(0, 2.0, 6.0);
-        camera.position.set(0.0, 32.0, 64.0);
+        controlsRef.current.target.set(0, 5.0, -10.0);
+        camera.position.set(0.0, 34.0, 68.0);
         controlsRef.current.update();
       }
     },
@@ -1190,7 +1315,6 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     if (userInteractingRef.current) return;
 
     if (cameraMode === 'leader' && targetMember) {
-      // Dynamic chase camera following target racer along the circular loop
       const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
       const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
       const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
@@ -1222,8 +1346,8 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
       enableDamping={true}
       dampingFactor={0.08}
       minDistance={6}
-      maxDistance={140}
-      minPolarAngle={Math.PI / 12}
+      maxDistance={220}
+      minPolarAngle={Math.PI / 16}
       maxPolarAngle={Math.PI / 2 - 0.02}
       screenSpacePanning={true}
       mouseButtons={{
@@ -1366,7 +1490,7 @@ const RaceArena = forwardRef(function RaceArena(
   return (
     <div className="race-arena-root" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
-        camera={{ position: [0.0, 26.0, 68.0], fov: 45, near: 0.5, far: 450 }}
+        camera={{ position: [0.0, 34.0, 68.0], fov: 45, near: 0.5, far: 550 }}
         dpr={Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 1.5)}
         gl={{ antialias: true, powerPreference: 'default' }}
         onCreated={({ gl }) => {
@@ -1380,13 +1504,25 @@ const RaceArena = forwardRef(function RaceArena(
         {/* Dynamic weather sky and distance fog */}
         <WeatherSky />
 
-        {/* Scenic mountain backdrop, dynamic lighting, and atmosphere */}
+        {/* Dynamic lighting and sky elements */}
         <ArenaAtmosphere reducedMotion={reducedMotion} />
 
-        {/* Complete 3D circular racing circuit with 8 lanes, kerbs, start/finish gantry, and infield */}
+        {/* Layered 360° Alpine Mountain Ranges surrounding the valley */}
+        <AlpineMountainRanges />
+
+        {/* Grand Medieval Castle perched atop the waterfall cliff plateau */}
+        <GrandCliffCastle />
+
+        {/* Natural Granite Rock Formations along cliffs and valley */}
+        <RockyCragsAndFormations />
+
+        {/* Continuous Sculpted Mountain-Valley Terrain Mesh */}
+        <MountainValleyTerrain />
+
+        {/* Complete 3D circular racing circuit with 8 lanes, kerbs, and gantry */}
         <CircularRaceCircuit />
 
-        {/* 8 Individually separated racers in distinct lanes running along the closed loop */}
+        {/* 8 Individually separated racers running in distinct lanes along the closed loop */}
         {racers.map((racer) => {
           const memberId = racer.id || racer.memberId;
           return (
