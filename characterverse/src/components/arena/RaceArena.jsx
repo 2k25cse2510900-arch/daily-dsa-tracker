@@ -7,49 +7,123 @@ import { resolveCharacterDataFromAppearance } from '../viewer/CharacterAvatar';
 import { VEHICLES } from '../../data/vehicles';
 
 /* ─────────────────────────────────────────────────────────────────
-   CIRCULAR 3D RACING CIRCUIT CONFIGURATION & MATHEMATICS
-   - Large, closed-loop athletics-style racing circuit inspired by Olympic tracks.
-   - Start line and finish line meet at the exact same physical point (closed loop).
-   - Exactly eight parallel running lanes around the entire 360° circuit.
-   - Distinct radii per lane: zero lane cutting or collisions.
+   F1-INSPIRED 3D RACING CIRCUIT – SPLINE-BASED CLOSED LOOP
+   - Long continuous closed-loop circuit with straights, sweeping bends,
+     challenging corners, and hairpin turns.
+   - Start/finish line at the same physical location.
+   - Exactly eight parallel running lanes throughout the circuit.
+   - CatmullRom spline defines the centre-line; lanes are offset by
+     perpendicular normals so all eight racers stay in their own lane.
 ───────────────────────────────────────────────────────────────── */
+
+/* ── F1-style centre-line control points (closed loop, ~538 world-units long) ── */
+const F1_CONTROL_POINTS = [
+  new THREE.Vector3(  0,   0,  62),  // 0  Start/Finish line gantry on southern straight
+  new THREE.Vector3( 35,   0,  62),  // 1  Main straight acceleration
+  new THREE.Vector3( 72,   0,  52),  // 2  Sweeping Curva Grande entering east valley
+  new THREE.Vector3( 98,   0,  25),  // 3  High-speed right flank straight
+  new THREE.Vector3(104,   0, -12),  // 4  Eastern foothill corner
+  new THREE.Vector3( 88,   0, -38),  // 5  Challenging chicane approach
+  new THREE.Vector3( 62,   0, -42),  // 6  Chicane apex
+  new THREE.Vector3( 32,   0, -38),  // 7  Stone Bridge crossing near lake inlet
+  new THREE.Vector3(  0,   0, -32),  // 8  Lakeside grand view (lake & waterfall in north)
+  new THREE.Vector3(-32,   0, -38),  // 9  Lakeside sweeping exit curve
+  new THREE.Vector3(-62,   0, -42),  // 10 Western chicane apex
+  new THREE.Vector3(-88,   0, -38),  // 11 Western hairpin approach
+  new THREE.Vector3(-104,  0, -12),  // 12 Western hairpin apex
+  new THREE.Vector3(-98,   0,  25),  // 13 Western straight acceleration
+  new THREE.Vector3(-72,   0,  52),  // 14 Sweeping Parabolica curve
+  new THREE.Vector3(-35,   0,  62),  // 15 Approach back to Start/Finish line
+];
+
+/* Build the CatmullRom centre-line spline (closed = true) once at module level */
+const CENTRE_SPLINE = new THREE.CatmullRomCurve3(F1_CONTROL_POINTS, true, 'catmullrom', 0.25);
+const SPLINE_SAMPLE_COUNT = 512;
+
+/* Pre-compute arc-length → uniform-t lookup for even spacing along the spline */
+const _splineDistances = [0];
+const _splineSamplePoints = [];
+for (let i = 0; i <= SPLINE_SAMPLE_COUNT; i++) {
+  const pt = CENTRE_SPLINE.getPoint(i / SPLINE_SAMPLE_COUNT);
+  _splineSamplePoints.push(pt);
+}
+for (let i = 1; i <= SPLINE_SAMPLE_COUNT; i++) {
+  const segDist = _splineSamplePoints[i].distanceTo(_splineSamplePoints[i - 1]);
+  _splineDistances.push(_splineDistances[i - 1] + segDist);
+}
+const TOTAL_TRACK_LENGTH = _splineDistances[SPLINE_SAMPLE_COUNT];
+
+function getUniformSplineT(progress) {
+  let p = progress % 1;
+  if (p < 0) p += 1;
+  const targetDist = p * TOTAL_TRACK_LENGTH;
+
+  let low = 0;
+  let high = SPLINE_SAMPLE_COUNT;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (_splineDistances[mid] < targetDist) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  const idx = Math.max(0, Math.min(SPLINE_SAMPLE_COUNT - 1, low - 1));
+  const d0 = _splineDistances[idx];
+  const d1 = _splineDistances[idx + 1];
+  const alpha = d1 > d0 ? (targetDist - d0) / (d1 - d0) : 0;
+  return (idx + alpha) / SPLINE_SAMPLE_COUNT;
+}
+
 export const TRACK_CONFIG = {
-  innerRadius: 30.0,
+  innerRadius: 30.0,     // kept for backward-compat; not used for new spline track
   laneWidth: 2.0,
   laneCount: 8,
-  startAngle: 0, // In radians: at theta = 0 (X = 0, Z = +R), foreground start/finish
+  startAngle: 0,
+  totalLength: TOTAL_TRACK_LENGTH,
   get outerRadius() {
-    return this.innerRadius + this.laneCount * this.laneWidth; // 46.0
+    return this.innerRadius + this.laneCount * this.laneWidth; // 46.0 (compat)
   },
   getLaneRadius(laneIndex) {
     const lane = Math.max(0, Math.min(this.laneCount - 1, typeof laneIndex === 'number' ? laneIndex : 0));
-    return this.innerRadius + (lane + 0.5) * this.laneWidth;
+    return this.innerRadius + (lane + 0.5) * this.laneWidth; // compat
+  },
+  /** Lane offset from centre-line: lane 0 = innermost (-7.0), lane 7 = outermost (+7.0) */
+  getLaneOffset(laneIndex) {
+    const lane = Math.max(0, Math.min(this.laneCount - 1, typeof laneIndex === 'number' ? laneIndex : 0));
+    return -7.0 + lane * this.laneWidth;
   },
 };
 
 /**
- * Returns the exact 3D coordinates [X, Y, Z] on the circular track for a racer.
- * Smoothly interpolates along the closed loop based on verified LeetCode progress [0, 1].
+ * Returns the exact 3D coordinates [X, Y, Z] on the F1 spline track for a racer.
+ * progress ∈ [0, 1], laneIndex ∈ [0, 7].
+ * The racer is placed on the spline centre-line, then offset perpendicular to the
+ * track tangent by their assigned lane distance.
  */
 export function getCircularRacerPosition(progress, laneIndex) {
   const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
-  const r = TRACK_CONFIG.getLaneRadius(laneIndex);
-  // Counter-clockwise running direction: theta increases from 0 to 2*PI
-  const theta = TRACK_CONFIG.startAngle + p * Math.PI * 2;
-  const x = r * Math.sin(theta);
-  const z = r * Math.cos(theta);
-  const y = 0.05;
-  return [x, y, z];
+  const t = getUniformSplineT(p);
+  const centre = CENTRE_SPLINE.getPoint(t);
+
+  // Perpendicular unit normal offset in XZ plane
+  const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+  const nx = -tangent.z;
+  const nz = tangent.x;
+
+  const offset = TRACK_CONFIG.getLaneOffset(laneIndex);
+  return [centre.x + nx * offset, 0.05, centre.z + nz * offset];
 }
 
 /**
- * Returns forward tangent angle (heading in radians) around the circular track.
+ * Returns forward tangent angle (heading in radians) along the F1 spline.
+ * When rotation.y = heading, local (0, 0, 1) aligns with tangent (Tx, 0, Tz).
  */
 export function getCircularRacerHeading(progress) {
   const p = Math.max(0, Math.min(1, typeof progress === 'number' ? progress : 0));
-  const theta = TRACK_CONFIG.startAngle + p * Math.PI * 2;
-  // Tangent vector: dX/dtheta = r*cos(theta), dZ/dtheta = -r*sin(theta)
-  return Math.atan2(Math.cos(theta), -Math.sin(theta));
+  const t = getUniformSplineT(p);
+  const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+  return Math.atan2(tangent.x, tangent.z);
 }
 
 // Backward-compatible math exports to protect external tests/imports
@@ -72,100 +146,93 @@ export function getExpansiveTerrainHeight(worldX, worldZ) {
 
 /* ─────────────────────────────────────────────────────────────────
    MASSIVE 3D MOUNTAIN-VALLEY PROCEDURAL TERRAIN MATHEMATICS
-   - Perfect flat terrace for the 8-lane racing circuit at Y = 0.
-   - Natural sculpted central infield park with an inner lake/pond.
-   - Pristine alpine lake basin in the northern valley (Z = -45 to -76).
-   - Towering rocky cliff crag & plateau (Z = -80 to -118, Y = 16 to 24).
-   - High alpine mountain ranges with jagged snow-capped peaks (360° horizon).
+   - Flattens the F1 racing circuit corridor at Y = 0.
+   - Preserves northern alpine lake basin, waterfall crag, and 360° mountain ranges.
 ───────────────────────────────────────────────────────────────── */
-export function getMountainValleyHeight(x, z) {
-  const r = Math.sqrt(x * x + z * z);
+const _trackSampleCount = 64;
+const _trackPolyline = [];
+for (let i = 0; i < _trackSampleCount; i++) {
+  _trackPolyline.push(CENTRE_SPLINE.getPoint(i / _trackSampleCount));
+}
+_trackPolyline.push(_trackPolyline[0]);
 
-  // 1. Perfectly flat, smooth racing track corridor (R = 28.0 to 48.0)
-  if (r >= 28.0 && r <= 48.0) {
+function getDistanceToTrack(x, z) {
+  let minD2 = Infinity;
+  for (let i = 0; i < _trackSampleCount; i++) {
+    const p1 = _trackPolyline[i];
+    const p2 = _trackPolyline[i + 1];
+    const dx = p2.x - p1.x;
+    const dz = p2.z - p1.z;
+    const len2 = dx * dx + dz * dz;
+    let t = len2 > 0 ? ((x - p1.x) * dx + (z - p1.z) * dz) / len2 : 0;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const projX = p1.x + t * dx;
+    const projZ = p1.z + t * dz;
+    const dist2 = (x - projX) ** 2 + (z - projZ) ** 2;
+    if (dist2 < minD2) minD2 = dist2;
+  }
+  return Math.sqrt(minD2);
+}
+
+export function getMountainValleyHeight(x, z) {
+  const distToTrack = getDistanceToTrack(x, z);
+  // Track surface corridor (8 lanes + kerbs + safety margin = 10.5 units)
+  if (distToTrack < 10.5) {
     return 0.0;
   }
 
-  // 2. Central Infield Park & Scenic Basin (R < 28.0)
-  if (r < 28.0) {
-    if (r < 11.5) {
-      // Natural central pond basin depression
-      const t = r / 11.5;
-      return -0.55 * (1 - t * t) - 0.1;
-    }
-    // Gentle grassy slope rising up to track level
-    const t = (r - 11.5) / (28.0 - 11.5);
-    return THREE.MathUtils.lerp(-0.1, 0.02, t);
-  }
+  let naturalHeight = 0;
 
-  // 3. Northern Valley: Alpine Lake Basin & Waterfall Cliff Crag (Z < -44)
+  // Northern Valley: Alpine Lake Basin & Waterfall Cliff Crag (Z < -44)
   if (z < -44 && z >= -78 && Math.abs(x) < 52) {
-    // Alpine Lake basin depression
     const normX = Math.abs(x) / 52;
     const normZ = (z + 61) / 17;
     const distSq = normX * normX + normZ * normZ;
     if (distSq < 1.0) {
-      return THREE.MathUtils.lerp(-1.8, 0.0, Math.sqrt(distSq));
+      naturalHeight = THREE.MathUtils.lerp(-1.8, 0.0, Math.sqrt(distSq));
     }
-  }
-
-  // Waterfall & Castle Cliff Promontory (Z = -78 to -122, |X| < 58)
-  if (z < -78 && z >= -122 && Math.abs(x) < 58) {
-    const cliffT = Math.min(1, (-z - 78) / 12); // Steep rise
+  } else if (z < -78 && z >= -122 && Math.abs(x) < 58) {
+    const cliffT = Math.min(1, (-z - 78) / 12);
     const plateauT = Math.min(1, Math.max(0, (-z - 90) / 32));
     const cliffBase = THREE.MathUtils.lerp(0.0, 18.5, Math.pow(cliffT, 0.65));
     const cragVariation = Math.sin(x * 0.18) * 2.2 + Math.cos(z * 0.15) * 1.8;
-
-    // Waterfall notch carved into center of cliff
     if (Math.abs(x) < 6.0 && z > -88) {
       const notchT = Math.abs(x) / 6.0;
-      return THREE.MathUtils.lerp(-0.2, cliffBase, notchT);
-    }
-    return cliffBase + cragVariation;
-  }
-
-  // 4. Distant Alpine Mountain Ranges (North, East, West, South)
-  let mountainRise = 0;
-  const distFromCenter = Math.max(0, r - 50.0);
-
-  // Far North main massif (Z < -115)
-  if (z < -115) {
-    const northDist = -z - 115;
-    const peakWave1 = Math.sin(x * 0.055) * 18.0;
-    const peakWave2 = Math.cos(x * 0.11 + z * 0.04) * 11.0;
-    const peakWave3 = Math.abs(Math.sin(x * 0.03)) * 24.0;
-    mountainRise += Math.min(58.0, northDist * 0.65) + peakWave1 + peakWave2 + peakWave3;
-  }
-
-  // West Flank Mountain Ridge (X < -50)
-  if (x < -50) {
-    const westDist = -x - 50;
-    const ridgeWave = Math.sin(z * 0.065) * 8.5 + Math.cos(x * 0.08) * 6.0;
-    mountainRise += Math.min(32.0, westDist * 0.45) + ridgeWave;
-  }
-
-  // East Flank Mountain Ridge (X > 50)
-  if (x > 50) {
-    const eastDist = x - 50;
-    const ridgeWave = Math.cos(z * 0.065) * 8.5 + Math.sin(x * 0.08) * 6.0;
-    mountainRise += Math.min(32.0, eastDist * 0.45) + ridgeWave;
-  }
-
-  // South Foreground & Backdrop Knolls (Z > 48)
-  if (z > 48) {
-    const southDist = z - 48;
-    const meadowRolling = Math.sin(x * 0.075) * 2.8 + Math.cos(z * 0.09) * 2.2;
-    if (southDist < 45) {
-      mountainRise += Math.min(6.5, southDist * 0.12) + meadowRolling;
+      naturalHeight = THREE.MathUtils.lerp(-0.2, cliffBase, notchT);
     } else {
-      // Distant southern enclosure ridge
-      mountainRise += 6.5 + Math.min(28.0, (southDist - 45) * 0.4) + meadowRolling * 2.0;
+      naturalHeight = cliffBase + cragVariation;
     }
+  } else {
+    // Distant Alpine Mountain Ranges (North, East, West, South)
+    let mountainRise = 0;
+    if (z < -115) {
+      const northDist = -z - 115;
+      mountainRise += Math.min(58.0, northDist * 0.65) + Math.sin(x * 0.055) * 18.0 + Math.cos(x * 0.11 + z * 0.04) * 11.0;
+    }
+    if (x < -112) {
+      const westDist = -x - 112;
+      mountainRise += Math.min(36.0, westDist * 0.55) + Math.sin(z * 0.065) * 8.5;
+    }
+    if (x > 112) {
+      const eastDist = x - 112;
+      mountainRise += Math.min(36.0, eastDist * 0.55) + Math.cos(z * 0.065) * 8.5;
+    }
+    if (z > 78) {
+      const southDist = z - 78;
+      mountainRise += Math.min(24.0, southDist * 0.4) + Math.sin(x * 0.075) * 3.0;
+    }
+    const naturalNoise = Math.sin(x * 0.14) * Math.cos(z * 0.14) * 0.35;
+    naturalHeight = Math.max(-1.8, mountainRise + naturalNoise);
   }
 
-  // Micro-topography natural harmonics
-  const naturalNoise = Math.sin(x * 0.14) * Math.cos(z * 0.14) * 0.45;
-  return Math.max(-1.8, mountainRise + naturalNoise);
+  // Smooth blending transition from flat track verges into surrounding natural terrain
+  if (distToTrack < 18.5) {
+    const blend = (distToTrack - 10.5) / 8.0;
+    return THREE.MathUtils.lerp(0.0, naturalHeight, blend * blend);
+  }
+
+  return naturalHeight;
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -506,9 +573,11 @@ function ArenaRacer({ racer, reducedMotion, onFocus }) {
       ? 1.25 + (reducedMotion ? 0 : Math.sin(t * 3.2 + laneIndex) * 0.08)
       : 0.06 + strideBob;
 
-    // Subtle physical stride motion along tangent
-    const dynamicX = posX + (isSuperman ? 0 : Math.cos(heading) * stridePhase);
-    const dynamicZ = posZ - (isSuperman ? 0 : Math.sin(heading) * stridePhase);
+    // Physical stride displacement along forward tangent vector
+    const forwardX = Math.sin(heading);
+    const forwardZ = Math.cos(heading);
+    const dynamicX = posX + (isSuperman ? 0 : forwardX * stridePhase);
+    const dynamicZ = posZ + (isSuperman ? 0 : forwardZ * stridePhase);
 
     groupRef.current.position.set(dynamicX, posY + verticalElevation, dynamicZ);
 
@@ -928,20 +997,20 @@ function AlpineMountainRanges() {
       { pos: [32, 38, -160], args: [44, 72, 8], snowArgs: [20, 26, 8], snowY: 24 },
       { pos: [72, 30, -148], args: [36, 58, 7], snowArgs: [16, 20, 7], snowY: 20 },
 
-      // ── Western Mountain Flank (X = -85 to -125) ──
-      { pos: [-105, 24, -80], args: [32, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
-      { pos: [-110, 26, 0], args: [35, 52, 7], snowArgs: [15, 19, 7], snowY: 17 },
-      { pos: [-100, 22, 80], args: [30, 44, 6], snowArgs: [12, 16, 6], snowY: 15 },
+      // ── Western Mountain Flank (X = -125 to -145) ──
+      { pos: [-130, 28, -80], args: [35, 54, 6], snowArgs: [16, 20, 6], snowY: 18 },
+      { pos: [-135, 32, 0], args: [38, 58, 7], snowArgs: [17, 22, 7], snowY: 19 },
+      { pos: [-125, 26, 80], args: [32, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
 
-      // ── Eastern Mountain Flank (X = 85 to 125) ──
-      { pos: [105, 24, -80], args: [32, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
-      { pos: [110, 26, 0], args: [35, 52, 7], snowArgs: [15, 19, 7], snowY: 17 },
-      { pos: [100, 22, 80], args: [30, 44, 6], snowArgs: [12, 16, 6], snowY: 15 },
+      // ── Eastern Mountain Flank (X = 125 to 145) ──
+      { pos: [130, 28, -80], args: [35, 54, 6], snowArgs: [16, 20, 6], snowY: 18 },
+      { pos: [135, 32, 0], args: [38, 58, 7], snowArgs: [17, 22, 7], snowY: 19 },
+      { pos: [125, 26, 80], args: [32, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
 
-      // ── Southern Distant Horizon Ridge (Behind Camera, Z = 135 to 165) ──
-      { pos: [-55, 20, 145], args: [32, 42, 6], snowArgs: [12, 15, 6], snowY: 14 },
-      { pos: [0, 22, 155], args: [36, 46, 7], snowArgs: [14, 17, 7], snowY: 15 },
-      { pos: [55, 20, 145], args: [32, 42, 6], snowArgs: [12, 15, 6], snowY: 14 },
+      // ── Southern Distant Horizon Ridge (Behind Camera, Z = 145 to 175) ──
+      { pos: [-65, 24, 155], args: [36, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
+      { pos: [0, 26, 165], args: [40, 52, 7], snowArgs: [16, 20, 7], snowY: 18 },
+      { pos: [65, 24, 155], args: [36, 48, 6], snowArgs: [14, 18, 6], snowY: 16 },
     ];
   }, []);
 
@@ -1277,27 +1346,27 @@ function DenseNaturalForests() {
       });
     });
 
-    // ── 4. Outer Valley Foothills & Mountain Approaches (X = ±52 to ±72) ──
+    // ── 4. Outer Valley Foothills & Mountain Approaches (X = ±115 to ±130) ──
     const outerValley = [
-      { pos: [-55, 1.5, -28], s: 1.3, type: 'pine' },
-      { pos: [-62, 2.5, -12], s: 1.4, type: 'pine' },
-      { pos: [-58, 2.0, 15], s: 1.3, type: 'broadleaf' },
-      { pos: [-64, 3.0, 35], s: 1.4, type: 'pine' },
-      { pos: [55, 1.5, -28], s: 1.3, type: 'pine' },
-      { pos: [62, 2.5, -12], s: 1.4, type: 'pine' },
-      { pos: [58, 2.0, 15], s: 1.3, type: 'broadleaf' },
-      { pos: [64, 3.0, 35], s: 1.4, type: 'pine' },
+      { pos: [-120, 2.5, -28], s: 1.3, type: 'pine' },
+      { pos: [-126, 3.5, -12], s: 1.4, type: 'pine' },
+      { pos: [-122, 3.0, 15], s: 1.3, type: 'broadleaf' },
+      { pos: [-128, 4.0, 35], s: 1.4, type: 'pine' },
+      { pos: [120, 2.5, -28], s: 1.3, type: 'pine' },
+      { pos: [126, 3.5, -12], s: 1.4, type: 'pine' },
+      { pos: [122, 3.0, 15], s: 1.3, type: 'broadleaf' },
+      { pos: [128, 4.0, 35], s: 1.4, type: 'pine' },
     ];
     outerValley.forEach((p, idx) => list.push({ ...p, key: `ov_${idx}` }));
 
-    // ── 5. Southern Foreground Meadow (Z = 52 to 74) ──
+    // ── 5. Southern Foreground Meadow (Behind Start/Finish Straight, Z = 82 to 96) ──
     const southMeadow = [
-      { pos: [-28, 0.8, 56], s: 1.05, type: 'pine' },
-      { pos: [-16, 0.4, 54], s: 0.9, type: 'broadleaf' },
-      { pos: [16, 0.4, 54], s: 0.9, type: 'broadleaf' },
-      { pos: [28, 0.8, 56], s: 1.05, type: 'pine' },
-      { pos: [-40, 1.5, 66], s: 1.3, type: 'pine' },
-      { pos: [40, 1.5, 66], s: 1.3, type: 'pine' },
+      { pos: [-28, 1.2, 84], s: 1.1, type: 'pine' },
+      { pos: [-16, 0.8, 86], s: 0.95, type: 'broadleaf' },
+      { pos: [16, 0.8, 86], s: 0.95, type: 'broadleaf' },
+      { pos: [28, 1.2, 84], s: 1.1, type: 'pine' },
+      { pos: [-44, 2.0, 92], s: 1.35, type: 'pine' },
+      { pos: [44, 2.0, 92], s: 1.35, type: 'pine' },
     ];
     southMeadow.forEach((p, idx) => list.push({ ...p, key: `sm_${idx}` }));
 
@@ -1306,14 +1375,12 @@ function DenseNaturalForests() {
 
   const bushes = useMemo(() => {
     return [
-      // Trackside flowering shrubs along outer rim
-      { pos: [-46, 0.05, -15], s: 1.0, f: '#fbbf24' },
-      { pos: [-47, 0.05, 12], s: 1.1, f: '#f43f5e' },
-      { pos: [46, 0.05, -15], s: 1.0, f: '#38bdf8' },
-      { pos: [47, 0.05, 12], s: 1.1, f: '#fbbf24' },
-      { pos: [-22, 0.05, 49], s: 0.9, f: '#f43f5e' },
-      { pos: [22, 0.05, 49], s: 0.9, f: '#38bdf8' },
-      // Central infield shrubs
+      // Trackside flowering shrubs along outer verge
+      { pos: [-48, 0.05, 80], s: 1.0, f: '#fbbf24' },
+      { pos: [48, 0.05, 80], s: 1.1, f: '#f43f5e' },
+      { pos: [-18, 0.05, 80], s: 0.9, f: '#38bdf8' },
+      { pos: [18, 0.05, 80], s: 0.9, f: '#fbbf24' },
+      // Central infield park shrubs
       { pos: [-8, 0.02, 11], s: 0.8, f: '#fbbf24' },
       { pos: [9, 0.02, 10], s: 0.85, f: '#f43f5e' },
       { pos: [10, 0.02, -8], s: 0.8, f: '#38bdf8' },
@@ -1339,70 +1406,104 @@ function DenseNaturalForests() {
 
 /* ─────────────────────────────────────────────────────────────────
    TRACKSIDE TIMBER FENCING, STONE BRIDGE, AND EVENT BANNERS
-   Continuous rustic timber guard fence (Prompt 2 reference) and stone bridge.
+   Continuous rustic timber guard fence along the F1 track, and stone bridge.
 ───────────────────────────────────────────────────────────────── */
 function TracksideFencingAndProps() {
-  const outerFencePosts = useMemo(() => {
-    const posts = [];
-    const count = 48;
-    const r = 47.6;
+  const { outerFencePosts, infieldFencePosts, fenceRailsGeom } = useMemo(() => {
+    const oPosts = [];
+    const iPosts = [];
+    const count = 64;
+    const outerOffset = 9.7;
+    const innerOffset = -9.7;
+
     for (let i = 0; i < count; i++) {
-      const theta = (i / count) * Math.PI * 2;
-      const diffFromStart = Math.abs(theta - TRACK_CONFIG.startAngle);
-      if (diffFromStart > 0.08 && Math.abs(diffFromStart - Math.PI * 2) > 0.08) {
-        posts.push({
-          x: r * Math.sin(theta),
-          z: r * Math.cos(theta),
-          ang: theta,
-        });
+      const t = i / count;
+      // Skip posts right at the start gantry arch (t near 0)
+      if (t > 0.03 && t < 0.97) {
+        const pt = CENTRE_SPLINE.getPoint(t);
+        const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+        const nx = -tangent.z;
+        const nz = tangent.x;
+
+        oPosts.push({ x: pt.x + nx * outerOffset, z: pt.z + nz * outerOffset });
+        iPosts.push({ x: pt.x + nx * innerOffset, z: pt.z + nz * innerOffset });
       }
     }
-    return posts;
-  }, []);
 
-  const outerFenceRails = useMemo(() => {
-    const r = 47.6;
-    const geom1 = new THREE.TorusGeometry(r, 0.05, 6, 96);
-    geom1.rotateX(Math.PI / 2);
-    const geom2 = new THREE.TorusGeometry(r, 0.05, 6, 96);
-    geom2.rotateX(Math.PI / 2);
-    return { geom1, geom2 };
-  }, []);
+    // Build continuous rail ribbon geometries along outer and inner perimeters
+    const geom = new THREE.BufferGeometry();
+    const positions = [];
+    const normals = [];
+    const indices = [];
+    const steps = 180;
+    let vOffset = 0;
 
-  const infieldFencePosts = useMemo(() => {
-    const posts = [];
-    const count = 36;
-    const r = 28.5;
-    for (let i = 0; i < count; i++) {
-      const theta = (i / count) * Math.PI * 2;
-      const diffFromStart = Math.abs(theta - TRACK_CONFIG.startAngle);
-      if (diffFromStart > 0.1 && Math.abs(diffFromStart - Math.PI * 2) > 0.1) {
-        posts.push({
-          x: r * Math.sin(theta),
-          z: r * Math.cos(theta),
-        });
+    const railConfigs = [
+      { offset: outerOffset, y: 0.5 },
+      { offset: outerOffset, y: 1.05 },
+      { offset: innerOffset, y: 0.45 },
+    ];
+
+    railConfigs.forEach(({ offset, y }) => {
+      for (let s = 0; s <= steps; s++) {
+        const t = (s % steps) / steps;
+        const pt = CENTRE_SPLINE.getPoint(t);
+        const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+        const nx = -tangent.z;
+        const nz = tangent.x;
+
+        positions.push(pt.x + nx * (offset - 0.05), y, pt.z + nz * (offset - 0.05));
+        normals.push(0, 1, 0);
+        positions.push(pt.x + nx * (offset + 0.05), y, pt.z + nz * (offset + 0.05));
+        normals.push(0, 1, 0);
+
+        if (s < steps) {
+          const v0 = vOffset + s * 2;
+          const v1 = vOffset + s * 2 + 1;
+          const v2 = vOffset + (s + 1) * 2;
+          const v3 = vOffset + (s + 1) * 2 + 1;
+          indices.push(v0, v2, v1);
+          indices.push(v1, v2, v3);
+        }
       }
-    }
-    return posts;
+      vOffset += (steps + 1) * 2;
+    });
+
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geom.setIndex(indices);
+
+    return { outerFencePosts: oPosts, infieldFencePosts: iPosts, fenceRailsGeom: geom };
+  }, []);
+
+  const bannerFlags = useMemo(() => {
+    const fractions = [0.12, 0.25, 0.38, 0.50, 0.62, 0.75, 0.88];
+    const colors = ['#3b82f6', '#ef4444', '#eab308', '#10b981', '#8b5cf6', '#f97316', '#06b6d4'];
+    return fractions.map((frac, idx) => {
+      const pt = CENTRE_SPLINE.getPoint(frac);
+      const tangent = CENTRE_SPLINE.getTangent(frac).normalize();
+      const nx = -tangent.z;
+      const nz = tangent.x;
+      return {
+        x: pt.x + nx * 10.8,
+        z: pt.z + nz * 10.8,
+        heading: Math.atan2(tangent.x, tangent.z),
+        color: colors[idx % colors.length],
+      };
+    });
   }, []);
 
   return (
     <group>
-      {/* ── 1. Outer Rustic Timber Guard Fence (Prompt 2 Match) ── */}
+      {/* ── 1. Outer Rustic Timber Guard Fence Posts ── */}
       {outerFencePosts.map((p, i) => (
         <mesh key={i} position={[p.x, 0.65, p.z]} castShadow>
           <cylinderGeometry args={[0.11, 0.13, 1.3, 6]} />
           <meshStandardMaterial color="#78350f" roughness={0.9} />
         </mesh>
       ))}
-      <mesh geometry={outerFenceRails.geom1} position={[0, 0.5, 0]}>
-        <meshStandardMaterial color="#854d0e" roughness={0.88} />
-      </mesh>
-      <mesh geometry={outerFenceRails.geom2} position={[0, 1.05, 0]}>
-        <meshStandardMaterial color="#854d0e" roughness={0.88} />
-      </mesh>
 
-      {/* ── 2. Infield Low Timber Perimeter Barrier ── */}
+      {/* ── 2. Infield Low Timber Posts ── */}
       {infieldFencePosts.map((p, i) => (
         <mesh key={i} position={[p.x, 0.45, p.z]} castShadow>
           <cylinderGeometry args={[0.08, 0.1, 0.9, 6]} />
@@ -1410,8 +1511,13 @@ function TracksideFencingAndProps() {
         </mesh>
       ))}
 
-      {/* ── 3. Rustic Stone Arch Bridge crossing the Valley Inlet (Prompt 2) ── */}
-      <group position={[32.0, 0.4, -45.0]} rotation={[0, -0.4, 0]}>
+      {/* ── 3. Continuous Horizontal Rails ── */}
+      <mesh geometry={fenceRailsGeom}>
+        <meshStandardMaterial color="#854d0e" roughness={0.88} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* ── 4. Rustic Stone Arch Bridge crossing near the Lake Inlet ── */}
+      <group position={[32.0, 0.4, -38.0]} rotation={[0, -0.2, 0]}>
         <mesh position={[0, 0.6, 0]} castShadow receiveShadow>
           <boxGeometry args={[4.2, 0.5, 12.0]} />
           <meshStandardMaterial color="#94a3b8" roughness={0.85} />
@@ -1434,83 +1540,211 @@ function TracksideFencingAndProps() {
         </mesh>
       </group>
 
-      {/* ── 4. Festive Circuit Pennant Flags & Banner Poles ── */}
-      {[
-        { theta: 0.8, color: '#3b82f6' },
-        { theta: 1.6, color: '#ef4444' },
-        { theta: 2.4, color: '#eab308' },
-        { theta: 3.2, color: '#10b981' },
-        { theta: 4.0, color: '#8b5cf6' },
-        { theta: 4.8, color: '#f97316' },
-        { theta: 5.6, color: '#06b6d4' },
-      ].map((flag, idx) => {
-        const r = 48.8;
-        const fx = r * Math.sin(flag.theta);
-        const fz = r * Math.cos(flag.theta);
-        return (
-          <group key={idx} position={[fx, 0, fz]}>
-            <mesh position={[0, 2.8, 0]} castShadow>
-              <cylinderGeometry args={[0.07, 0.09, 5.6, 6]} />
-              <meshStandardMaterial color="#cbd5e1" metalness={0.7} roughness={0.3} />
-            </mesh>
-            <mesh position={[0.7, 5.0, 0]} rotation={[0, flag.theta, 0]}>
-              <planeGeometry args={[1.3, 0.8]} />
-              <meshStandardMaterial
-                color={flag.color}
-                roughness={0.5}
-                side={THREE.DoubleSide}
-              />
-            </mesh>
-          </group>
-        );
-      })}
+      {/* ── 5. Festive Circuit Pennant Flags & Banner Poles ── */}
+      {bannerFlags.map((flag, idx) => (
+        <group key={idx} position={[flag.x, 0, flag.z]}>
+          <mesh position={[0, 2.8, 0]} castShadow>
+            <cylinderGeometry args={[0.07, 0.09, 5.6, 6]} />
+            <meshStandardMaterial color="#cbd5e1" metalness={0.7} roughness={0.3} />
+          </mesh>
+          <mesh position={[0.7, 5.0, 0]} rotation={[0, flag.heading, 0]}>
+            <planeGeometry args={[1.3, 0.8]} />
+            <meshStandardMaterial color={flag.color} roughness={0.5} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   COMPLETE 3D CIRCULAR RACING CIRCUIT GEOMETRY
+   COMPLETE 3D F1 RACING CIRCUIT GEOMETRY
    Preserves all 8 lanes, kerbs, checkered start line, and gantry arch.
 ───────────────────────────────────────────────────────────────── */
 function CircularRaceCircuit() {
-  const { innerRadius, outerRadius, laneWidth, laneCount } = TRACK_CONFIG;
+  const { laneWidth, laneCount } = TRACK_CONFIG;
+  const trackSpan = laneCount * laneWidth; // 16.0
 
-  // Track surface ring
+  // 1. 8-lane asphalt track bed geometry
   const trackBedGeom = useMemo(() => {
-    const geom = new THREE.RingGeometry(innerRadius, outerRadius, 128);
-    geom.rotateX(-Math.PI / 2);
-    return geom;
-  }, [innerRadius, outerRadius]);
+    const geom = new THREE.BufferGeometry();
+    const positions = [];
+    const uvs = [];
+    const normals = [];
+    const indices = [];
+    const halfWidth = trackSpan * 0.5; // 8.0
+    const steps = 360;
 
-  // 9 white lane boundary rings (7 inner dividers + 2 outer boundaries)
-  const laneDividerGeometries = useMemo(() => {
-    const rings = [];
-    for (let i = 0; i <= laneCount; i++) {
-      const r = innerRadius + i * laneWidth;
-      const isBoundary = i === 0 || i === laneCount;
-      const thickness = isBoundary ? 0.14 : 0.08;
-      const geom = new THREE.RingGeometry(r - thickness / 2, r + thickness / 2, 128);
-      geom.rotateX(-Math.PI / 2);
-      rings.push({ geom, isBoundary });
+    for (let i = 0; i <= steps; i++) {
+      const t = (i % steps) / steps;
+      const pt = CENTRE_SPLINE.getPoint(t);
+      const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+      const nx = -tangent.z;
+      const nz = tangent.x;
+
+      positions.push(pt.x - nx * halfWidth, 0.02, pt.z - nz * halfWidth);
+      normals.push(0, 1, 0);
+      uvs.push(0, (i / steps) * 40);
+
+      positions.push(pt.x + nx * halfWidth, 0.02, pt.z + nz * halfWidth);
+      normals.push(0, 1, 0);
+      uvs.push(1, (i / steps) * 40);
+
+      if (i < steps) {
+        const v0 = i * 2;
+        const v1 = i * 2 + 1;
+        const v2 = (i + 1) * 2;
+        const v3 = (i + 1) * 2 + 1;
+        indices.push(v0, v2, v1);
+        indices.push(v1, v2, v3);
+      }
     }
-    return rings;
-  }, [innerRadius, laneCount, laneWidth]);
 
-  // Inner and Outer alternating red-and-white kerbs
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    return geom;
+  }, [trackSpan]);
+
+  // 2. 9 white lane boundary divider lines
+  const laneDividerGeom = useMemo(() => {
+    const geom = new THREE.BufferGeometry();
+    const positions = [];
+    const normals = [];
+    const indices = [];
+    const halfWidth = trackSpan * 0.5;
+    const steps = 360;
+
+    let vertexOffset = 0;
+    for (let line = 0; line <= laneCount; line++) {
+      const isBoundary = line === 0 || line === laneCount;
+      const thickness = isBoundary ? 0.14 : 0.08;
+      const offset = -halfWidth + line * laneWidth;
+
+      for (let i = 0; i <= steps; i++) {
+        const t = (i % steps) / steps;
+        const pt = CENTRE_SPLINE.getPoint(t);
+        const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+        const nx = -tangent.z;
+        const nz = tangent.x;
+
+        positions.push(pt.x + nx * (offset - thickness * 0.5), 0.026, pt.z + nz * (offset - thickness * 0.5));
+        normals.push(0, 1, 0);
+
+        positions.push(pt.x + nx * (offset + thickness * 0.5), 0.026, pt.z + nz * (offset + thickness * 0.5));
+        normals.push(0, 1, 0);
+
+        if (i < steps) {
+          const v0 = vertexOffset + i * 2;
+          const v1 = vertexOffset + i * 2 + 1;
+          const v2 = vertexOffset + (i + 1) * 2;
+          const v3 = vertexOffset + (i + 1) * 2 + 1;
+          indices.push(v0, v2, v1);
+          indices.push(v1, v2, v3);
+        }
+      }
+      vertexOffset += (steps + 1) * 2;
+    }
+
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geom.setIndex(indices);
+    return geom;
+  }, [laneCount, laneWidth, trackSpan]);
+
+  // 3. Inner and Outer alternating red-and-white kerbs
   const innerKerbGeom = useMemo(() => {
-    return createAlternatingKerbGeometry(innerRadius - 1.35, innerRadius, 64);
-  }, [innerRadius]);
+    const geom = new THREE.BufferGeometry();
+    const positions = [];
+    const colors = [];
+    const normals = [];
+    const indices = [];
+    const steps = 360;
+    const halfWidth = trackSpan * 0.5;
+    const kerbW = 1.35;
+    const red = new THREE.Color('#e11d48');
+    const white = new THREE.Color('#ffffff');
+
+    for (let i = 0; i <= steps; i++) {
+      const t = (i % steps) / steps;
+      const pt = CENTRE_SPLINE.getPoint(t);
+      const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+      const nx = -tangent.z;
+      const nz = tangent.x;
+
+      positions.push(pt.x - nx * (halfWidth + kerbW), 0.03, pt.z - nz * (halfWidth + kerbW));
+      normals.push(0, 1, 0);
+      positions.push(pt.x - nx * halfWidth, 0.03, pt.z - nz * halfWidth);
+      normals.push(0, 1, 0);
+
+      const col = Math.floor(i / 3) % 2 === 0 ? red : white;
+      colors.push(col.r, col.g, col.b, col.r, col.g, col.b);
+
+      if (i < steps) {
+        const v0 = i * 2;
+        const v1 = i * 2 + 1;
+        const v2 = (i + 1) * 2;
+        const v3 = (i + 1) * 2 + 1;
+        indices.push(v0, v2, v1);
+        indices.push(v1, v2, v3);
+      }
+    }
+
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geom.setIndex(indices);
+    return geom;
+  }, [trackSpan]);
 
   const outerKerbGeom = useMemo(() => {
-    return createAlternatingKerbGeometry(outerRadius, outerRadius + 1.35, 64);
-  }, [outerRadius]);
+    const geom = new THREE.BufferGeometry();
+    const positions = [];
+    const colors = [];
+    const normals = [];
+    const indices = [];
+    const steps = 360;
+    const halfWidth = trackSpan * 0.5;
+    const kerbW = 1.35;
+    const red = new THREE.Color('#e11d48');
+    const white = new THREE.Color('#ffffff');
+
+    for (let i = 0; i <= steps; i++) {
+      const t = (i % steps) / steps;
+      const pt = CENTRE_SPLINE.getPoint(t);
+      const tangent = CENTRE_SPLINE.getTangent(t).normalize();
+      const nx = -tangent.z;
+      const nz = tangent.x;
+
+      positions.push(pt.x + nx * halfWidth, 0.03, pt.z + nz * halfWidth);
+      normals.push(0, 1, 0);
+      positions.push(pt.x + nx * (halfWidth + kerbW), 0.03, pt.z + nz * (halfWidth + kerbW));
+      normals.push(0, 1, 0);
+
+      const col = Math.floor(i / 3) % 2 === 0 ? red : white;
+      colors.push(col.r, col.g, col.b, col.r, col.g, col.b);
+
+      if (i < steps) {
+        const v0 = i * 2;
+        const v1 = i * 2 + 1;
+        const v2 = (i + 1) * 2;
+        const v3 = (i + 1) * 2 + 1;
+        indices.push(v0, v2, v1);
+        indices.push(v1, v2, v3);
+      }
+    }
+
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geom.setIndex(indices);
+    return geom;
+  }, [trackSpan]);
 
   // Textures
   const checkeredTexture = useMemo(() => createCheckeredStartTexture(), []);
   const bannerTexture = useMemo(() => createBannerTexture(), []);
-
-  const midRadius = (innerRadius + outerRadius) / 2; // 38.0
-  const trackSpan = outerRadius - innerRadius; // 16.0
 
   return (
     <group>
@@ -1525,18 +1759,14 @@ function CircularRaceCircuit() {
       </mesh>
 
       {/* ── 2. EIGHT PARALLEL RUNNING LANES WITH WHITE MARKINGS ── */}
-      <group position={[0, 0.026, 0]}>
-        {laneDividerGeometries.map(({ geom, isBoundary }, idx) => (
-          <mesh key={idx} geometry={geom}>
-            <meshStandardMaterial
-              color="#ffffff"
-              roughness={0.4}
-              metalness={0.1}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-        ))}
-      </group>
+      <mesh geometry={laneDividerGeom} position={[0, 0.026, 0]}>
+        <meshStandardMaterial
+          color="#ffffff"
+          roughness={0.4}
+          metalness={0.1}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
 
       {/* ── 3. INNER & OUTER RED/WHITE RUMBLE STRIP KERBS ── */}
       <mesh geometry={innerKerbGeom} position={[0, 0.03, 0]} receiveShadow>
@@ -1548,10 +1778,10 @@ function CircularRaceCircuit() {
 
       {/* ── 4. CHECKERED START / FINISH LINE GROUND MARKING ── */}
       <mesh
-        position={[0, 0.035, midRadius]}
-        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+        position={[0, 0.035, 62.0]}
+        rotation={[-Math.PI / 2, 0, 0]}
       >
-        <planeGeometry args={[trackSpan, 3.8]} />
+        <planeGeometry args={[3.8, trackSpan]} />
         <meshStandardMaterial
           map={checkeredTexture}
           roughness={0.4}
@@ -1561,9 +1791,9 @@ function CircularRaceCircuit() {
       </mesh>
 
       {/* ── 5. GRAND START / FINISH ARCH & GANTRY ("DSA RACE ARENA") ── */}
-      <group position={[0, 0, midRadius]}>
-        {/* Inner Arch Pylon Tower (positioned safely on inner curb at Z = -trackSpan/2 - 1.2) */}
-        <group position={[0, 0, -trackSpan / 2 - 1.2]}>
+      <group position={[0, 0, 62.0]}>
+        {/* Inner Arch Pylon Tower (positioned safely on inner curb at Z = -trackSpan/2 - 1.4) */}
+        <group position={[0, 0, -trackSpan / 2 - 1.4]}>
           <mesh position={[0, 4.5, 0]} castShadow>
             <cylinderGeometry args={[0.65, 0.85, 9.0, 12]} />
             <meshStandardMaterial color="#1e3a8a" roughness={0.4} metalness={0.6} />
@@ -1578,8 +1808,8 @@ function CircularRaceCircuit() {
           </mesh>
         </group>
 
-        {/* Outer Arch Pylon Tower (positioned safely on outer curb at Z = +trackSpan/2 + 1.2) */}
-        <group position={[0, 0, trackSpan / 2 + 1.2]}>
+        {/* Outer Arch Pylon Tower (positioned safely on outer curb at Z = +trackSpan/2 + 1.4) */}
+        <group position={[0, 0, trackSpan / 2 + 1.4]}>
           <mesh position={[0, 4.5, 0]} castShadow>
             <cylinderGeometry args={[0.65, 0.85, 9.0, 12]} />
             <meshStandardMaterial color="#1e3a8a" roughness={0.4} metalness={0.6} />
@@ -1746,24 +1976,22 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     userInteractingRef.current = false;
     if (controlsRef.current) {
       if (cameraMode === 'broadcast') {
-        controlsRef.current.target.set(0, 5.0, -10.0);
-        camera.position.set(0.0, 34.0, 68.0);
+        controlsRef.current.target.set(0, 6.0, 15.0);
+        camera.position.set(0.0, 75.0, 140.0);
         controlsRef.current.update();
       } else if (cameraMode === 'leader' && targetMember) {
         const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
         const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
         const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
-        const theta = TRACK_CONFIG.startAngle + prog * Math.PI * 2;
-        const camTheta = theta - 0.25;
-        const camR = TRACK_CONFIG.getLaneRadius(lane) + 6.0;
-        const camX = camR * Math.sin(camTheta);
-        const camZ = camR * Math.cos(camTheta);
-        camera.position.set(camX, Math.max(3.5, ty + 4.5), camZ);
-        controlsRef.current.target.set(tx, ty + 1.2, tz);
+        const heading = getCircularRacerHeading(prog);
+        const forwardX = Math.sin(heading);
+        const forwardZ = Math.cos(heading);
+        camera.position.set(tx - forwardX * 15.0, Math.max(4.5, ty + 6.5), tz - forwardZ * 15.0);
+        controlsRef.current.target.set(tx, ty + 1.4, tz);
         controlsRef.current.update();
       } else if (cameraMode === 'orbit') {
-        controlsRef.current.target.set(0, 4.0, 0);
-        camera.position.set(0.0, 42.0, 78.0);
+        controlsRef.current.target.set(0, 6.0, 15.0);
+        camera.position.set(0.0, 95.0, 160.0);
         controlsRef.current.update();
       }
     }
@@ -1785,8 +2013,8 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
     resetView: () => {
       userInteractingRef.current = false;
       if (controlsRef.current) {
-        controlsRef.current.target.set(0, 5.0, -10.0);
-        camera.position.set(0.0, 34.0, 68.0);
+        controlsRef.current.target.set(0, 6.0, 15.0);
+        camera.position.set(0.0, 75.0, 140.0);
         controlsRef.current.update();
       }
     },
@@ -1797,8 +2025,11 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
         const prog = typeof m.progress === 'number' ? m.progress : 0;
         const lane = typeof m.laneIndex === 'number' ? m.laneIndex : 0;
         const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
-        controlsRef.current.target.set(tx, ty + 1.2, tz);
-        camera.position.set(tx * 1.25, ty + 6.0, tz * 1.25);
+        const heading = getCircularRacerHeading(prog);
+        const forwardX = Math.sin(heading);
+        const forwardZ = Math.cos(heading);
+        controlsRef.current.target.set(tx, ty + 1.4, tz);
+        camera.position.set(tx - forwardX * 12.0, ty + 5.5, tz - forwardZ * 12.0);
         controlsRef.current.update();
       }
     },
@@ -1811,22 +2042,21 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
       const prog = typeof targetMember.progress === 'number' ? targetMember.progress : 0;
       const lane = typeof targetMember.laneIndex === 'number' ? targetMember.laneIndex : 0;
       const [tx, ty, tz] = getCircularRacerPosition(prog, lane);
+      const heading = getCircularRacerHeading(prog);
+      const forwardX = Math.sin(heading);
+      const forwardZ = Math.cos(heading);
+      const camX = tx - forwardX * 15.0;
+      const camY = Math.max(4.5, ty + 6.5);
+      const camZ = tz - forwardZ * 15.0;
 
-      const theta = TRACK_CONFIG.startAngle + prog * Math.PI * 2;
-      const camTheta = theta - 0.25;
-      const camR = TRACK_CONFIG.getLaneRadius(lane) + 6.0;
-      const camX = camR * Math.sin(camTheta);
-      const camZ = camR * Math.cos(camTheta);
-      const camY = Math.max(3.5, ty + 4.5);
-
-      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camX, delta * 2.8);
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, camY, delta * 2.5);
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, camZ, delta * 2.8);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, camX, delta * 3.0);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, camY, delta * 2.8);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, camZ, delta * 3.0);
 
       if (controlsRef.current) {
-        controlsRef.current.target.x = THREE.MathUtils.lerp(controlsRef.current.target.x, tx, delta * 3.0);
-        controlsRef.current.target.y = THREE.MathUtils.lerp(controlsRef.current.target.y, ty + 1.2, delta * 2.5);
-        controlsRef.current.target.z = THREE.MathUtils.lerp(controlsRef.current.target.z, tz, delta * 3.0);
+        controlsRef.current.target.x = THREE.MathUtils.lerp(controlsRef.current.target.x, tx, delta * 3.5);
+        controlsRef.current.target.y = THREE.MathUtils.lerp(controlsRef.current.target.y, ty + 1.4, delta * 3.0);
+        controlsRef.current.target.z = THREE.MathUtils.lerp(controlsRef.current.target.z, tz, delta * 3.5);
         controlsRef.current.update();
       }
     }
@@ -1839,7 +2069,7 @@ const SideScrollCamera = forwardRef(function SideScrollCamera(
       enableDamping={true}
       dampingFactor={0.08}
       minDistance={6}
-      maxDistance={220}
+      maxDistance={450}
       minPolarAngle={Math.PI / 16}
       maxPolarAngle={Math.PI / 2 - 0.02}
       screenSpacePanning={true}
@@ -1983,7 +2213,7 @@ const RaceArena = forwardRef(function RaceArena(
   return (
     <div className="race-arena-root" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
       <Canvas
-        camera={{ position: [0.0, 34.0, 68.0], fov: 45, near: 0.5, far: 550 }}
+        camera={{ position: [0.0, 75.0, 140.0], fov: 45, near: 0.5, far: 550 }}
         dpr={Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 1.5)}
         gl={{ antialias: true, powerPreference: 'default' }}
         onCreated={({ gl }) => {
