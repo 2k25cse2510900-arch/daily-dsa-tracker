@@ -446,6 +446,7 @@ function ArenaRacer({ racer, reducedMotion, onFocus }) {
 
     const t = clock.getElapsedTime();
     const strideBob = reducedMotion ? 0 : Math.abs(Math.sin(t * 11 + laneIndex)) * 0.08;
+    const stridePhase = reducedMotion ? 0 : Math.sin(t * 11 + laneIndex) * 0.04;
 
     // Superman elevated flight clearance (tested in superman.test.js)
     const isSuperman = characterData?.id === 'superman';
@@ -453,7 +454,11 @@ function ArenaRacer({ racer, reducedMotion, onFocus }) {
       ? 1.25 + (reducedMotion ? 0 : Math.sin(t * 3.2 + laneIndex) * 0.08)
       : 0.06 + strideBob;
 
-    groupRef.current.position.set(posX, posY + verticalElevation, posZ);
+    // Subtle physical stride motion along tangent
+    const dynamicX = posX + (isSuperman ? 0 : Math.cos(heading) * stridePhase);
+    const dynamicZ = posZ - (isSuperman ? 0 : Math.sin(heading) * stridePhase);
+
+    groupRef.current.position.set(dynamicX, posY + verticalElevation, dynamicZ);
 
     const flightBank = isSuperman && !reducedMotion ? Math.sin(t * 2.8 + laneIndex) * 0.08 : 0;
     groupRef.current.rotation.set(flightBank, heading, 0);
@@ -766,17 +771,22 @@ function CircularRaceCircuit() {
           <meshStandardMaterial color="#0f172a" roughness={0.3} metalness={0.8} />
         </mesh>
 
-        {/* Overhead "DSA RACE ARENA" Banner Plates (facing both directions) */}
+        {/* Overhead "DSA RACE ARENA" Banner Plates (facing runner approach, exit, and overhead broadcast) */}
         {bannerTexture && (
           <group position={[0, 8.5, 0]}>
-            {/* Front facing (+X / camera) */}
+            {/* Front facing (+X / runner approach) */}
             <mesh position={[-0.42, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
               <planeGeometry args={[14.5, 2.2]} />
               <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
             </mesh>
-            {/* Back facing (-X) */}
+            {/* Back facing (-X / runner exit) */}
             <mesh position={[0.42, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
               <planeGeometry args={[14.5, 2.2]} />
+              <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Overhead angled plate (visible from elevated broadcast stadium cameras) */}
+            <mesh position={[0, 0.45, 0]} rotation={[-Math.PI / 3, 0, 0]}>
+              <planeGeometry args={[14.5, 2.0]} />
               <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} />
             </mesh>
           </group>
