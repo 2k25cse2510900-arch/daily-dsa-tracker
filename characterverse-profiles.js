@@ -53,7 +53,8 @@ function starterProfile(memberId, now = new Date()) {
       equippedOutfits: { [DEFAULT_CHARACTER_ID]: "outfit-default" },
       customColors: {},
       equippedVehicleId: null,
-      equippedVehicleUpgrades: {}
+      equippedVehicleUpgrades: {},
+      raceMode: "character"
     },
     createdAt: now,
     updatedAt: now
@@ -92,7 +93,7 @@ function validHex(value) {
 }
 
 function validateAppearance(input, profile) {
-  if (!isPlainObject(input) || Object.keys(input).some(key => !["selectedCharacterId", "equippedCharacterId", "equippedCosmetics", "equippedOutfits", "customColors", "equippedVehicleId", "equippedVehicleUpgrades"].includes(key))) return null;
+  if (!isPlainObject(input) || Object.keys(input).some(key => !["selectedCharacterId", "equippedCharacterId", "equippedCosmetics", "equippedOutfits", "customColors", "equippedVehicleId", "equippedVehicleUpgrades", "raceMode"].includes(key))) return null;
   const appearance = { ...profile.appearance };
   const ownedCharacters = new Set(profile.inventory?.characters || []);
   const ownedCosmetics = new Set(profile.inventory?.cosmetics || []);
@@ -100,9 +101,11 @@ function validateAppearance(input, profile) {
   const ownedVehicles = new Set(profile.inventory?.vehicles || []);
   const ownedUpgrades = new Set(profile.inventory?.vehicleUpgrades || []);
 
+  const isAllowedChar = (id) => CHARACTER_IDS.has(id) || ownedCharacters.has(id);
+
   for (const key of ["selectedCharacterId", "equippedCharacterId"]) {
     if (input[key] !== undefined) {
-      if (!CHARACTER_IDS.has(input[key]) || !ownedCharacters.has(input[key])) return null;
+      if (!isAllowedChar(input[key]) || !ownedCharacters.has(input[key])) return null;
       appearance[key] = input[key];
     }
   }
@@ -114,7 +117,8 @@ function validateAppearance(input, profile) {
       if (appearance.equippedCosmetics?.[charId]) next[charId] = appearance.equippedCosmetics[charId];
     }
     for (const [characterId, slots] of Object.entries(input.equippedCosmetics)) {
-      if (!CHARACTER_IDS.has(characterId) || !isPlainObject(slots) || Object.keys(slots).some(slot => !EQUIPMENT_SLOTS.has(slot))) return null;
+      if (!isAllowedChar(characterId)) continue;
+      if (!isPlainObject(slots) || Object.keys(slots).some(slot => !EQUIPMENT_SLOTS.has(slot))) return null;
       for (const [slot, itemId] of Object.entries(slots)) {
         if (itemId !== null && (!COSMETIC_IDS.has(itemId) || !ownedCosmetics.has(itemId))) return null;
       }
@@ -134,7 +138,7 @@ function validateAppearance(input, profile) {
       if (appearance.equippedOutfits?.[charId]) next[charId] = appearance.equippedOutfits[charId];
     }
     for (const [characterId, outfitId] of Object.entries(input.equippedOutfits)) {
-      if (!CHARACTER_IDS.has(characterId)) return null;
+      if (!isAllowedChar(characterId)) continue;
       if (characterId === "superman" && outfitId !== null && outfitId !== "outfit-default") return null;
       if (outfitId !== null && (!OUTFIT_IDS.has(outfitId) || !ownedOutfits.has(outfitId))) return null;
       if (!ownedCharacters.has(characterId)) continue;
@@ -150,7 +154,8 @@ function validateAppearance(input, profile) {
       if (appearance.customColors?.[charId]) next[charId] = appearance.customColors[charId];
     }
     for (const [characterId, colors] of Object.entries(input.customColors)) {
-      if (!CHARACTER_IDS.has(characterId) || !isPlainObject(colors) || Object.keys(colors).some(key => !COLOR_KEYS.has(key) || !validHex(colors[key]))) return null;
+      if (!isAllowedChar(characterId)) continue;
+      if (!isPlainObject(colors) || Object.keys(colors).some(key => !COLOR_KEYS.has(key) || !validHex(colors[key]))) return null;
       if (!ownedCharacters.has(characterId)) continue;
       next[characterId] = colors;
     }
@@ -169,6 +174,16 @@ function validateAppearance(input, profile) {
       next[vehicleId] = upgradeId;
     }
     appearance.equippedVehicleUpgrades = next;
+  }
+  if (input.raceMode !== undefined) {
+    if (input.raceMode !== "character" && input.raceMode !== "vehicle") return null;
+    if (input.raceMode === "vehicle") {
+      const targetVehicleId = input.equippedVehicleId !== undefined ? input.equippedVehicleId : appearance.equippedVehicleId;
+      const hasValidVehicle = Boolean(targetVehicleId && ownedVehicles.has(targetVehicleId));
+      appearance.raceMode = hasValidVehicle ? "vehicle" : "character";
+    } else {
+      appearance.raceMode = "character";
+    }
   }
   return appearance;
 }

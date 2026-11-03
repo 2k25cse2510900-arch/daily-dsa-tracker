@@ -106,6 +106,17 @@
 
         <div class="stats-grid" id="statsGrid"></div>
 
+        <section class="panel group-management-panel" id="groupManagementPanel" aria-labelledby="groupManagementTitle" hidden>
+          <div class="panel-heading"><div><h3 id="groupManagementTitle">My groups</h3><p id="groupManagementSubtitle">Create a learning group or request to join one with an invitation code.</p></div><span class="tiny-tag">GROUPS</span></div>
+          <p id="groupManagementMessage" class="group-management-message" role="status"></p>
+          <div class="group-pending-request-card" id="groupPendingRequestCard" hidden></div>
+          <div class="group-management-forms" id="groupManagementForms">
+            <form id="createGroupForm"><label for="groupNameInput">Option 1: Create a Group<input id="groupNameInput" name="name" minlength="3" maxlength="60" placeholder="Enter group name" required></label><button class="btn btn-primary" type="submit">Create group</button></form>
+            <form id="joinGroupForm"><label for="groupInviteInput">Option 2: Join with Invitation Code<input id="groupInviteInput" name="code" autocomplete="off" placeholder="Paste invitation code" required></label><button class="btn btn-light" type="submit">Request to join</button></form>
+          </div>
+          <div id="groupManagementList" class="group-management-list" aria-live="polite"></div>
+        </section>
+
         <section class="panel arena-achievements-panel" aria-labelledby="arenaAchievementsTitle">
           <div class="panel-heading">
             <div>
@@ -291,10 +302,10 @@
 
           <div class="members-list-heading">
             <div>
-              <h3>DSA Group Members</h3>
+              <h3 id="membersSectionTitle">DSA Group Members</h3>
               <p>Registered members and their roles</p>
             </div>
-            <span class="tiny-tag" id="memberCountTag">8 MEMBERS</span>
+            <span class="tiny-tag" id="memberCountTag">0 MEMBERS</span>
           </div>
 
           <div id="memberManager" class="member-manager"></div>
@@ -478,6 +489,14 @@
         </div>
       </div>
       <p id="memberGroupStatus" class="member-group-status" role="status"></p>
+      <section class="panel daily-workspace-panel" aria-labelledby="dailyWorkspaceTitle">
+        <div class="panel-heading"><div><h2 id="dailyWorkspaceTitle">Daily LeetCode Workspace</h2><p id="dailyWorkspaceDate">Loading today’s activity workspace…</p></div><div class="daily-workspace-actions"><label for="dailyWorkspaceActivityDate">View date<input id="dailyWorkspaceActivityDate" type="date" aria-label="View workspace activity date"></label><button id="dailyWorkspaceSync" class="btn btn-primary" type="button">Sync now</button></div></div>
+        <p id="dailyWorkspaceStatus" class="daily-workspace-status" role="status"></p>
+        <form id="dailyWorkspaceConnectionForm" class="daily-workspace-connection"><label for="dailyWorkspaceUsername">Connected LeetCode username<input id="dailyWorkspaceUsername" maxlength="64" autocomplete="off" placeholder="e.g. leetcode_user"></label><button class="btn btn-light" type="submit">Connect / update</button><button id="dailyWorkspaceDisconnect" class="btn btn-light" type="button" hidden>Disconnect</button></form>
+        <div id="dailyWorkspaceSummary" class="daily-workspace-summary" aria-live="polite"></div>
+        <div id="dailyWorkspaceList" class="daily-workspace-list" aria-live="polite"></div>
+        <p class="daily-workspace-note">Only the latest public LeetCode submission window is available. AI Review will be available in Module 3; no code is collected in this module.</p>
+      </section>
       <section class="member-game-profile" aria-labelledby="memberGameProfileTitle">
         <div class="member-game-copy">
           <span class="member-game-kicker">DSA CHARACTERVERSE</span>
@@ -565,6 +584,431 @@
               <div id="routeProfileCharacterFallback" class="portrait-stage-fallback" hidden role="status">
                 <p id="routeProfileCharacterStatus" class="portrait-fallback-text">Character model is loading...</p>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="leetcode-profile-card profile-daily-section" id="routeProfileDailySection" aria-labelledby="routeProfileDailyTitle">
+        <div class="profile-daily-header">
+          <div class="profile-daily-title-wrap">
+            <span class="profile-daily-kicker">TODAY'S ACTIVITY</span>
+            <h2 id="routeProfileDailyTitle" class="profile-daily-title">Daily LeetCode Activity</h2>
+            <p id="routeProfileDailyDate" class="profile-daily-date">Today's solved and attempted questions</p>
+          </div>
+          <div class="profile-daily-actions">
+            <button id="routeProfileDailySyncBtn" class="btn btn-light profile-daily-sync-btn" type="button">
+              <svg class="profile-sync-icon" viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+                <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+              </svg>
+              Refresh Activity
+            </button>
+          </div>
+        </div>
+        <p id="routeProfileDailyStatus" class="profile-daily-status" role="status" hidden></p>
+        <div id="routeProfileDailyContent" class="profile-daily-content" aria-live="polite"></div>
+      </section>
+    </div>
+  </main>
+
+  <main id="aiMentorPage" class="ai-mentor-page" hidden>
+    <div class="ai-mentor-shell">
+      <!-- Top Navigation & Return -->
+      <div class="mentor-toolbar">
+        <button id="mentorBackToProfile" class="leetcode-profile-back" type="button">
+          &#8592; Back to Profile
+        </button>
+        <div class="mentor-toolbar-meta">
+          <span class="mentor-workspace-kicker">DSAverse AI Code Mentor</span>
+        </div>
+      </div>
+
+      <!-- Problem Header Card -->
+      <header class="mentor-header-card">
+        <div class="mentor-header-info">
+          <div class="mentor-header-tags">
+            <span id="mentorDifficultyBadge" class="badge-difficulty badge-easy">Easy</span>
+            <span id="mentorStatusBadge" class="badge-status status-accepted">Accepted</span>
+            <span id="mentorAttemptsBadge" class="badge-attempts">&#9889; 1 attempt</span>
+            <span id="mentorLangBadge" class="badge-lang">Python 3</span>
+          </div>
+          <h1 id="mentorProblemTitle" class="mentor-problem-title">Two Sum</h1>
+          <p id="mentorProblemMeta" class="mentor-problem-meta">LeetCode Problem #1 &middot; AI Code Mentor Review</p>
+        </div>
+        <div class="mentor-header-controls">
+          <div class="mentor-mode-toggle" role="tablist" aria-label="Learning Mode">
+            <button id="mentorModeNormalBtn" class="mentor-mode-tab active" type="button" role="tab" aria-selected="true" aria-controls="mentorNormalWorkspace">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
+              Normal Mode
+            </button>
+            <button id="mentorModeAnimaticBtn" class="mentor-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="mentorAnimaticWorkspace">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
+              Advanced Animatic Mode
+            </button>
+          </div>
+          <a id="mentorLeetCodeLink" class="btn btn-light mentor-leetcode-link" href="https://leetcode.com/problems/two-sum/" target="_blank" rel="noopener noreferrer">
+            View on LeetCode &#8599;
+          </a>
+        </div>
+      </header>
+
+      <!-- NORMAL MODE WORKSPACE -->
+      <section id="mentorNormalWorkspace" class="mentor-workspace-section" role="tabpanel" aria-labelledby="mentorModeNormalBtn">
+        <div class="mentor-grid">
+          <!-- Left Column: Code Editor & Submission -->
+          <div class="mentor-col-editor">
+            <div class="mentor-card editor-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">CODE INPUT</span>
+                  <h3 class="mentor-card-title">Submitted Solution</h3>
+                </div>
+                <div class="mentor-card-actions">
+                  <label for="mentorLangSelect" class="sr-only">Language</label>
+                  <select id="mentorLangSelect" class="mentor-lang-select" aria-label="Programming Language">
+                    <option value="python3">Python 3</option>
+                    <option value="cpp">C++</option>
+                    <option value="java">Java</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="go">Go</option>
+                    <option value="rust">Rust</option>
+                  </select>
+                  <button id="mentorCopyCodeBtn" class="mentor-btn-icon" type="button" title="Copy code" aria-label="Copy code">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
+                    Copy
+                  </button>
+                  <button id="mentorSampleToggleBtn" class="mentor-btn-sm" type="button">
+                    Load Example
+                  </button>
+                </div>
+              </div>
+
+              <!-- Code Editor Container -->
+              <div class="mentor-editor-container">
+                <div id="mentorLineNumbers" class="mentor-line-numbers" aria-hidden="true">1</div>
+                <textarea id="mentorCodeInput" class="mentor-code-textarea" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Paste or edit solution code here..." aria-label="Code Editor"></textarea>
+              </div>
+
+              <!-- Editor Footer -->
+              <div class="mentor-editor-footer">
+                <div class="mentor-editor-meta">
+                  <span id="mentorCharCount">0 lines &middot; 0 chars</span>
+                  <label class="mentor-retain-option">
+                    <input id="mentorRetainSource" type="checkbox">
+                    <span>Retain code for session</span>
+                  </label>
+                </div>
+                <div class="mentor-editor-btns">
+                  <button id="mentorFindMistakeQuickBtn" class="btn btn-light mentor-mistake-btn" type="button">
+                    &#9888; Find Mistake
+                  </button>
+                  <button id="mentorAnalyzeBtn" class="btn btn-primary" type="button">
+                    &#10024; Get AI Analysis
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Problem Context & Description Box -->
+            <div class="mentor-card mentor-context-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">PROBLEM STATEMENT</span>
+                  <h4 class="mentor-card-subtitle" id="mentorProblemContextTitle">Two Sum</h4>
+                </div>
+              </div>
+              <p id="mentorProblemDescription" class="mentor-context-text">
+                Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice.
+              </p>
+            </div>
+          </div>
+
+          <!-- Right Column: AI Analysis & Guidance -->
+          <div class="mentor-col-analysis">
+            <!-- Quota Bar -->
+            <div class="mentor-quota-status-bar">
+              <div class="mentor-quota-info">
+                <span class="mentor-quota-icon">&#129302;</span>
+                <span class="mentor-quota-title">AI Code Mentor Status</span>
+              </div>
+              <span id="mentorQuotaText" class="mentor-quota-badge">10 reviews remaining today &middot; Resets 00:00 IST</span>
+            </div>
+
+            <!-- Learning Action Pills (Table 6.1) -->
+            <div class="mentor-action-bar" role="tablist" aria-label="Analysis perspective">
+              <button class="mentor-action-chip active" type="button" data-mentor-mode="explain">Deep Analysis</button>
+              <button class="mentor-action-chip" type="button" data-mentor-mode="mistake">Find My Mistake</button>
+              <button class="mentor-action-chip" type="button" data-mentor-mode="complexity">Time &amp; Space</button>
+              <button class="mentor-action-chip" type="button" data-mentor-mode="optimize">Optimize Code</button>
+              <button class="mentor-action-chip" type="button" data-mentor-mode="dry-run">Dry Run Trace</button>
+              <button class="mentor-action-chip" type="button" data-mentor-mode="teach">Teach Concept</button>
+              <button class="mentor-action-chip" type="button" data-mentor-mode="hint">Hint</button>
+            </div>
+
+            <!-- Mistake Detection Alert (When applicable) -->
+            <div id="mentorMistakeAlert" class="mentor-alert-card mistake-alert" hidden>
+              <div class="mentor-alert-icon">&#9888;</div>
+              <div class="mentor-alert-content">
+                <h4 class="mentor-alert-title" id="mentorMistakeTitle">Mistake Detected: Self-Pairing Bug</h4>
+                <p id="mentorMistakeDetail" class="mentor-alert-body">
+                  When target = 6 and nums = [3, 2, 4], using the same element index twice returns [0, 0] instead of distinct indices [1, 2].
+                </p>
+                <div class="mentor-alert-fix" id="mentorMistakeFix">
+                  <strong>Recommended fix:</strong> Ensure that the checked complement index is not equal to the current index, or insert elements into the hash map only after checking.
+                </div>
+              </div>
+            </div>
+
+            <!-- Complexity Metrics Grid -->
+            <div class="mentor-complexity-row">
+              <div class="mentor-stat-card">
+                <span class="mentor-stat-label">Time Complexity</span>
+                <strong id="mentorTimeComplexity" class="mentor-stat-value">O(n)</strong>
+                <span id="mentorTimeExplain" class="mentor-stat-sub">Single linear pass through the array</span>
+              </div>
+              <div class="mentor-stat-card">
+                <span class="mentor-stat-label">Space Complexity</span>
+                <strong id="mentorSpaceComplexity" class="mentor-stat-value">O(n)</strong>
+                <span id="mentorSpaceExplain" class="mentor-stat-sub">Auxiliary hash table storing up to n elements</span>
+              </div>
+            </div>
+
+            <!-- Approach Comparison Table -->
+            <div class="mentor-card mentor-table-card">
+              <div class="mentor-card-head">
+                <h4 class="mentor-card-subtitle">Approach Comparison</h4>
+              </div>
+              <div class="mentor-table-wrapper">
+                <table class="mentor-comparison-table">
+                  <thead>
+                    <tr>
+                      <th>Approach</th>
+                      <th>Time Complexity</th>
+                      <th>Space Complexity</th>
+                      <th>Efficiency</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mentorComparisonTableBody">
+                    <tr>
+                      <td><strong>Brute Force</strong> (Nested Loops)</td>
+                      <td><code>O(n&sup2;)</code></td>
+                      <td><code>O(1)</code></td>
+                      <td><span class="badge-status status-attempted">Slow on large inputs</span></td>
+                    </tr>
+                    <tr class="highlight-row">
+                      <td><strong>Hash Map</strong> (One-pass)</td>
+                      <td><code>O(n)</code></td>
+                      <td><code>O(n)</code></td>
+                      <td><span class="badge-status status-accepted">Optimal (Recommended)</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Detailed Analysis Section -->
+            <div class="mentor-card mentor-analysis-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">EDUCATIONAL ANALYSIS</span>
+                  <h4 class="mentor-card-subtitle" id="mentorAnalysisHeading">Algorithm Analysis &amp; Logic</h4>
+                </div>
+              </div>
+              <div id="mentorAnalysisBody" class="mentor-prose">
+                <p>The solution uses an auxiliary hash map (<code>seen</code>) to keep track of previous array elements and their respective indices in single pass.</p>
+                <p>For each element <code>num</code>, we determine the required difference <code>target - num</code>. If this complement was already observed, we have immediately discovered the unique pair whose sum equals the target.</p>
+              </div>
+            </div>
+
+            <!-- Optimized Solution Panel -->
+            <div class="mentor-card mentor-solution-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">OPTIMAL SOLUTION</span>
+                  <h4 class="mentor-card-subtitle" id="mentorOptimalTitle">Optimal One-Pass Hash Table Implementation</h4>
+                </div>
+                <button id="mentorCopyOptimalBtn" class="mentor-btn-icon" type="button" aria-label="Copy optimal code">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
+                  Copy
+                </button>
+              </div>
+              <div class="mentor-code-block-wrap">
+                <pre class="mentor-code-block"><code id="mentorOptimalCode">class Solution:
+    def twoSum(self, nums: list[int], target: int) -> list[int]:
+        seen = {}
+        for i, num in enumerate(nums):
+            complement = target - num
+            if complement in seen:
+                return [seen[complement], i]
+            seen[num] = i
+        return []</code></pre>
+              </div>
+            </div>
+
+            <!-- Final Takeaways Card -->
+            <div class="mentor-card mentor-takeaways-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">KEY TAKEAWAYS</span>
+                  <h4 class="mentor-card-subtitle">DSA Principles to Remember</h4>
+                </div>
+              </div>
+              <ul id="mentorTakeawaysList" class="mentor-takeaways-list">
+                <li><span class="takeaway-bullet">&#10003;</span> <strong>Space-Time Tradeoff:</strong> Trading O(n) memory in a hash map drops time complexity from O(n&sup2;) to O(n).</li>
+                <li><span class="takeaway-bullet">&#10003;</span> <strong>Complement Formula:</strong> Look up <code>target - current</code> to verify pairs in constant O(1) time.</li>
+                <li><span class="takeaway-bullet">&#10003;</span> <strong>Self-Pairing Avoidance:</strong> Query the map before storing the current element to prevent using the same index twice.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADVANCED ANIMATIC MODE WORKSPACE -->
+      <section id="mentorAnimaticWorkspace" class="mentor-workspace-section" role="tabpanel" aria-labelledby="mentorModeAnimaticBtn" hidden>
+        <!-- Mentor Companion Banner -->
+        <div class="animatic-mentor-banner">
+          <div class="animatic-mentor-avatar">
+            <div class="mentor-badge-avatar">&#129302;</div>
+            <div class="animatic-mentor-info">
+              <strong class="animatic-mentor-name">Ada &mdash; DSA AI Mentor</strong>
+              <span class="animatic-mentor-role">Interactive Visual Teaching</span>
+            </div>
+          </div>
+          <div class="animatic-speech-bubble">
+            <span class="speech-bubble-tail" aria-hidden="true"></span>
+            <p id="animaticMentorSpeech" class="animatic-speech-text">
+              "Let's trace how this algorithm navigates memory step by step! Watch how the pointer moves across the array while building the hash map."
+            </p>
+          </div>
+        </div>
+
+        <!-- Central Pedagogical Visualization Stage -->
+        <div class="mentor-card animatic-stage-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">VISUAL STEPPER</span>
+              <h3 class="mentor-card-title" id="animaticStageTitle">Array &amp; Hash Map Execution Trace</h3>
+            </div>
+            <div class="animatic-stage-badges">
+              <span class="badge-tag" id="animaticTargetBadge">Target: 9</span>
+              <span class="badge-tag" id="animaticAlgorithmBadge">Hash Map Algorithm</span>
+            </div>
+          </div>
+
+          <!-- Centered Interactive Visualization Area -->
+          <div class="animatic-canvas-area" id="animaticCanvas">
+            <!-- Array Display -->
+            <div class="animatic-array-container">
+              <span class="animatic-section-label">Input Array (nums)</span>
+              <div class="animatic-array-row" id="animaticArrayRow">
+                <!-- Dynamically populated array blocks -->
+              </div>
+            </div>
+
+            <!-- Computational State / Equation -->
+            <div class="animatic-equation-banner" id="animaticEquation">
+              <span class="equation-label">Current Computation:</span>
+              <code id="animaticFormula" class="equation-formula">complement = target - nums[i] = 9 - 2 = 7</code>
+            </div>
+
+            <!-- Hash Table / Auxiliary Memory Display -->
+            <div class="animatic-memory-container">
+              <span class="animatic-section-label">Auxiliary Memory (seen hash map)</span>
+              <div class="animatic-memory-grid" id="animaticMemoryGrid">
+                <!-- Dynamically populated hash map cells -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Playback Controls Bar -->
+          <div class="animatic-controls-bar">
+            <!-- Progress Bar & Scrubber -->
+            <div class="animatic-scrubber-wrap">
+              <div class="animatic-progress-track" id="animaticProgressTrack">
+                <div id="animaticProgressBar" class="animatic-progress-fill" style="width: 20%;"></div>
+              </div>
+              <div class="animatic-step-indicator">
+                <strong id="animaticStepCounter" class="animatic-step-counter">Step 1 of 5</strong>
+                <span id="animaticStepTitle" class="animatic-step-title">Examine first element</span>
+              </div>
+            </div>
+
+            <!-- Uniform Playback Action Buttons -->
+            <div class="animatic-btn-row">
+              <button id="animaticFirstBtn" class="animatic-btn" type="button" title="First Step" aria-label="First Step">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M15.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 010 1.414zm-6 0a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L5.414 10l4.293 4.293a1 1 0 010 1.414z"/></svg>
+                First
+              </button>
+              <button id="animaticPrevBtn" class="animatic-btn" type="button" title="Previous Step" aria-label="Previous Step">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                Prev
+              </button>
+              <button id="animaticPlayBtn" class="animatic-btn animatic-btn-play" type="button" title="Play animation" aria-label="Play animation">
+                <svg id="animaticPlayIcon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                <span id="animaticPlayLabel">Play</span>
+              </button>
+              <button id="animaticNextBtn" class="animatic-btn" type="button" title="Next Step" aria-label="Next Step">
+                Next
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+              </button>
+              <button id="animaticLastBtn" class="animatic-btn" type="button" title="Last Step" aria-label="Last Step">
+                Last
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M4.293 4.293a1 1 0 011.414 0l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414zm6 0a1 1 0 011.414 0l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414-1.414L14.586 10l-4.293-4.293a1 1 0 010-1.414z"/></svg>
+              </button>
+
+              <div class="animatic-speed-selector" role="group" aria-label="Playback speed">
+                <button class="animatic-speed-btn" type="button" data-speed="0.5">0.5x</button>
+                <button class="animatic-speed-btn active" type="button" data-speed="1">1x</button>
+                <button class="animatic-speed-btn" type="button" data-speed="2">2x</button>
+              </div>
+
+              <button id="animaticResetBtn" class="animatic-btn-subtle" type="button" title="Reset animation">
+                &#8634; Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Aligned Explanation & Live Variable Tracking Grid -->
+        <div class="animatic-details-grid">
+          <!-- Step Narration -->
+          <div class="mentor-card animatic-narration-card">
+            <div class="mentor-card-head">
+              <div class="mentor-card-title-wrap">
+                <span class="mentor-card-kicker">STEP EXPLANATION</span>
+                <h4 class="mentor-card-subtitle" id="animaticNarrationHeading">Step 1: Check Index 0</h4>
+              </div>
+            </div>
+            <p id="animaticNarrationBody" class="animatic-narration-text">
+              Examine the first element at index 0 with value 2. Calculate its complement (9 - 2 = 7). Check if 7 already exists in the hash map.
+            </p>
+          </div>
+
+          <!-- Variable State Tracking Table (Dry-run) -->
+          <div class="mentor-card animatic-vars-card">
+            <div class="mentor-card-head">
+              <div class="mentor-card-title-wrap">
+                <span class="mentor-card-kicker">VARIABLE STATE</span>
+                <h4 class="mentor-card-subtitle">Live Variable Tracking</h4>
+              </div>
+            </div>
+            <div class="mentor-table-wrapper">
+              <table class="mentor-comparison-table animatic-vars-table">
+                <thead>
+                  <tr>
+                    <th>Step</th>
+                    <th>Pointer i</th>
+                    <th>nums[i]</th>
+                    <th>Target</th>
+                    <th>Complement</th>
+                    <th>In Map?</th>
+                    <th>Action Taken</th>
+                  </tr>
+                </thead>
+                <tbody id="animaticVarsTableBody">
+                  <!-- Injected rows with current active highlight -->
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

@@ -47,9 +47,21 @@ function buildRacerPayload(member, leetCodeDoc, cvDoc, laneIndex) {
   const outfitId = appearance.equippedOutfits?.[characterId] || "outfit-default";
   const customColors = appearance.customColors?.[characterId] || {};
   const equippedCosmetics = appearance.equippedCosmetics?.[characterId] || {};
-  const equippedVehicleId = appearance.equippedVehicleId || null;
-  const vehicleUpgradeId = appearance.vehicleUpgradeId || null;
+  // Authoritative entitlement verification:
+  // Racers can only mount vehicles & upgrades they actually own in their inventory.
+  // Expired or unowned equipment safely falls back to null (on foot).
+  const hasInventory = cvDoc && typeof cvDoc === 'object' && Boolean(cvDoc.inventory);
+  const ownedVehicles = hasInventory ? new Set(Array.isArray(cvDoc.inventory.vehicles) ? cvDoc.inventory.vehicles : []) : null;
+  const ownedUpgrades = hasInventory ? new Set(Array.isArray(cvDoc.inventory.vehicleUpgrades) ? cvDoc.inventory.vehicleUpgrades : []) : null;
+
+  const requestedVehicleId = appearance.equippedVehicleId || null;
+  const equippedVehicleId = (requestedVehicleId && (ownedVehicles === null || ownedVehicles.has(requestedVehicleId))) ? requestedVehicleId : null;
+
+  const requestedUpgradeId = appearance.vehicleUpgradeId || (equippedVehicleId ? appearance.equippedVehicleUpgrades?.[equippedVehicleId] : null);
+  const vehicleUpgradeId = (requestedUpgradeId && (ownedUpgrades === null || ownedUpgrades.has(requestedUpgradeId))) ? requestedUpgradeId : null;
   const equippedVehicleUpgrades = appearance.equippedVehicleUpgrades || {};
+  const requestedRaceMode = appearance.raceMode === 'vehicle' ? 'vehicle' : 'character';
+  const raceMode = (requestedRaceMode === 'vehicle' && equippedVehicleId) ? 'vehicle' : 'character';
 
   return {
     id: member.id,
@@ -76,7 +88,8 @@ function buildRacerPayload(member, leetCodeDoc, cvDoc, laneIndex) {
       equippedOutfits: appearance.equippedOutfits || {},
       equippedVehicleId,
       vehicleUpgradeId,
-      equippedVehicleUpgrades
+      equippedVehicleUpgrades,
+      raceMode
     }
   };
 }

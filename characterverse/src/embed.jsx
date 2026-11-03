@@ -361,6 +361,147 @@ export function mountRaceArena(host, options = {}) {
       color: #94a3b8;
       letter-spacing: 0.02em;
     }
+
+    /* ── Arena Vehicle Telemetry HUD (Phase 2 Store Vehicle Integration) ── */
+    .arena-vehicle-telemetry-hud {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      min-width: 210px;
+      max-width: 250px;
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      z-index: 10;
+      pointer-events: auto;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #f8fafc;
+    }
+    .telemetry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .telemetry-racer-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .telemetry-rank-pill {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      background: #f59e0b;
+      color: #0f172a;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .telemetry-racer-name {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #f8fafc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .telemetry-lane-tag {
+      font-size: 9.5px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+    .telemetry-vehicle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 4px 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+    }
+    .telemetry-vehicle-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border: 1px solid;
+      border-radius: 5px;
+      text-transform: uppercase;
+    }
+    .telemetry-rarity-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+    }
+    .telemetry-vehicle-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .telemetry-stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+      padding: 6px;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 8px;
+    }
+    .telemetry-stat-cell {
+      display: flex;
+      flex-direction: column;
+    }
+    .telemetry-stat-label {
+      font-size: 8.5px;
+      color: #94a3b8;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .telemetry-stat-value {
+      font-size: 11.5px;
+      font-weight: 800;
+      color: #f8fafc;
+      font-variant-numeric: tabular-nums;
+    }
+    .telemetry-stat-value.speed-highlight {
+      color: #38bdf8;
+    }
+    .telemetry-stat-value.trail-status {
+      font-size: 9.5px;
+      color: #fbbf24;
+    }
+    .telemetry-unit {
+      font-size: 8.5px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .telemetry-academic-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 10px;
+    }
+    .academic-label {
+      color: #94a3b8;
+      font-weight: 600;
+    }
+    .academic-value {
+      color: #4ade80;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
   `;
 
   const mount = document.createElement('div');

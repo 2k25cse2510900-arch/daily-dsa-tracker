@@ -12,9 +12,6 @@ function createPersonalProfileResolver({ collection, clock = () => new Date() })
         $setOnInsert: {
           _id: id,
           firebaseUid,
-          email,
-          displayName: name,
-          photoUrl: typeof photoUrl === "string" && photoUrl ? photoUrl : null,
           leetCodeUsername: null,
           sessionVersion: 0,
           onboarding: true,

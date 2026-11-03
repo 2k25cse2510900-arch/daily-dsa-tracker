@@ -133,7 +133,7 @@ function consistencyMeterMarkup(percent, label = "Consistency") {
   return `<div class="consistency-meter ${value.tone}" ${accessibleValue}><span style="width:${value.progress}%"></span></div>`;
 }
 
-function championFigure(rank, style = "default") {
+function championFigure(rank, style = "default", memberId = null) {
   const characterStyle = ["default", "boy", "girl"].includes(style) ? style : "default";
   const hairstyles = {
     default: { back: '<path class="character-back-hair" d="M37 31c-9-15-1-28 11-27 6-8 23-7 29 2 13 2 17 20 6 30l-5 17H42z"/>', front: '<path class="character-hair" d="M39 23C38 8 48 2 59 5c8-8 22-1 24 8 9 9 3 20-5 24l-2-14-8 4-4-9-8 7-8-6-8 11z"/>' },
@@ -146,6 +146,7 @@ function championFigure(rank, style = "default") {
   const legs = '<g class="character-leg character-leg-left"><path class="character-pants-stroke" d="M49 91c-2 15-3 29-4 43"/><path class="character-shoe" d="M45 131c-4 4-8 7-13 8-5 1-7 7-2 9h20l2-15z"/><path class="character-shoe-detail" d="M34 143h13"/></g><g class="character-leg character-leg-right"><path class="character-pants-stroke" d="M71 91c2 15 3 29 4 43"/><path class="character-shoe" d="M75 131c4 4 8 7 13 8 5 1 7 7 2 9H70l-2-15z"/><path class="character-shoe-detail" d="M73 143h13"/></g>';
   const torso = '<path class="character-shirt" d="M44 40c4-4 10-6 16-6s12 2 16 6l10 11-7 11-6-5-1 35H48l-1-35-6 5-7-11z"/><path class="character-shirt-detail" d="M52 38c2 5 5 7 8 7s6-2 8-7M60 48v17"/>';
   return `<div class="champion-character champion-character--${characterStyle} champion-character-rank-${rank}" aria-hidden="true">
+    ${memberId ? `<div id="podium-avatar-${memberId}" class="podium-avatar-mount" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;"></div>` : ""}
     <svg class="champion-avatar" viewBox="0 0 120 155" role="presentation">
       ${hairstyles[characterStyle].back}
       ${legs}
@@ -195,7 +196,7 @@ function podiumCard(member, rank, score) {
         <div class="winner-details"><span>${dailyDone}/${dailyPossible} daily</span><span>${conceptsDone}/${conceptsPossible} concepts</span></div>
       </div>
       <span class="character-shadow" aria-hidden="true"></span>
-      ${championFigure(rank, selectChampionStyle(member))}
+      ${championFigure(rank, selectChampionStyle(member), member.id)}
       <span class="medal-ribbon">${medalMarkup(rank)}</span>
     </div>
   </article>`;
@@ -1255,18 +1256,25 @@ function closeMemberActionMenus(container) {
 
 function renderMembers() {
   const container = $("memberManager");
+  if (!container) return;
   $("memberCountTag").textContent = `${state.members.length} MEMBER${state.members.length === 1 ? "" : "S"}`;
 
   if (!state.members.length) {
-    container.innerHTML = `<div class="empty-state"><strong>No members registered</strong>Use the form above to add a member.</div>`;
+    container.innerHTML = `<div class="empty-state"><strong>No members registered</strong>No members found in the active group.</div>`;
     return;
   }
 
-  container.innerHTML = state.members.map((member, index) => `
+  container.innerHTML = state.members.map((member, index) => {
+    const isLeader = member.role === "Leader" || member.role === "owner" || member.rawRole === "owner";
+    const roleLabel = isLeader ? "LEADER" : "MEMBER";
+    return `
     <article class="managed-member">
       <a class="member-avatar member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}" aria-label="Open ${escapeHTML(member.name)}'s profile">${escapeHTML(getInitials(member.name))}</a>
       <div class="member-info">
-        <strong><a class="member-name-profile member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}">${escapeHTML(member.name)}</a></strong>
+        <div class="member-name-row">
+          <strong><a class="member-name-profile member-profile-open" href="/profile/${encodeURIComponent(member.id)}" data-open-profile="${escapeHTML(member.id)}">${escapeHTML(member.name)}</a></strong>
+          <span class="tiny-tag ${isLeader ? 'is-leader' : ''}">${escapeHTML(roleLabel)}</span>
+        </div>
         ${leetcodeProfiles[member.id]?.username ? `<a class="member-leetcode-id" href="${escapeHTML(leetcodeProfiles[member.id].profileUrl || `https://leetcode.com/u/${encodeURIComponent(leetcodeProfiles[member.id].username)}/`)}" target="_blank" rel="noopener noreferrer">${escapeHTML(leetcodeProfiles[member.id].username)}</a>` : `<small class="member-leetcode-id unavailable">Not linked</small>`}
       </div>
       <div class="member-actions-menu" ${isAdmin ? "" : "hidden"}>
@@ -1278,7 +1286,8 @@ function renderMembers() {
           <button class="btn btn-light" type="button" data-member-action="email-link" data-member-id="${escapeHTML(member.id)}">${member.email ? "Update sign-in email" : "Set sign-in email"}</button>
         </div>
       </div>
-    </article>`).join("");
+    </article>`;
+  }).join("");
 
   if (!container.dataset.memberManagerBound) {
     container.addEventListener("click", event => {
@@ -1648,6 +1657,33 @@ $("restoreFile").addEventListener("change", async event => {
 
 /* -------------------- LEADERBOARD -------------------- */
 
+let podiumAvatarInstances = [];
+function mountLeaderboardPodiumAvatars(members = []) {
+  podiumAvatarInstances.forEach(inst => {
+    try { inst?.unmount?.(); } catch (_) {}
+  });
+  podiumAvatarInstances = [];
+  if (!window.CharacterVerseEmbed?.mountCharacterAvatar || !Array.isArray(members)) return;
+  members.forEach(member => {
+    const mountEl = $(`podium-avatar-${member.id}`);
+    if (!mountEl) return;
+    const appearance = member.characterVerse?.appearance || null;
+    if (!appearance) return;
+    try {
+      const instance = window.CharacterVerseEmbed.mountCharacterAvatar(mountEl, {
+        appearance,
+        profilePreview: false,
+        autoRotate: true,
+        onReady: () => {
+          const svgFigure = mountEl.parentElement?.querySelector(".champion-avatar");
+          if (svgFigure) svgFigure.style.display = "none";
+        }
+      });
+      if (instance) podiumAvatarInstances.push(instance);
+    } catch (_) {}
+  });
+}
+
 function renderViewerLeaderboard(data) {
   const dailyPossible = workingDayIndexes(data.week).length;
   const conceptsPossible = dailyPossible ? 2 : 0;
@@ -1661,6 +1697,7 @@ function renderViewerLeaderboard(data) {
   const podium = $("leaderboardPodium");
   podium.dataset.podiumKey = qualified.length ? `leaderboard:${data.week}:${qualified.map(member => `${member.rank}:${member.name}:${member.score}`).join("|")}` : "";
   podium.innerHTML = qualified.map(member => podiumCard(member, member.rank, member.score)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 75% of scheduled tasks to appear on the podium.</div>`;
+  mountLeaderboardPodiumAvatars(qualified);
   $("leaderboardRows").innerHTML = data.members.map(member => {
     const rankCell = member.qualified ? rankBadgeMarkup(member.rank) : `<span class="leaderboard-unqualified">Keep Going</span>`;
     const className = member.qualified && member.rank <= 3 ? `leaderboard-rank-${member.rank}` : "";
@@ -1715,6 +1752,7 @@ function renderLeaderboard() {
   const podiumMembers = eligible.filter(member => member.rank <= 3);
   podium.dataset.podiumKey = podiumMembers.length ? `leaderboard:${currentWeek}:${podiumMembers.map(member => `${member.rank}:${member.name}:${member.overallDone}`).join("|")}` : "";
   podium.innerHTML = podiumMembers.map(member => podiumCard(member, member.rank, member.overallDone)).join("") || `<div class="leaderboard-empty">No members have qualified yet. Complete at least 75% of scheduled tasks to appear on the podium.</div>`;
+  mountLeaderboardPodiumAvatars(podiumMembers);
 
   tbody.innerHTML = rankings.map(member => {
     const isEligible = member.overallDone >= eligibleMinimum;
@@ -1961,6 +1999,267 @@ async function apiRequest(url, options = {}) {
   return body;
 }
 
+let dailyWorkspaceData = null;
+
+function workspaceTimestamp(value) {
+  if (!value) return "Not yet synchronized";
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }).format(date) : "Not available";
+}
+
+function renderDailyWorkspace(data) {
+  dailyWorkspaceData = data;
+  const connection = data?.connection || null;
+  const workspace = data?.workspace || null;
+  $("dailyWorkspaceUsername").value = connection?.username || "";
+  $("dailyWorkspaceDisconnect").hidden = !connection || connection.status === "legacy";
+  $("dailyWorkspaceSync").disabled = !connection;
+  const activityDate = workspace?.activityDate || data?.activityDate || "Unavailable";
+  $("dailyWorkspaceActivityDate").value = /^\d{4}-\d{2}-\d{2}$/.test(activityDate) ? activityDate : "";
+  $("dailyWorkspaceDate").textContent = `Activity day: ${activityDate} (05:30 AM IST cutoff)`;
+  const sourceNotice = workspace?.sourceWindowMayBeIncomplete ? ` The public response reached its ${workspace.sourceLimit}-submission limit, so this day may be incomplete.` : "";
+  $("dailyWorkspaceStatus").textContent = connection
+    ? `${connection.status === "legacy" ? "Legacy mapping available; synchronize to verify it." : "Connected to " + connection.username + "."} ${workspace ? `Last successful sync: ${workspaceTimestamp(workspace.lastSyncedAt)}.` : "No workspace has been synchronized yet."}${workspace?.syncStatus === "failed" ? ` Latest sync failed: ${workspace.syncError}.` : ""}${sourceNotice}`
+    : "Connect your public LeetCode username to create today’s private workspace.";
+  $("dailyWorkspaceSummary").innerHTML = workspace ? [
+    ["Attempts", workspace.submissionCount], ["Accepted", workspace.acceptedCount], ["Other verdicts", workspace.otherVerdictCount]
+  ].map(([label, value]) => `<article><span>${label}</span><strong>${Number(value) || 0}</strong></article>`).join("") : "";
+  const rows = workspace?.submissions || [];
+  $("dailyWorkspaceList").innerHTML = !connection
+    ? `<p class="daily-workspace-empty">No account connected yet.</p>`
+    : !workspace ? `<p class="daily-workspace-empty">No LeetCode submissions found for your current activity day. Select Sync now after connecting.</p>`
+    : !rows.length ? `<p class="daily-workspace-empty">No LeetCode submissions found for your current activity day.</p>`
+    : rows.map(row => `<article class="daily-submission-card"><div><h3>${escapeHTML(row.problemTitle)}</h3><p>${escapeHTML(row.language || "Language unavailable")} · ${escapeHTML(row.verdict)} · ${workspaceTimestamp(row.submittedAt)}</p>${row.problemUrl ? `<a href="${escapeHTML(row.problemUrl)}" target="_blank" rel="noopener noreferrer">Open problem</a>` : ""}</div><button class="btn btn-light" type="button" disabled title="AI Code Mentor is planned for Module 3">AI Review · next module</button></article>`).join("");
+}
+
+async function loadDailyWorkspace(activityDate = null) {
+  if (!isMember) return;
+  const path = activityDate ? `/api/daily-workspace/${encodeURIComponent(activityDate)}` : "/api/daily-workspace/current";
+  try { renderDailyWorkspace(await apiRequest(path)); }
+  catch (error) {
+    $("dailyWorkspaceStatus").textContent = error.message || "Daily workspace is temporarily unavailable.";
+    $("dailyWorkspaceList").innerHTML = "";
+  }
+}
+
+function initializeDailyWorkspace() {
+  $("dailyWorkspaceConnectionForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      const result = await apiRequest("/api/leetcode/connection", { method: "POST", body: JSON.stringify({ username: $("dailyWorkspaceUsername").value }) });
+      renderDailyWorkspace(result);
+      showToast("LeetCode account connected and synchronized.");
+    } catch (error) { $("dailyWorkspaceStatus").textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  $("dailyWorkspaceSync").addEventListener("click", async () => {
+    $("dailyWorkspaceSync").disabled = true;
+    try { renderDailyWorkspace(await apiRequest("/api/daily-workspace/sync", { method: "POST", body: "{}" })); }
+    catch (error) { $("dailyWorkspaceStatus").textContent = error.message; }
+    finally { $("dailyWorkspaceSync").disabled = !dailyWorkspaceData?.connection; }
+  });
+  $("dailyWorkspaceDisconnect").addEventListener("click", async () => {
+    try { await apiRequest("/api/leetcode/connection", { method: "DELETE", body: "{}" }); await loadDailyWorkspace(); showToast("LeetCode account disconnected. Existing private workspaces were retained."); }
+    catch (error) { $("dailyWorkspaceStatus").textContent = error.message; }
+  });
+  $("dailyWorkspaceActivityDate").addEventListener("change", event => {
+    const activityDate = event.currentTarget.value;
+    if (activityDate) void loadDailyWorkspace(activityDate);
+  });
+}
+
+let groupManagementState = { groups: [], activeGroupId: null, detail: null, pendingRequest: null };
+
+function groupManagementMessage(message = "") {
+  const element = $("groupManagementMessage");
+  if (element) element.textContent = message;
+}
+
+function groupStatusLabel(group) {
+  if (group.legacy) return "Legacy group";
+  return group.active ? "Active" : "Pending — invite and approve one more member to activate";
+}
+
+function renderGroupManagement() {
+  const panel = $("groupManagementPanel");
+  if (!panel) return;
+  panel.hidden = !isMember;
+  if (!isMember) return;
+
+  const forms = $("groupManagementForms");
+  const pendingCard = $("groupPendingRequestCard");
+  const subtitle = $("groupManagementSubtitle");
+  const list = $("groupManagementList");
+  const { groups, activeGroupId, detail, pendingRequest } = groupManagementState;
+
+  const hasGroup = groups.length > 0;
+  const hasPending = Boolean(pendingRequest);
+
+  if (hasGroup) {
+    if (forms) forms.hidden = true;
+    if (pendingCard) pendingCard.hidden = true;
+    const isOwner = detail?.group?.role === "owner";
+    if (subtitle) {
+      subtitle.textContent = isOwner
+        ? "Your active learning group (Group Leader) · Manage members and requests."
+        : "Your active learning group · Member view.";
+    }
+
+    const cards = groups.map(group => `<article class="group-card is-selected">
+      <div><strong>${escapeHTML(group.name)}</strong><span>${escapeHTML(groupStatusLabel(group))} · ${group.memberCount}/${group.maxMembers} members</span></div>
+      <span class="tiny-tag">${group.legacy ? "LEGACY" : group.role === "owner" ? "LEADER" : "MEMBER"}</span>
+    </article>`).join("");
+
+    const ownerControls = detail?.group?.role === "owner"
+      ? `<div class="group-owner-actions">
+          ${!detail.group.legacy ? `<button class="btn btn-primary" id="createGroupInvitation" type="button">Generate Invitation Token</button>` : `<p class="group-members"><em>Legacy group membership is synchronized with the community dashboard.</em></p>`}
+          ${(detail.pendingRequests || []).length ? `<h5>Pending Membership Requests</h5>` + (detail.pendingRequests || []).map(request => `<div class="group-request"><span>${escapeHTML(request.displayName)}</span><button class="btn btn-light" data-group-decision="approve" data-user-id="${escapeHTML(request.userId)}" type="button">Approve</button><button class="btn btn-light" data-group-decision="reject" data-user-id="${escapeHTML(request.userId)}" type="button">Reject</button></div>`).join("") : !detail.group.legacy ? "<p class=\"group-empty\">No pending membership requests.</p>" : ""}
+        </div>`
+      : "";
+
+    const details = detail?.group ? `<section class="group-detail">
+      <h4>${escapeHTML(detail.group.name)}</h4>
+      <p>${escapeHTML(groupStatusLabel(detail.group))}</p>
+      <p class="group-members"><strong>Members:</strong> ${detail.members.map(member => `${escapeHTML(member.displayName)}${member.role === "owner" ? " (leader)" : ""}`).join(" · ")}</p>
+      ${ownerControls}
+    </section>` : "";
+
+    list.innerHTML = `${cards}${details}`;
+    $("createGroupInvitation")?.addEventListener("click", createGroupInvitation);
+    list.querySelectorAll("[data-group-decision]").forEach(button => button.addEventListener("click", () => decideGroupRequest(button.dataset.userId, button.dataset.groupDecision)));
+  } else if (hasPending) {
+    if (forms) forms.hidden = true;
+    if (subtitle) subtitle.textContent = "Your membership request is currently awaiting owner approval.";
+    if (pendingCard) {
+      pendingCard.hidden = false;
+      pendingCard.innerHTML = `<article class="group-card is-pending">
+        <div>
+          <strong>${escapeHTML(pendingRequest.groupName || "Learning Group")}</strong>
+          <span>Your request to join this group is pending owner approval. You will gain access once the group leader approves your request.</span>
+          <small>Requested: ${new Date(pendingRequest.requestedAt).toLocaleString()}</small>
+        </div>
+        <span class="tiny-tag">PENDING APPROVAL</span>
+      </article>`;
+    }
+    list.innerHTML = "";
+  } else {
+    if (forms) forms.hidden = false;
+    if (pendingCard) pendingCard.hidden = true;
+    if (subtitle) subtitle.textContent = "You have not joined a learning group yet. Choose an option below:";
+    list.innerHTML = "<p class=\"group-empty\">You are not a member of any group yet. Create your own group above or enter an invitation code to request joining an existing group.</p>";
+  }
+}
+
+async function loadGroupMembers(groupId) {
+  const targetId = groupId || groupManagementState.activeGroupId || (groupManagementState.groups[0]?.id) || null;
+  if (!targetId) {
+    state.members = [];
+    renderMembers();
+    return;
+  }
+  try {
+    const data = await apiRequest(`/api/groups/${encodeURIComponent(targetId)}/members`);
+    state.members = (data.members || []).map(m => ({
+      id: m.id,
+      name: m.name,
+      role: m.role,
+      rawRole: m.rawRole,
+      joinedAt: m.joinedAt
+    }));
+    leetcodeProfiles = data.leetcode || {};
+    const titleEl = $("membersSectionTitle") || $("membersPage")?.querySelector(".members-list-heading h3");
+    if (titleEl && data.groupName) {
+      titleEl.textContent = `${data.groupName} Members`;
+    }
+    renderMembers();
+  } catch (error) {
+    if (error.status === 403) {
+      state.members = [];
+      renderMembers();
+      showToast("You are not authorized to view this group's members.", "error");
+    } else {
+      console.warn("Could not load group members:", error.message);
+    }
+  }
+}
+
+async function loadGroupManagement() {
+  if (!isMember) return;
+  try {
+    const data = await apiRequest("/api/groups");
+    groupManagementState.groups = data.groups || [];
+    groupManagementState.activeGroupId = data.activeGroupId || groupManagementState.groups[0]?.id || null;
+    groupManagementState.pendingRequest = data.pendingRequest || null;
+    groupManagementState.detail = groupManagementState.activeGroupId ? await apiRequest(`/api/groups/${encodeURIComponent(groupManagementState.activeGroupId)}`) : null;
+    renderGroupManagement();
+  } catch (error) {
+    groupManagementMessage(error.message || "Groups are temporarily unavailable.");
+    renderGroupManagement();
+  }
+}
+
+async function selectActiveGroup(groupId) {
+  try {
+    await apiRequest("/api/groups/active", { method: "POST", body: JSON.stringify({ groupId }) });
+    groupManagementState.activeGroupId = groupId;
+    clearViewerData();
+    state.members = [];
+    state.weeks = {};
+    arenaCurrentState = null;
+    await loadGroupManagement();
+    await loadGroupMembers(groupId);
+    await loadSharedData();
+    if (activePage && activePage !== "members") {
+      await navigatePage(activePage);
+    }
+  } catch (error) { groupManagementMessage(error.message); }
+}
+
+async function createGroupInvitation() {
+  if (!groupManagementState.activeGroupId) return;
+  try {
+    const result = await apiRequest(`/api/groups/${encodeURIComponent(groupManagementState.activeGroupId)}/invitations`, { method: "POST", body: "{}" });
+    groupManagementMessage(`Invitation code (shown once): ${result.code}`);
+    await loadGroupManagement();
+  } catch (error) { groupManagementMessage(error.message); }
+}
+
+async function decideGroupRequest(userId, decision) {
+  if (!groupManagementState.activeGroupId) return;
+  try {
+    await apiRequest(`/api/groups/${encodeURIComponent(groupManagementState.activeGroupId)}/requests/${encodeURIComponent(userId)}/${decision}`, { method: "POST", body: "{}" });
+    groupManagementMessage(decision === "approve" ? "Member approved." : "Membership request rejected.");
+    await loadGroupManagement();
+    if (groupManagementState.activeGroupId) {
+      await loadGroupMembers(groupManagementState.activeGroupId);
+    }
+  } catch (error) { groupManagementMessage(error.message); }
+}
+
+function initializeGroupManagement() {
+  $("createGroupForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      const result = await apiRequest("/api/groups", { method: "POST", body: JSON.stringify({ name: new FormData(event.currentTarget).get("name") }) });
+      event.currentTarget.reset();
+      groupManagementMessage(`${result.group.name} is pending until a second member is approved.`);
+      groupManagementState.activeGroupId = result.group.id;
+      await loadGroupManagement();
+      await loadGroupMembers(result.group.id);
+    } catch (error) { groupManagementMessage(error.message); }
+  });
+  $("joinGroupForm")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      const result = await apiRequest("/api/groups/join-requests", { method: "POST", body: JSON.stringify({ code: new FormData(event.currentTarget).get("code") }) });
+      event.currentTarget.reset();
+      groupManagementMessage(`Join request sent to ${result.group.name}.`);
+    } catch (error) { groupManagementMessage(error.message); }
+  });
+}
+
 function setRoleUI() {
   const authenticated = isAdmin || isMember;
   if (isMember && memberProfile) $("memberWelcomeName").textContent = memberProfile.name;
@@ -2059,15 +2358,31 @@ function setSecurityGate(message, canImport = false, canSignIn = false) {
 }
 
 async function loadSharedData() {
-  const data = await apiRequest(isAdmin ? "/api/data" : "/api/member/shared-data");
-  leetcodeProfiles = data.leetcode || {};
-  memberFirebaseStatus = data.memberFirebaseStatus || {};
-  state = { members: data.members, weeks: data.weeks, currentWeek: data.currentWeek };
-  currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek;
-  state.currentWeek = currentWeek;
-  sharedReady = true;
-  ensureAllData();
-  renderAll();
+  const activeId = groupManagementState.activeGroupId || (groupManagementState.groups[0]?.id) || null;
+  if (!isAdmin && !activeId) {
+    state = { members: [], weeks: {}, currentWeek: 1 };
+    leetcodeProfiles = {};
+    memberFirebaseStatus = {};
+    sharedReady = true;
+    renderAll();
+    return;
+  }
+  try {
+    const data = await apiRequest(isAdmin ? "/api/data" : "/api/member/shared-data");
+    leetcodeProfiles = data.leetcode || {};
+    memberFirebaseStatus = data.memberFirebaseStatus || {};
+    state = { members: data.members || [], weeks: data.weeks || {}, currentWeek: data.currentWeek || 1 };
+    currentWeek = weekForDate(selectedCalendarDate) || state.currentWeek;
+    state.currentWeek = currentWeek;
+    sharedReady = true;
+    ensureAllData();
+    renderAll();
+  } catch (err) {
+    console.warn("Failed to load shared data:", err.message);
+    state = { members: [], weeks: {}, currentWeek: 1 };
+    sharedReady = true;
+    renderAll();
+  }
 }
 
 function renderMemberProgress() {
@@ -2150,6 +2465,7 @@ async function loadMemberPersonalDashboard() {
     photo.src = data.photoUrl || "";
     if (memberFallback) memberFallback.hidden = Boolean(data.photoUrl);
     void loadMemberCharacterVerseSummary();
+    void loadDailyWorkspace();
 
     const memberMount = $("memberProfileCharacterMount");
     if (!memberAvatarInstance && window.CharacterVerseEmbed?.mountCharacterAvatar && memberMount) {
@@ -2267,6 +2583,128 @@ function initializeMemberDashboardNavigation() {
   }));
 }
 
+let currentProfileMemberId = null;
+
+function formatSubmissionTime(isoString) {
+  if (!isoString) return "";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function formatLang(lang) {
+  if (!lang) return "Code";
+  const map = {
+    python3: "Python 3", python: "Python", cpp: "C++", java: "Java",
+    javascript: "JavaScript", typescript: "TypeScript", golang: "Go",
+    csharp: "C#", rust: "Rust", c: "C", swift: "Swift", kotlin: "Kotlin"
+  };
+  return map[lang.toLowerCase()] || lang;
+}
+
+function renderDailyQuestionCard(q) {
+  const diffClass = q.difficulty ? `badge-${q.difficulty.toLowerCase()}` : "";
+  const diffBadge = q.difficulty ? `<span class="badge-difficulty ${diffClass}">${escapeHTML(q.difficulty)}</span>` : "";
+  const statusClass = q.status === "Accepted" ? "status-accepted" : "status-attempted";
+  const attemptsBadge = q.attemptsCount > 1
+    ? `<span class="badge-attempts" title="Attempt history: ${escapeHTML((q.verdicts || []).join(', '))}">⚡ ${q.attemptsCount} attempts</span>`
+    : "";
+  const langBadge = q.language ? `<span class="badge-lang">${escapeHTML(formatLang(q.language))}</span>` : "";
+  const timeFormatted = formatSubmissionTime(q.submittedAt);
+  const timeHtml = timeFormatted ? `<time class="question-time" datetime="${escapeHTML(q.submittedAt || '')}">Submitted at ${escapeHTML(timeFormatted)}</time>` : "";
+  const leetCodeUrl = q.url || (q.titleSlug ? `https://leetcode.com/problems/${encodeURIComponent(q.titleSlug)}/` : "https://leetcode.com/");
+  const problemIdText = q.questionFrontendId ? `#${escapeHTML(q.questionFrontendId)} · ` : "";
+
+  return `
+    <article class="daily-question-card">
+      <div class="daily-question-top">
+        <div class="daily-question-header">
+          <h4 class="daily-question-title">${escapeHTML(q.title || "LeetCode Problem")}</h4>
+          ${diffBadge}
+        </div>
+        ${q.titleSlug ? `<p class="daily-question-slug">${problemIdText}${escapeHTML(q.titleSlug)}</p>` : ""}
+        <div class="daily-question-badges">
+          <span class="badge-status ${statusClass}">${escapeHTML(q.status || "Submitted")}</span>
+          ${attemptsBadge}
+          ${langBadge}
+        </div>
+      </div>
+      <div class="daily-question-bottom">
+        ${timeHtml}
+        <a class="question-leetcode-link" href="${escapeHTML(leetCodeUrl)}" target="_blank" rel="noopener noreferrer">View on LeetCode ↗</a>
+      </div>
+    </article>
+  `;
+}
+
+function renderProfileDailyActivity(data, isSelf) {
+  const dailySection = $("routeProfileDailySection");
+  const dailyDate = $("routeProfileDailyDate");
+  const dailyStatus = $("routeProfileDailyStatus");
+  const dailyContent = $("routeProfileDailyContent");
+  const dailySyncBtn = $("routeProfileDailySyncBtn");
+  if (!dailySection || !dailyContent) return;
+
+  const activity = data?.dailyActivity;
+  if (!activity) {
+    if (!isSelf) {
+      if (dailySyncBtn) dailySyncBtn.hidden = true;
+      if (dailyDate) dailyDate.textContent = "Activity is private";
+      dailyContent.innerHTML = '<div class="profile-daily-private"><p>Daily LeetCode activity is private to this member\'s account.</p></div>';
+      return;
+    }
+    if (dailySyncBtn) dailySyncBtn.hidden = true;
+    if (dailyDate) dailyDate.textContent = "LeetCode account not linked";
+    dailyContent.innerHTML = `
+      <div class="profile-daily-empty">
+        <div class="profile-daily-empty-icon" aria-hidden="true">🔗</div>
+        <h4 class="profile-daily-empty-title">No LeetCode account linked</h4>
+        <p class="profile-daily-empty-copy">Link your LeetCode username in your profile to automatically view and track your daily questions here.</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (dailySyncBtn) dailySyncBtn.hidden = !isSelf;
+
+  if (dailyDate) {
+    const lastSync = activity.lastSyncedAt ? ` · Last checked ${new Date(activity.lastSyncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
+    dailyDate.innerHTML = `
+      <span>Activity day: <strong>${escapeHTML(activity.date)}</strong> (05:30 AM IST cutoff)${escapeHTML(lastSync)}</span>
+      <span class="profile-daily-count-badge">${activity.questionsCount || 0} unique ${(activity.questionsCount || 0) === 1 ? 'question' : 'questions'} today</span>
+    `;
+  }
+
+  if (activity.syncError && dailyStatus) {
+    dailyStatus.textContent = activity.syncError === "RATE_LIMITED"
+      ? "LeetCode is currently rate limiting queries. Showing latest cached questions."
+      : "LeetCode synchronization was delayed or unavailable. Showing latest cached questions.";
+    dailyStatus.hidden = false;
+  } else if (dailyStatus) {
+    dailyStatus.hidden = true;
+  }
+
+  const questions = Array.isArray(activity.questions) ? activity.questions : [];
+  if (questions.length === 0) {
+    dailyContent.innerHTML = `
+      <div class="profile-daily-empty">
+        <div class="profile-daily-empty-icon" aria-hidden="true">📝</div>
+        <h4 class="profile-daily-empty-title">No LeetCode questions detected for today</h4>
+        <p class="profile-daily-empty-copy">Solve or submit a problem on LeetCode today, then click Refresh Activity to see it here!</p>
+      </div>
+    `;
+  } else {
+    dailyContent.innerHTML = `
+      <div class="profile-daily-grid">
+        ${questions.map(q => renderDailyQuestionCard(q)).join("")}
+      </div>
+    `;
+  }
+}
+
 async function openProfileRoute(memberId, pushHistory = false) {
   if (!/^[\w-]{1,100}$/.test(memberId || "") || (!isAdmin && !isMember)) return;
   const route = `/profile/${encodeURIComponent(memberId)}`;
@@ -2280,6 +2718,13 @@ async function openProfileRoute(memberId, pushHistory = false) {
   $("routeProfileLink").hidden = true;
   $("routeProfileMessage").hidden = true;
   ["routeProfileTotal", "routeProfileEasy", "routeProfileMedium", "routeProfileHard"].forEach(id => { $(id).textContent = "—"; });
+  currentProfileMemberId = memberId;
+  const dailyDate = $("routeProfileDailyDate");
+  const dailyStatus = $("routeProfileDailyStatus");
+  const dailyContent = $("routeProfileDailyContent");
+  if (dailyStatus) dailyStatus.hidden = true;
+  if (dailyDate) dailyDate.textContent = "Loading today's activity…";
+  if (dailyContent) dailyContent.innerHTML = '<div class="profile-daily-loading"><span class="daily-spinner"></span> Checking today\'s LeetCode submissions…</div>';
   routeAvatarInstance?.unmount();
   routeAvatarInstance = null;
   const routeMount = $("routeProfileCharacterMount");
@@ -2314,6 +2759,7 @@ async function openProfileRoute(memberId, pushHistory = false) {
       $("routeProfileSource").textContent = "LeetCode statistics are unavailable until the public profile can be verified.";
     }
     const isSelf = (isAdmin || isMember) && Boolean(memberProfile?.id) && memberProfile.id === memberId;
+    renderProfileDailyActivity(data, isSelf);
     if (characterBtn) {
       if (isSelf) {
         characterBtn.href = `/characterverse/?returnTo=${encodeURIComponent('/profile/' + memberId)}`;
@@ -2443,7 +2889,9 @@ function cleanupArenaPage() {
 
 async function fetchArenaLiveState() {
   try {
-    const arena = await apiRequest("/api/arena/live");
+    const activeId = groupManagementState.activeGroupId || (groupManagementState.groups[0]?.id) || null;
+    const path = activeId ? `/api/arena/live?groupId=${encodeURIComponent(activeId)}` : "/api/arena/live";
+    const arena = await apiRequest(path);
     if (!arena || !arena.racers) return null;
     arenaCurrentState = arena;
     const syncEl = $("arenaSyncTime");
@@ -2691,11 +3139,25 @@ function initArenaControls() {
 }
 
 async function navigatePage(page) {
+  const activeId = groupManagementState.activeGroupId || (groupManagementState.groups[0]?.id) || null;
+  if (page === "members") {
+    clearViewerData();
+    if (activeId) {
+      await loadGroupMembers(activeId);
+    } else {
+      state.members = [];
+      renderMembers();
+    }
+    showPage("members");
+    setRoleUI();
+    return true;
+  }
   if (isAdmin) { showPage(page); return true; }
   if (!PAGE_INFO[page]) return;
   clearViewerData();
   const query = new URLSearchParams({ week: String(currentWeek) });
   if (page === "daily") query.set("date", selectedCalendarDate);
+  if (activeId) query.set("groupId", activeId);
   try {
     const data = await apiRequest(`/api/page-data/${encodeURIComponent(page)}?${query}`);
     viewerPageData = data;
@@ -2710,7 +3172,6 @@ async function navigatePage(page) {
       if (page === "daily") { leetcodeActivityRecord = data.activity || null; leetcodeAutomationStatus = null; }
       if (page === "daily") renderDailyTable(); else renderConceptTable();
     }
-    if (page === "members") { state = { members: data.members, weeks: {}, currentWeek }; leetcodeProfiles = data.leetcode || {}; renderMembers(); }
     if (page === "report") {
       state = { members: data.members, weeks: { [String(data.week)]: { daily: data.statuses.daily, concepts: data.statuses.concepts } }, currentWeek: data.week };
       renderReport();
@@ -2768,7 +3229,15 @@ function initializeSecurityControls() {
       $("memberLoginDialog").close();
       $("securityGate").hidden = true;
       if (isMember && memberProfile) {
-        await loadSharedData();
+        await loadGroupManagement();
+        const activeGroupId = groupManagementState.activeGroupId || (groupManagementState.groups[0]?.id) || null;
+        if (activeGroupId) {
+          await loadGroupMembers(activeGroupId);
+          await loadSharedData();
+        } else {
+          state.members = [];
+          renderAll();
+        }
         const requestedProfile = location.pathname.match(/^\/profile\/([\w-]{1,100})\/?$/);
         if (requestedProfile) await openProfileRoute(requestedProfile[1]);
         else showPage("overview");
@@ -2798,7 +3267,30 @@ function initializeSecurityControls() {
   $("memberLogoutBtn").addEventListener("click", logoutCurrentSession);
   $("adminSwitchMemberBtn").addEventListener("click", openMemberLoginDialog);
   $("memberSwitchAdminBtn").addEventListener("click", openAdminLoginDialog);
-  $("adminPersonalProfileBtn").addEventListener("click", () => {
+  
+  const dailySyncBtn = $("routeProfileDailySyncBtn");
+  if (dailySyncBtn && !dailySyncBtn.dataset.bound) {
+    dailySyncBtn.dataset.bound = "true";
+    dailySyncBtn.addEventListener("click", async () => {
+      if (!currentProfileMemberId) return;
+      dailySyncBtn.disabled = true;
+      const originalText = dailySyncBtn.innerHTML;
+      dailySyncBtn.innerHTML = "Syncing…";
+      try {
+        const updated = await apiRequest(`/api/profile/${encodeURIComponent(currentProfileMemberId)}?sync=1`);
+        const isSelf = (isAdmin || isMember) && Boolean(memberProfile?.id) && memberProfile.id === currentProfileMemberId;
+        renderProfileDailyActivity(updated, isSelf);
+        showToast("Daily LeetCode activity refreshed.");
+      } catch (err) {
+        showToast(err.message || "Failed to sync daily activity.", "error");
+      } finally {
+        dailySyncBtn.disabled = false;
+        dailySyncBtn.innerHTML = originalText;
+      }
+    });
+  }
+
+$("adminPersonalProfileBtn").addEventListener("click", () => {
     if (memberProfile?.id) openProfileRoute(memberProfile.id, true);
   });
   $("profileBackToDashboard").addEventListener("click", event => {
@@ -2868,6 +3360,11 @@ async function logoutCurrentSession() {
   routeAvatarInstance = null;
   memberAvatarInstance?.unmount();
   memberAvatarInstance = null;
+  cleanupArenaPage();
+  state = { members: [], weeks: {}, currentWeek: 1 };
+  groupManagementState = { groups: [], activeGroupId: null, detail: null };
+  arenaCurrentState = null;
+  viewerPageData = null;
   try {
     await apiRequest("/api/logout", { method: "POST", body: "{}" });
     if (isMember && window.memberFirebaseAuth) await window.memberFirebaseAuth.signOut().catch(() => {});
@@ -2884,6 +3381,8 @@ async function initializeApp() {
   // Bind this view independently of the broader security-control setup so a
   // member's navigation does not depend on unrelated login controls binding.
   initializeMemberDashboardNavigation();
+  initializeDailyWorkspace();
+  initializeGroupManagement();
   // Do not inherit a restored scroll offset when the dashboard first opens.
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   $("securityGate").hidden = false;
@@ -2923,7 +3422,15 @@ async function initializeApp() {
       }
     } else if (isMember) {
       $("securityGate").hidden = true;
-      await loadSharedData();
+      await loadGroupManagement();
+      const activeGroupId = groupManagementState.activeGroupId || (groupManagementState.groups[0]?.id) || null;
+      if (activeGroupId) {
+        await loadGroupMembers(activeGroupId);
+        await loadSharedData(activeGroupId);
+      } else {
+        state.members = [];
+        renderAll();
+      }
       if (profileRoute) await openProfileRoute(profileRoute[1]);
       else showPage("overview");
     } else {

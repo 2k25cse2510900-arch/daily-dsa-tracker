@@ -32,6 +32,13 @@ const { addActivityDays, nextActivityBoundaryMs } = require("./activity-date");
 const { MAX_WEEKS, scheduledSlots } = require("./tracker-calendar");
 const { persistSubmissionHistory, matchingActivitySubmissions, classifyFinalization, activityDatesToFinalize, manualFinalizationDecision, preserveFinalizationStatus, publicActivityRecord, ACTIVITY_LOCK_LEASE_MS, ACTIVITY_LOCK_HEARTBEAT_MS, acquireActivityLease, renewActivityLease, releaseActivityLease } = require("./activity-jobs");
 const { buildRaceArenaState } = require("./arena-race");
+const { createGroupRouter } = require("./group-routes");
+const { createDailyWorkspaceService } = require("./daily-workspace");
+const { createDailyWorkspaceRouter } = require("./daily-workspace-routes");
+const { createAiCodeMentorService } = require("./ai-code-mentor");
+const { createOpenAIMentorProvider } = require("./ai-code-mentor-provider");
+const { createAiCodeMentorRouter } = require("./ai-code-mentor-routes");
+const { groupDailySubmissions, fetchLeetCodeQuestionDetail } = require("./daily-activity-helper");
 
 const PAGES = ["overview", "daily", "concepts", "members", "arena", "report", "leaderboard"];
 const STATUSES = new Set(["blank", "done", "absent"]);
@@ -47,6 +54,7 @@ let runtimeInitializationFailure;
 let runtimeRetryAfter = 0;
 let leetcodeRefreshPromise;
 let leetcodeActivityCyclePromise;
+let dailyWorkspaceSyncPromise;
 let lastLeetcodeRefreshAt = 0;
 const leetcodeActivityRefreshes = new Map();
 const activityLockOwnerId = `${process.pid}:${crypto.randomUUID()}`;
@@ -276,7 +284,17 @@ async function findActiveMemberById(memberId, firebaseUid, sessionVersion = 0) {
   }
   const profile = await db.collection("memberProfiles").findOne({ _id: memberId, firebaseUid, deactivatedAt: { $exists: false } });
   if (!profile || (Number(profile.sessionVersion) || 0) !== (Number(sessionVersion) || 0)) return null;
-  return { id: profile._id, name: profile.displayName, email: profile.email || null, role: "Member", photoUrl: profile.photoUrl || null, leetCodeUsername: profile.leetCodeUsername || null, legacy: false, groupMember: false };
+  const activeMembership = await db.collection("groupMembers").findOne({ userId: memberId, status: "approved" });
+  return {
+    id: profile._id,
+    name: profile.displayName,
+    email: profile.email || null,
+    role: activeMembership?.role === "owner" ? "Leader" : "Member",
+    photoUrl: profile.photoUrl || null,
+    leetCodeUsername: profile.leetCodeUsername || null,
+    legacy: false,
+    groupMember: Boolean(activeMembership)
+  };
 }
 
 async function findActiveAdminMemberById(memberId, adminEmail) {
@@ -288,7 +306,12 @@ async function findActiveAdminMemberById(memberId, adminEmail) {
 const memberOnly = createMemberOnly({ findActiveMemberById, findActiveAdminMemberById });
 const mongoRateLimit = createMongoRateLimit({ getCollection: () => db.collection("rateLimits"), secret: process.env.SESSION_SECRET, windowMs: RATE_WINDOW_MS });
 const memberLoginLimit = mongoRateLimit("member-login", 8);
+const dailyWorkspaceSyncLimit = mongoRateLimit("daily-workspace-sync", 4);
+const aiMentorReviewLimit = mongoRateLimit("ai-code-mentor-review", 6);
 const resolvePersonalProfile = createPersonalProfileResolver({ collection: { updateOne: (...args) => db.collection("memberProfiles").updateOne(...args), findOne: (...args) => db.collection("memberProfiles").findOne(...args) } });
+const dailyWorkspaceService = () => createDailyWorkspaceService({ db, fetchProfile, fetchRecentSubmissions, currentActivityDate, lockOwnerId: activityLockOwnerId });
+const aiMentorNumber = (name, fallback, min, max) => { const value = Number(process.env[name]); return Number.isInteger(value) && value >= min && value <= max ? value : fallback; };
+const aiCodeMentorService = () => createAiCodeMentorService({ db, provider: createOpenAIMentorProvider(), dailyQuota: aiMentorNumber("AI_MENTOR_DAILY_QUOTA", 10, 1, 100), reviewRetentionDays: aiMentorNumber("AI_MENTOR_REVIEW_RETENTION_DAYS", 180, 1, 3650), sourceRetentionDays: aiMentorNumber("AI_MENTOR_SOURCE_RETENTION_DAYS", 30, 1, 365), maxSourceChars: Math.min(40_000, aiMentorNumber("AI_MENTOR_MAX_INPUT_TOKENS", 10_000, 1_000, 10_000) * 4), maxDescriptionChars: 8_000 });
 
 app.disable("x-powered-by");
 app.set("trust proxy", production ? 1 : false);
@@ -322,6 +345,26 @@ const loginLimit = mongoRateLimit("admin-login", 8);
 // outage; their data requests remain readiness-gated below.
 app.use("/api", requireRuntime);
 app.use("/api", sameOriginMutationOnly);
+// Group data is additive and group-scoped. Existing dashboard endpoints remain
+// unchanged until the later tracker migration explicitly moves them.
+app.use("/api/groups", createGroupRouter({
+  getDb: () => db,
+  memberOnly,
+  invitationSecret: process.env.GROUP_INVITATION_SECRET || process.env.SESSION_SECRET,
+  audit
+}));
+app.use("/api", createDailyWorkspaceRouter({
+  memberOnly,
+  serviceFor: dailyWorkspaceService,
+  manualSyncLimit: dailyWorkspaceSyncLimit,
+  audit
+}));
+app.use("/api/ai-code-mentor", createAiCodeMentorRouter({
+  memberOnly,
+  serviceFor: aiCodeMentorService,
+  reviewRateLimit: aiMentorReviewLimit,
+  audit
+}));
 
 app.get("/api/session", async (req, res) => {
   if (isAdminSession(req)) {
@@ -350,31 +393,55 @@ const memberLogin = createMemberFirebaseLoginHandler({
   canRegister: () => process.env.MEMBER_SELF_REGISTRATION !== "false",
   logStage: (stage, outcome) => console.info("[member-auth]", { stage, outcome }),
   resolveMember: async ({ firebaseUid, email, displayName, photoUrl, groupAuthorized }) => {
+    const normalizedEmail = normalizeMemberEmail(email);
     if (groupAuthorized) {
       const approvedMember = await findAndLinkApprovedGroupMember(email, firebaseUid, photoUrl);
       if (approvedMember) return approvedMember;
     }
     const link = await db.collection("memberAuthLinks").findOne({ firebaseUid, deactivatedAt: { $exists: false } });
     if (link) {
+      if (link.email && normalizeMemberEmail(link.email) !== normalizedEmail) {
+        const conflict = new Error("Firebase UID is already linked to another email.");
+        conflict.status = 409;
+        throw conflict;
+      }
       const member = await findDashboardMemberById(link._id);
       if (!member) return null;
-      const verifiedIdentity = { email, lastVerifiedAt: new Date() };
+      const verifiedIdentity = { email: normalizedEmail, lastVerifiedAt: new Date() };
       if (typeof photoUrl === "string" && photoUrl) verifiedIdentity.photoUrl = photoUrl;
       await db.collection("memberAuthLinks").updateOne({ _id: link._id, firebaseUid }, { $set: verifiedIdentity });
       return { id: member.id, name: member.name, sessionVersion: link.sessionVersion, created: false };
+    }
+    const otherAuthLink = await db.collection("memberAuthLinks").findOne({ email: normalizedEmail, firebaseUid: { $ne: firebaseUid } });
+    if (otherAuthLink) {
+      const conflict = new Error("This email is already associated with another member account.");
+      conflict.status = 409;
+      throw conflict;
+    }
+    const otherProfile = await db.collection("memberProfiles").findOne({ email: normalizedEmail, firebaseUid: { $ne: firebaseUid }, deactivatedAt: { $exists: false } });
+    if (otherProfile) {
+      const conflict = new Error("This email is already associated with another personal account.");
+      conflict.status = 409;
+      throw conflict;
+    }
+    const existingProfileByUid = await db.collection("memberProfiles").findOne({ firebaseUid, deactivatedAt: { $exists: false } });
+    if (existingProfileByUid && existingProfileByUid.email && normalizeMemberEmail(existingProfileByUid.email) !== normalizedEmail) {
+      const conflict = new Error("Firebase UID is already associated with a different email.");
+      conflict.status = 409;
+      throw conflict;
     }
     const legacyMember = groupAuthorized ? await findDashboardMemberByEmail(email) : null;
     if (legacyMember) {
       const existingLink = await db.collection("memberAuthLinks").findOne({ _id: legacyMember.id });
       if (existingLink?.firebaseUid && existingLink.firebaseUid !== firebaseUid) return null;
       const now = new Date();
-      const verifiedIdentity = { firebaseUid, email, lastVerifiedAt: now, linkedAt: existingLink?.linkedAt || now, sessionVersion: Number(existingLink?.sessionVersion) || 0 };
+      const verifiedIdentity = { firebaseUid, email: normalizedEmail, lastVerifiedAt: now, linkedAt: existingLink?.linkedAt || now, sessionVersion: Number(existingLink?.sessionVersion) || 0 };
       if (typeof photoUrl === "string" && photoUrl) verifiedIdentity.photoUrl = photoUrl;
       await db.collection("memberAuthLinks").updateOne({ _id: legacyMember.id }, { $set: verifiedIdentity, $unset: { deactivatedAt: "" } }, { upsert: true });
       return { id: legacyMember.id, name: legacyMember.name, sessionVersion: verifiedIdentity.sessionVersion, created: false };
     }
     const id = `member-${crypto.createHash("sha256").update(firebaseUid).digest("hex").slice(0, 32)}`;
-    const { profile, created } = await resolvePersonalProfile({ id, firebaseUid, email, displayName, photoUrl });
+    const { profile, created } = await resolvePersonalProfile({ id, firebaseUid, email: normalizedEmail, displayName, photoUrl });
     return profile ? { id: profile._id, name: profile.displayName, sessionVersion: profile.sessionVersion, created } : null;
   }
 });
@@ -406,6 +473,114 @@ app.get("/api/profile/:memberId", async (req, res, next) => {
     } catch {
       cvDoc = null;
     }
+
+    const isAdminOwner = isAdminSession(req) && (req.session?.memberId === memberId || (member && normalizeMemberEmail(member.email) === normalizeMemberEmail(req.session.adminEmail)));
+    const canViewDaily = isOwner || isAdminOwner;
+
+    let dailyActivity = null;
+    if (canViewDaily) {
+      const today = currentActivityDate();
+      const user = req.member || { id: memberId, leetCodeUsername: username };
+      const service = dailyWorkspaceService();
+      const forceSync = req.query.sync === "1" || req.query.sync === "true" || req.query.refresh === "1";
+
+      let workspaceData = null;
+      try {
+        if (forceSync && username) {
+          try {
+            await service.sync(user);
+          } catch (syncErr) {
+            console.warn("[profile-daily] force sync error", syncErr?.message);
+          }
+        }
+        workspaceData = await service.workspaceFor(user, today);
+
+        if (!workspaceData?.workspace && username && !forceSync) {
+          try {
+            await service.sync(user);
+            workspaceData = await service.workspaceFor(user, today);
+          } catch (syncErr) {
+            console.warn("[profile-daily] initial sync error", syncErr?.message);
+          }
+        }
+      } catch (wsErr) {
+        console.warn("[profile-daily] workspace lookup error", wsErr?.message);
+      }
+
+      const submissionsList = [];
+      if (workspaceData?.workspace?.submissions) {
+        submissionsList.push(...workspaceData.workspace.submissions);
+      }
+
+      try {
+        const persisted = await db.collection("leetcodeSubmissions").find({
+          memberId,
+          activityDate: today
+        }).sort({ timestamp: -1 }).toArray();
+
+        for (const row of persisted) {
+          const id = row.submissionId || String(row.timestamp);
+          const alreadyExists = submissionsList.some(s =>
+            (s.submissionId && s.submissionId === id) ||
+            (s.problemSlug && s.problemSlug === row.problemIdentifier && Math.abs(new Date(s.submittedAt).getTime() - new Date(row.submittedAt).getTime()) < 2000)
+          );
+          if (!alreadyExists) {
+            submissionsList.push({
+              id: row._id,
+              submissionId: row.submissionId,
+              problemTitle: row.title,
+              problemSlug: row.problemIdentifier && /^[a-z0-9-]+$/.test(row.problemIdentifier) ? row.problemIdentifier : (row.titleSlug || null),
+              problemUrl: row.problemIdentifier ? `https://leetcode.com/problems/${encodeURIComponent(row.problemIdentifier)}/` : null,
+              language: row.language,
+              verdict: row.verdict,
+              submittedAt: row.submittedAt,
+              difficulty: row.difficulty || null
+            });
+          }
+        }
+      } catch (dbErr) {
+        console.warn("[profile-daily] leetcodeSubmissions query error", dbErr?.message);
+      }
+
+      const uniqueSlugs = [...new Set(submissionsList.map(s => s.problemSlug || s.titleSlug).filter(Boolean))];
+      const detailsMap = {};
+      await Promise.all(uniqueSlugs.map(async slug => {
+        let detail = null;
+        if (db) {
+          try {
+            detail = await db.collection("leetcodeProblems").findOne({ _id: slug });
+          } catch {}
+        }
+        if (!detail) {
+          detail = await fetchLeetCodeQuestionDetail(slug);
+          if (detail && db) {
+            try {
+              await db.collection("leetcodeProblems").updateOne(
+                { _id: slug },
+                { $set: { _id: slug, ...detail, updatedAt: new Date() } },
+                { upsert: true }
+              );
+            } catch {}
+          }
+        }
+        if (detail) detailsMap[slug] = detail;
+      }));
+
+      const questions = groupDailySubmissions(submissionsList, detailsMap);
+
+      dailyActivity = {
+        date: today,
+        timezone: "Asia/Kolkata",
+        lastSyncedAt: workspaceData?.workspace?.lastSyncedAt || null,
+        syncStatus: workspaceData?.workspace?.syncStatus || (username ? "ready" : "unlinked"),
+        syncError: workspaceData?.workspace?.syncError || null,
+        totalSubmissions: submissionsList.length,
+        questionsCount: questions.length,
+        acceptedCount: questions.filter(q => q.hasAccepted).length,
+        questions
+      };
+    }
+
     res.json({
       id: memberId,
       name: member?.name || personal?.displayName || "Member",
@@ -416,13 +591,14 @@ app.get("/api/profile/:memberId", async (req, res, next) => {
       statsSource: stats ? "LeetCode public profile" : null,
       statsUpdatedAt: stats ? profileRecord.lastFetchedAt || null : null,
       statsUnavailable: Boolean(username && !stats),
-      characterVerse: cvDoc?.appearance ? { appearance: cvDoc.appearance } : null
+      characterVerse: cvDoc?.appearance ? { appearance: cvDoc.appearance } : null,
+      dailyActivity
     });
   } catch {
     res.status(503).json({ error: "Profile data is temporarily unavailable." });
   }
-});
-
+});
+
 app.get("/api/firebase-config", (req, res) => {
   const config = requiredFirebaseClientConfig();
   if (!config) return res.status(503).json({ error: "Google sign-in is not configured. Set FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID, and FIREBASE_APP_ID." });
@@ -483,21 +659,138 @@ app.get("/api/data", adminOnly, async (req, res) => {
   }).filter(Boolean)) });
 });
 
+async function resolveAuthorizedGroupContext(req, db, { requiredRole = null, allowEmpty = false } = {}) {
+  const isAdmin = isAdminSession(req);
+  const isMember = (req.session?.role === "member" && typeof req.session.memberId === "string") || Boolean(req.member?.id);
+  if (!isAdmin && !isMember) {
+    const error = new Error("Authentication required.");
+    error.status = 401;
+    error.code = "AUTHENTICATION_REQUIRED";
+    throw error;
+  }
+
+  const userId = req.member?.id || req.session?.memberId;
+  let targetGroupId = req.query?.groupId || req.headers?.["x-group-id"] || req.session?.activeGroupId;
+
+  if (!targetGroupId && userId) {
+    const activeM = await db.collection("groupMembers").findOne({ userId, status: "approved" });
+    if (activeM) {
+      targetGroupId = activeM.groupId;
+    } else if (isAdmin) {
+      targetGroupId = "legacy-dsa-group";
+    }
+  }
+
+  if (!targetGroupId) {
+    if (allowEmpty) {
+      return { groupId: null, group: null, membership: null, groupMembers: [] };
+    }
+    const error = new Error("Group membership required.");
+    error.status = 403;
+    error.code = "GROUP_MEMBERSHIP_REQUIRED";
+    throw error;
+  }
+
+  let membership = null;
+  if (!isAdmin) {
+    membership = await db.collection("groupMembers").findOne({ groupId: targetGroupId, userId, status: "approved" });
+    if (!membership) {
+      const error = new Error("You are not an authorized member of this group.");
+      error.status = 403;
+      error.code = "GROUP_MEMBERSHIP_REQUIRED";
+      throw error;
+    }
+    if (requiredRole === "owner" && membership.role !== "owner") {
+      const error = new Error("Group owner permission required.");
+      error.status = 403;
+      error.code = "GROUP_OWNER_REQUIRED";
+      throw error;
+    }
+  } else {
+    membership = await db.collection("groupMembers").findOne({ groupId: targetGroupId, userId, status: "approved" })
+      || { groupId: targetGroupId, userId, role: "owner", status: "approved" };
+  }
+
+  const group = await db.collection("groups").findOne({ _id: targetGroupId });
+  if (!group) {
+    const error = new Error("Group not found.");
+    error.status = 404;
+    error.code = "GROUP_NOT_FOUND";
+    throw error;
+  }
+
+  const groupMembers = await db.collection("groupMembers")
+    .find({ groupId: targetGroupId, status: "approved" })
+    .sort({ joinedAt: 1 })
+    .toArray();
+
+  if (req.session) {
+    req.session.activeGroupId = targetGroupId;
+  }
+
+  return { groupId: targetGroupId, group, membership, groupMembers };
+}
+
+async function getGroupDashboardDocument(db, groupId, groupMembers) {
+  if (groupId === "legacy-dsa-group") {
+    const doc = await db.collection("dashboard").findOne({ _id: "legacy-dsa-group" })
+      || await db.collection("dashboard").findOne({ _id: "shared" });
+    if (doc) return doc;
+  } else {
+    const doc = await db.collection("dashboard").findOne({ _id: groupId });
+    if (doc) return doc;
+  }
+  const newDoc = {
+    _id: groupId,
+    groupId,
+    currentWeek: 1,
+    members: (groupMembers || []).map(m => ({
+      id: m.userId,
+      name: m.displayName,
+      role: m.role === "owner" ? "Leader" : "Member"
+    })),
+    weeks: {},
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  try {
+    await db.collection("dashboard").insertOne(newDoc);
+  } catch (err) {
+    if (err.code !== 11000) throw err;
+  }
+  return newDoc;
+}
+
 app.get("/api/member/shared-data", memberOnly, async (req, res) => {
-  if (!req.member.groupMember) return res.status(403).json({ error: "Group dashboard data is unavailable for this account." });
-  const document = await db.collection("dashboard").findOne({ _id: "shared" });
-  if (!document) return res.status(404).json({ error: "Shared dashboard data has not been initialized." });
-  const profiles = await db.collection("leetcodeProfiles").find({}).toArray();
-  const cacheById = new Map(profiles.map(profile => [profile.memberId, profile]));
-  res.json({
-    members: document.members.map(({ id, name, role }) => ({ id, name, role })),
-    weeks: document.weeks,
-    currentWeek: document.currentWeek,
-    leetcode: Object.fromEntries(document.members.map(member => {
-      const profile = profileForMember(member);
-      return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
-    }).filter(Boolean))
-  });
+  try {
+    const { groupId, group, groupMembers } = await resolveAuthorizedGroupContext(req, db);
+    const document = await getGroupDashboardDocument(db, groupId, groupMembers);
+    const memberIds = groupMembers.map(m => m.userId);
+    const profiles = await db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray();
+    const cacheById = new Map(profiles.map(profile => [profile._id, profile]));
+    const leetcode = {};
+    for (const m of groupMembers) {
+      const p = cacheById.get(m.userId);
+      if (p?.username) {
+        leetcode[m.userId] = {
+          username: p.username,
+          profileUrl: `https://leetcode.com/u/${encodeURIComponent(p.username)}/`,
+          stats: p.stats || null
+        };
+      }
+    }
+    const groupDisplayName = (group.name && group.name.trim()) ? group.name.trim() : "Unnamed Group";
+    res.json({
+      groupId,
+      groupName: groupDisplayName,
+      members: document.members.map(({ id, name, role }) => ({ id, name, role })),
+      weeks: document.weeks || {},
+      currentWeek: document.currentWeek || 1,
+      leetcode
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message, code: error.code });
+  }
 });
 
 app.get("/api/page-data/:page", dashboardViewer, async (req, res) => {
@@ -505,19 +798,55 @@ app.get("/api/page-data/:page", dashboardViewer, async (req, res) => {
   if (!PAGES.includes(page)) return res.status(404).json({ error: "Page not found." });
   const weekNumber = Number(req.query.week);
   if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > MAX_WEEKS) return res.status(400).json({ error: "Choose a valid week." });
-  const document = await db.collection("dashboard").findOne({ _id: "shared" });
-  const shared = document || { members: [], weeks: {} };
-  const members = shared.members.map(({ id, name }) => ({ id, name, role: "Member" }));
-  const savedWeek = shared.weeks[String(weekNumber)] || { daily: {}, concepts: {} };
+
+  let groupCtx;
+  try {
+    groupCtx = await resolveAuthorizedGroupContext(req, db, { allowEmpty: true });
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message, code: err.code });
+  }
+
+  const { groupId, group, groupMembers } = groupCtx;
+  if (!groupId || !groupMembers.length) {
+    return res.json({
+      page,
+      week: weekNumber,
+      groupId: null,
+      groupName: null,
+      members: [],
+      participants: 0,
+      qualified: 0,
+      highest: 0,
+      statuses: page === "report" ? { daily: {}, concepts: {} } : {},
+      leetcode: {},
+      summary: [],
+      arena: { racers: [], targetMilestone: 100 }
+    });
+  }
+
+  const groupDoc = await getGroupDashboardDocument(db, groupId, groupMembers);
+  const members = groupMembers.map(m => ({
+    id: m.userId,
+    name: m.displayName,
+    role: m.role === "owner" ? "Leader" : "Member",
+    rawRole: m.role,
+    joinedAt: m.joinedAt
+  }));
+  const memberIds = members.map(m => m.id);
+
+  const savedWeek = groupDoc.weeks?.[String(weekNumber)] || { daily: {}, concepts: {} };
   const daily = id => Array.from({ length: 6 }, (_, i) => STATUSES.has(savedWeek.daily?.[id]?.[i]) ? savedWeek.daily[id][i] : "blank");
   const concepts = id => Array.from({ length: 2 }, (_, i) => STATUSES.has(savedWeek.concepts?.[id]?.[i]) ? savedWeek.concepts[id][i] : "blank");
   const workSlots = scheduledSlots(weekNumber);
   const possible = workSlots.length + (workSlots.length ? 2 : 0);
+
   const rows = members.map(member => {
     const d = workSlots.map(index => daily(member.id)[index]);
     const c = workSlots.length ? concepts(member.id) : [];
     return { ...member, ...scoreWeek(d, c, possible) };
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  const groupDisplayName = (group.name && group.name.trim()) ? group.name.trim() : "Unnamed Group";
 
   if (page === "daily") {
     const date = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : null;
@@ -530,7 +859,7 @@ app.get("/api/page-data/:page", dashboardViewer, async (req, res) => {
     ]);
     const isAdmin = isAdminSession(req);
     const currentCollection = date === activityDate ? collectionJob?.collection : null;
-    const activity = storedActivity || (currentCollection ? {
+    const rawActivity = storedActivity || (currentCollection ? {
       date: activityDate,
       lastSuccessfulAt: currentCollection.collectedAt || null,
       summary: {
@@ -541,102 +870,248 @@ app.get("/api/page-data/:page", dashboardViewer, async (req, res) => {
       },
       statuses: currentCollection.statuses || {}
     } : null);
-    const safeSummary = publicActivityRecord(activity)?.summary || {};
+
+    let scopedActivity = null;
+    if (rawActivity) {
+      const scopedStatuses = {};
+      let verifiedCount = 0;
+      let unableCount = 0;
+      let failureCount = 0;
+      for (const mId of memberIds) {
+        if (rawActivity.statuses && rawActivity.statuses[mId]) {
+          scopedStatuses[mId] = rawActivity.statuses[mId];
+          if (rawActivity.statuses[mId].status === "Attempt verified") verifiedCount++;
+          else if (rawActivity.statuses[mId].status === "Unable to verify") unableCount++;
+          if (rawActivity.statuses[mId].trackerUpdateFailed) failureCount++;
+        }
+      }
+      scopedActivity = {
+        date: rawActivity.date,
+        lastSuccessfulAt: rawActivity.lastSuccessfulAt,
+        summary: {
+          membersChecked: memberIds.length,
+          verifiedAttempts: verifiedCount,
+          unableToVerify: unableCount,
+          trackerUpdateFailures: failureCount
+        },
+        statuses: scopedStatuses
+      };
+    }
+
+    const safeSummary = publicActivityRecord(scopedActivity)?.summary || {};
     const trackingSummary = {
-      activityDate: activity?.date || date || activityDate,
-      lastSuccessfulAt: activity?.lastSuccessfulAt || null,
+      activityDate: scopedActivity?.date || date || activityDate,
+      lastSuccessfulAt: scopedActivity?.lastSuccessfulAt || null,
       verifiedAttempts: safeSummary.verifiedAttempts || 0,
       unableToVerify: safeSummary.unableToVerify || 0,
       trackerUpdateFailures: safeSummary.trackerUpdateFailures || 0
     };
-    return res.json({ page, week: weekNumber, date, activity: isAdmin ? activity : publicActivityRecord(activity), trackingSummary, activityDate, previousActivityDate, collectionJob: isAdmin ? collectionJob?.collection || null : null, finalizationJob: isAdmin ? finalizationJob?.finalization || null : null, members, statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)])) });
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      week: weekNumber,
+      date,
+      activity: isAdmin ? scopedActivity : publicActivityRecord(scopedActivity),
+      trackingSummary,
+      activityDate,
+      previousActivityDate,
+      collectionJob: isAdmin ? collectionJob?.collection || null : null,
+      finalizationJob: isAdmin ? finalizationJob?.finalization || null : null,
+      members,
+      statuses: Object.fromEntries(members.map(member => [member.id, daily(member.id)]))
+    });
   }
-  if (page === "concepts") return res.json({ page, week: weekNumber, members, statuses: Object.fromEntries(members.map(member => [member.id, concepts(member.id)])) });
+
+  if (page === "concepts") {
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      week: weekNumber,
+      members,
+      statuses: Object.fromEntries(members.map(member => [member.id, concepts(member.id)]))
+    });
+  }
+
   if (page === "members") {
-    const docs = await db.collection("leetcodeProfiles").find({}).toArray();
-    const cacheById = new Map(docs.map(doc => [doc.memberId, doc]));
-    const linkDocs = await db.collection("memberAuthLinks").find({ _id: { $in: shared.members.map(member => member.id) } }, { projection: { deactivatedAt: 1 } }).toArray();
+    const docs = await db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray();
+    const cacheById = new Map(docs.map(doc => [doc._id, doc]));
+    const linkDocs = await db.collection("memberAuthLinks").find({ _id: { $in: memberIds } }, { projection: { deactivatedAt: 1 } }).toArray();
     const linkById = new Map(linkDocs.map(link => [link._id, link]));
-    const pageMembers = shared.members.map(({ id, name, role }) => ({ id, name, role, ...(isAdminSession(req) ? { firebaseLinked: Boolean(linkById.get(id) && !linkById.get(id).deactivatedAt) } : {}) }));
-    return res.json({ page, members: pageMembers, leetcode: Object.fromEntries(shared.members.map(member => {
-      const profile = profileForMember(member);
-      return profile ? [member.id, publicRecord(cacheById.get(member.id), profile, member.id)] : null;
-    }).filter(Boolean)) });
+    const pageMembers = groupMembers.map(m => ({
+      id: m.userId,
+      name: m.displayName,
+      role: m.role === "owner" ? "Leader" : "Member",
+      rawRole: m.role,
+      joinedAt: m.joinedAt,
+      ...(isAdminSession(req) ? { firebaseLinked: Boolean(linkById.get(m.userId) && !linkById.get(m.userId).deactivatedAt) } : {})
+    }));
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      members: pageMembers,
+      leetcode: Object.fromEntries(pageMembers.map(member => {
+        const profile = cacheById.get(member.id);
+        return profile?.username ? [member.id, { username: profile.username, profileUrl: `https://leetcode.com/u/${encodeURIComponent(profile.username)}/`, stats: profile.stats }] : null;
+      }).filter(Boolean))
+    });
   }
+
   if (page === "leaderboard") {
     applyEligibleDenseRanks(rows, possible ? Math.ceil(possible * 0.75) : Infinity);
-    return res.json({ page, week: weekNumber, members: rows, participants: rows.length, qualified: rows.filter(row => row.qualified).length, highest: rows.length ? rows[0].score : 0 });
+    const cvDocs = await db.collection("characterVerseProfiles").find({ _id: { $in: memberIds } }).toArray();
+    const cvMap = new Map(cvDocs.map(doc => [doc._id, doc]));
+    const enrichedRows = rows.map(row => ({
+      ...row,
+      characterVerse: cvMap.get(row.id)?.appearance ? { appearance: cvMap.get(row.id).appearance } : null
+    }));
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      week: weekNumber,
+      members: enrichedRows,
+      participants: rows.length,
+      qualified: rows.filter(row => row.qualified).length,
+      highest: rows.length ? rows[0].score : 0
+    });
   }
+
   if (page === "overview") {
     const summary = rows.map(row => ({ name: row.name, dailyDone: row.dailyDone, conceptsDone: row.conceptsDone, overallDone: row.score, percent: row.percent }));
-    return res.json({ page, week: weekNumber, participants: rows.length, dailyDone: rows.reduce((n, row) => n + row.dailyDone, 0), conceptsDone: rows.reduce((n, row) => n + row.conceptsDone, 0), summary });
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      week: weekNumber,
+      participants: rows.length,
+      dailyDone: rows.reduce((n, row) => n + row.dailyDone, 0),
+      conceptsDone: rows.reduce((n, row) => n + row.conceptsDone, 0),
+      summary
+    });
   }
+
   if (page === "arena") {
-    const memberIds = shared.members.map(member => member.id);
     const [leetcodeDocs, cvDocs] = await Promise.all([
       db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray(),
       db.collection("characterVerseProfiles").find({ _id: { $in: memberIds } }).toArray()
     ]);
     const leetCodeMap = new Map(leetcodeDocs.map(doc => [doc._id, doc]));
     const cvMap = new Map(cvDocs.map(doc => [doc._id, doc]));
-    const arena = buildRaceArenaState(shared.members, leetCodeMap, cvMap);
-    return res.json({ page, week: weekNumber, arena });
+    const groupRacers = members.map(m => ({
+      id: m.id,
+      name: m.name,
+      leetCodeUsername: leetCodeMap.get(m.id)?.username || null
+    }));
+    const arena = buildRaceArenaState(groupRacers, leetCodeMap, cvMap);
+    arena.groupId = groupId;
+    arena.groupName = groupDisplayName;
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      week: weekNumber,
+      arena
+    });
   }
+
   if (page === "report") {
-    return res.json({ page, week: weekNumber, members, statuses: { daily: Object.fromEntries(members.map(member => [member.id, daily(member.id)])), concepts: Object.fromEntries(members.map(member => [member.id, concepts(member.id)])) } });
+    return res.json({
+      page,
+      groupId,
+      groupName: groupDisplayName,
+      week: weekNumber,
+      members,
+      statuses: {
+        daily: Object.fromEntries(members.map(member => [member.id, daily(member.id)])),
+        concepts: Object.fromEntries(members.map(member => [member.id, concepts(member.id)]))
+      }
+    });
   }
 });
 
 app.get("/api/arena/live", dashboardViewer, async (req, res) => {
   try {
-    const document = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
-    const members = document?.members || [];
-    const memberIds = members.map(member => member.id);
+    const { groupId, group, groupMembers } = await resolveAuthorizedGroupContext(req, db);
+    const memberIds = groupMembers.map(m => m.userId);
     const [leetcodeDocs, cvDocs] = await Promise.all([
       db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray(),
       db.collection("characterVerseProfiles").find({ _id: { $in: memberIds } }).toArray()
     ]);
     const leetCodeMap = new Map(leetcodeDocs.map(doc => [doc._id, doc]));
     const cvMap = new Map(cvDocs.map(doc => [doc._id, doc]));
-    const arena = buildRaceArenaState(members, leetCodeMap, cvMap);
+    const groupRacers = groupMembers.map(m => ({
+      id: m.userId,
+      name: m.displayName,
+      leetCodeUsername: leetCodeMap.get(m.userId)?.username || null
+    }));
+    const arena = buildRaceArenaState(groupRacers, leetCodeMap, cvMap);
+    arena.groupId = groupId;
+    arena.groupName = (group.name && group.name.trim()) ? group.name.trim() : "Unnamed Group";
     res.json(arena);
   } catch (error) {
-    res.status(503).json({ error: "Race arena standings are temporarily unavailable." });
+    res.status(error.status || 503).json({ error: error.message || "Race arena standings are temporarily unavailable." });
   }
 });
 
 app.post("/api/data", adminOnly, async (req, res) => {
   if (!validState(req.body)) return res.status(400).json({ error: "Dashboard data failed validation." });
+  const targetGroupId = req.query.groupId || req.body?.groupId || "legacy-dsa-group";
+  const group = await db.collection("groups").findOne({ _id: targetGroupId });
+  if (!group) return res.status(404).json({ error: "Group not found." });
+  const targetDocId = targetGroupId === "legacy-dsa-group" ? "shared" : targetGroupId;
   const dashboard = db.collection("dashboard");
-  const previous = await dashboard.findOne({ _id: "shared" });
+  const previous = await dashboard.findOne({ _id: targetDocId });
   const existingMembers = new Map((previous?.members || []).map(member => [member.id, member]));
   const incomingMembers = req.body.members.map(member => existingMembers.get(member.id)?.email ? { ...member, email: existingMembers.get(member.id).email } : member);
   const removedIds = [...existingMembers.keys()].filter(id => !incomingMembers.some(member => member.id === id));
-  await dashboard.updateOne({ _id: "shared" }, { $set: { members: incomingMembers, weeks: req.body.weeks, currentWeek: req.body.currentWeek, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+  await dashboard.updateOne({ _id: targetDocId }, { $set: { members: incomingMembers, weeks: req.body.weeks, currentWeek: req.body.currentWeek, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
   if (removedIds.length) await db.collection("memberAuthLinks").updateMany({ _id: { $in: removedIds } }, { $set: { deactivatedAt: new Date() }, $inc: { sessionVersion: 1 } });
-  audit(req, "save-dashboard", "shared");
+  audit(req, "save-dashboard", targetDocId);
   res.json({ ok: true });
 });
 
 app.get("/api/member/progress", memberOnly, async (req, res) => {
   const weekNumber = Number(req.query.week);
   if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > MAX_WEEKS) return res.status(400).json({ error: "Choose a valid week." });
-  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { weeks: 1 } });
-  const week = dashboard?.weeks?.[String(weekNumber)] || {};
-  const daily = Array.from({ length: 6 }, (_, slot) => STATUSES.has(week.daily?.[req.member.id]?.[slot]) ? week.daily[req.member.id][slot] : "blank");
-  const concepts = Array.from({ length: 2 }, (_, slot) => STATUSES.has(week.concepts?.[req.member.id]?.[slot]) ? week.concepts[req.member.id][slot] : "blank");
-  res.json({ member: { id: req.member.id, name: req.member.name, role: "Member" }, week: weekNumber, daily, concepts, scheduledSlots: scheduledSlots(weekNumber) });
+  try {
+    const { groupId, groupMembers } = await resolveAuthorizedGroupContext(req, db);
+    const dashboard = await getGroupDashboardDocument(db, groupId, groupMembers);
+    const week = dashboard?.weeks?.[String(weekNumber)] || {};
+    const daily = Array.from({ length: 6 }, (_, slot) => STATUSES.has(week.daily?.[req.member.id]?.[slot]) ? week.daily[req.member.id][slot] : "blank");
+    const concepts = Array.from({ length: 2 }, (_, slot) => STATUSES.has(week.concepts?.[req.member.id]?.[slot]) ? week.concepts[req.member.id][slot] : "blank");
+    const myMembership = groupMembers.find(m => m.userId === req.member.id);
+    res.json({
+      member: { id: req.member.id, name: req.member.name, role: myMembership?.role === "owner" ? "Leader" : "Member" },
+      groupId,
+      week: weekNumber,
+      daily,
+      concepts,
+      scheduledSlots: scheduledSlots(weekNumber)
+    });
+  } catch (error) {
+    res.status(error.status || 403).json({ error: error.message });
+  }
 });
 
 app.get("/api/member/group", memberOnly, async (req, res) => {
-  if (!req.member.groupMember) return res.status(403).json({ error: "Group member profiles are unavailable for this account." });
-  const dashboard = await db.collection("dashboard").findOne({ _id: "shared" }, { projection: { members: 1 } });
-  const members = (dashboard?.members || []).map(member => ({
-    id: member.id,
-    name: member.name,
-    leetCodeUsername: profileForMember(member)?.username || null
-  }));
-  res.json({ members });
+  try {
+    const { groupId, groupMembers } = await resolveAuthorizedGroupContext(req, db);
+    const memberIds = groupMembers.map(m => m.userId);
+    const profiles = await db.collection("leetcodeProfiles").find({ _id: { $in: memberIds } }).toArray();
+    const profileMap = new Map(profiles.map(p => [p._id, p]));
+    const members = groupMembers.map(m => ({
+      id: m.userId,
+      name: m.displayName,
+      role: m.role === "owner" ? "Leader" : "Member",
+      leetCodeUsername: profileMap.get(m.userId)?.username || null
+    }));
+    res.json({ groupId, members });
+  } catch (error) {
+    res.status(error.status || 403).json({ error: error.message });
+  }
 });
 
 app.get("/api/member/dashboard", memberOnly, createMemberDashboardHandler({
@@ -1229,7 +1704,18 @@ app.get("/api/admin/audit", adminOnly, async (req, res) => {
 });
 
 function startLeetCodeActivityScheduler() {
-  const collect = () => runLeetCodeActivityCycle().catch(() => {});
+  const syncDailyWorkspaces = () => {
+    if (dailyWorkspaceSyncPromise) return dailyWorkspaceSyncPromise;
+    dailyWorkspaceSyncPromise = dailyWorkspaceService().syncActiveConnections({
+      // Preserve the public-integration request spacing used by the existing
+      // collector. Each individual workspace still acquires its own lease.
+      onProgress: async () => new Promise(resolve => setTimeout(resolve, REQUEST_GAP_MS))
+    }).catch(error => {
+      console.error("[daily-workspace] scheduled sync failed", { code: safeDiagnosticCode(error) });
+    }).finally(() => { dailyWorkspaceSyncPromise = null; });
+    return dailyWorkspaceSyncPromise;
+  };
+  const collect = () => runLeetCodeActivityCycle().catch(() => {}).then(syncDailyWorkspaces).catch(() => {});
   collect();
   setInterval(collect, 15 * 60 * 1000).unref();
   const scheduleBoundary = () => {

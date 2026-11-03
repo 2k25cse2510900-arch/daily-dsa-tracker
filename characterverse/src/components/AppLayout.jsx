@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useStudio } from '../context/StudioContext';
 import TopNav from './navigation/TopNav';
 import CharacterCollection from './panels/CharacterCollection';
@@ -28,7 +28,7 @@ const LIVE_ARENA_STATE = {
       solvedCount: 571,
       solvedAvailable: true,
       stats: { total: 571, easy: 424, medium: 143, hard: 4 },
-      character: { equippedCharacterId: "superman", selectedCharacterId: "superman", characterId: "superman", outfitId: "outfit-default" },
+      character: { equippedCharacterId: "superman", selectedCharacterId: "superman", characterId: "superman", outfitId: "outfit-default", equippedVehicleId: "vehicle-rocket", vehicleUpgradeId: "rocket-warp", raceMode: "vehicle" },
       progress: 0.8157,
       rank: 1,
     },
@@ -42,7 +42,14 @@ const LIVE_ARENA_STATE = {
       solvedCount: 462,
       solvedAvailable: true,
       stats: { total: 462, easy: 398, medium: 62, hard: 2 },
-      character: { equippedCharacterId: "kartik-kumar", selectedCharacterId: "kartik-kumar", characterId: "kartik-kumar", outfitId: "outfit-default" },
+      character: {
+        equippedCharacterId: "kartik-kumar",
+        selectedCharacterId: "kartik-kumar",
+        characterId: "kartik-kumar",
+        outfitId: "outfit-default",
+        equippedVehicleId: "vehicle-bike",
+        vehicleUpgradeId: "bike-sparks",
+      },
       progress: 0.66,
       rank: 2,
     },
@@ -56,7 +63,14 @@ const LIVE_ARENA_STATE = {
       solvedCount: 340,
       solvedAvailable: true,
       stats: { total: 340, easy: 266, medium: 68, hard: 6 },
-      character: { equippedCharacterId: "buster-blitz", selectedCharacterId: "buster-blitz", characterId: "buster-blitz", outfitId: "outfit-warrior" },
+      character: {
+        equippedCharacterId: "buster-blitz",
+        selectedCharacterId: "buster-blitz",
+        characterId: "buster-blitz",
+        outfitId: "outfit-warrior",
+        equippedVehicleId: "vehicle-car",
+        vehicleUpgradeId: "car-coins",
+      },
       progress: 0.4857,
       rank: 3,
     },
@@ -70,7 +84,14 @@ const LIVE_ARENA_STATE = {
       solvedCount: 209,
       solvedAvailable: true,
       stats: { total: 209, easy: 176, medium: 31, hard: 2 },
-      character: { equippedCharacterId: "avantika-yadav", selectedCharacterId: "avantika-yadav", characterId: "avantika-yadav", outfitId: "outfit-default" },
+      character: {
+        equippedCharacterId: "avantika-yadav",
+        selectedCharacterId: "avantika-yadav",
+        characterId: "avantika-yadav",
+        outfitId: "outfit-default",
+        equippedVehicleId: "vehicle-rocket",
+        vehicleUpgradeId: "rocket-warp",
+      },
       progress: 0.2986,
       rank: 4,
     },
@@ -133,6 +154,28 @@ const LIVE_ARENA_STATE = {
   ]
 };
 
+/**
+ * Fetches live arena state from /api/arena/live and polls every 20 s.
+ * Falls back to LIVE_ARENA_STATE (demo data) if the API is unavailable.
+ */
+function useArenaLiveState(isEnabled) {
+  const [arenaState, setArenaState] = useState(LIVE_ARENA_STATE);
+  useEffect(() => {
+    if (!isEnabled) return undefined;
+    let cancelled = false;
+    function doFetch() {
+      fetch('/api/arena/live', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (!cancelled && data?.racers) setArenaState(data); })
+        .catch(() => {});
+    }
+    doFetch();
+    const id = setInterval(doFetch, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [isEnabled]);
+  return arenaState;
+}
+
 /* ─── Coming Soon screen (for Shop / Inventory tabs) ─── */
 function ComingSoonScreen({ tab }) {
   const { setActiveTab, branding } = useStudio();
@@ -186,18 +229,32 @@ function ViewerBackground({ character }) {
 
 /* ─── Studio View (center 3D panel) ─── */
 function StudioView({ onPreviewReady, embedded = false }) {
-  const { effectiveCharacter, isAutoRotating, cameraResetTrigger } = useStudio();
+  const { effectiveCharacter, isAutoRotating, cameraResetTrigger, equippedVehicleId, ownedVehicles } = useStudio();
 
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isArenaMode = searchParams?.get('arena') === 'true';
   const arenaCamera = searchParams?.get('cam') || 'leader';
+  const arenaFocusParam = searchParams?.get('focus') || null;
+  const arenaFocusMemberId = useMemo(() => {
+    if (!arenaFocusParam) return null;
+    if (arenaFocusParam === 'superman') return 'member_mvggb1nmx303va';
+    if (arenaFocusParam === 'bike') return 'member_mvggbpb5y8e3h9';
+    if (arenaFocusParam === 'car') return 'member_mvggcet3ogmjrn';
+    if (arenaFocusParam === 'rocket') return 'member_mvggcs86gcby6t';
+    return arenaFocusParam;
+  }, [arenaFocusParam]);
+
+  const liveArenaState = useArenaLiveState(isArenaMode);
 
   if (isArenaMode) {
     return (
       <div className="flex flex-col flex-1 min-h-0 min-w-0 relative overflow-hidden bg-[#090d16]">
         <RaceArena
-          arenaState={LIVE_ARENA_STATE}
+          arenaState={liveArenaState}
           cameraMode={arenaCamera}
+          focusedMemberId={arenaFocusMemberId}
+          myEquippedVehicleId={equippedVehicleId}
+          myOwnedVehicles={ownedVehicles}
         />
       </div>
     );
@@ -256,13 +313,25 @@ export default function AppLayout({ embedded = false, onPreviewReady = null }) {
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const isArenaMode = searchParams?.get('arena') === 'true';
   const arenaCamera = searchParams?.get('cam') || 'leader';
+  const arenaFocusParam = searchParams?.get('focus') || null;
+  const arenaFocusMemberId = useMemo(() => {
+    if (!arenaFocusParam) return null;
+    if (arenaFocusParam === 'superman') return 'member_mvggb1nmx303va';
+    if (arenaFocusParam === 'bike') return 'member_mvggbpb5y8e3h9';
+    if (arenaFocusParam === 'car') return 'member_mvggcet3ogmjrn';
+    if (arenaFocusParam === 'rocket') return 'member_mvggcs86gcby6t';
+    return arenaFocusParam;
+  }, [arenaFocusParam]);
+
+  const liveArenaState = useArenaLiveState(isArenaMode);
 
   if (isArenaMode) {
     return (
       <div className="w-screen h-screen overflow-hidden bg-[#090d16] relative">
         <RaceArena
-          arenaState={LIVE_ARENA_STATE}
+          arenaState={liveArenaState}
           cameraMode={arenaCamera}
+          focusedMemberId={arenaFocusMemberId}
         />
       </div>
     );

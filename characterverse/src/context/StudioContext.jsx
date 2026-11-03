@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, useRef } from 'react';
 import { CHARACTERS, getCharacterById } from '../data/characters';
 import { BRANDING } from '../config/branding';
 import { WARDROBE_CATALOG, getCatalogItemById, OUTFITS, getOutfitById } from '../data/wardrobe';
@@ -115,7 +115,26 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     return false;
   });
 
+  const [raceMode, setRaceMode] = useState('character');
   const [profileReady, setProfileReady] = useState(false);
+  const pendingPayloadRef = useRef(null);
+  const isInitialLoadRef = useRef(true);
+
+  const saveAppearanceImmediately = async (partialPayload) => {
+    try {
+      const updated = await characterVerseRequest('/api/characterverse/me/appearance', {
+        method: 'PUT',
+        body: JSON.stringify(partialPayload),
+      });
+      if (updated?.appearance) {
+        applyServerProfile(updated);
+      }
+      return updated;
+    } catch (err) {
+      showToast(err.message || 'Failed to save appearance on server.', 'error');
+      throw err;
+    }
+  };
 
   // Modal for Phase 3/5 placeholders
   const [placeholderModal, setPlaceholderModal] = useState({
@@ -140,25 +159,31 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
   };
 
   const applyServerProfile = (profile) => {
+    if (!profile || typeof profile !== 'object') return;
     const appearance = profile.appearance || {};
     const defaultOwned = CHARACTERS.filter((c) => c.shopData?.owned !== false).map((c) => c.id);
     const serverOwned = profile.inventory?.characters || ['buster-blitz'];
     const mergedOwned = Array.from(new Set([...defaultOwned, ...serverOwned]));
-    setCoins(profile.wallet?.coins ?? 0);
-    setOwnedCharacterIds(mergedOwned);
-    setOwnedCosmeticIds(profile.inventory?.cosmetics || []);
-    setOwnedOutfitIds(profile.inventory?.outfits || ['outfit-default']);
-    setOwnedVehicles(Object.fromEntries(VEHICLES.map((vehicle) => [vehicle.id, (profile.inventory?.vehicles || []).includes(vehicle.id)])));
-    setOwnedVehicleUpgrades(Object.fromEntries(VEHICLES.map((vehicle) => [vehicle.upgradeEffect.id, (profile.inventory?.vehicleUpgrades || []).includes(vehicle.upgradeEffect.id)])));
+    if (profile.wallet?.coins !== undefined) setCoins(profile.wallet.coins);
+    if (Array.isArray(profile.inventory?.characters)) setOwnedCharacterIds(mergedOwned);
+    if (Array.isArray(profile.inventory?.cosmetics)) setOwnedCosmeticIds(profile.inventory.cosmetics);
+    if (Array.isArray(profile.inventory?.outfits)) setOwnedOutfitIds(profile.inventory.outfits);
+    if (Array.isArray(profile.inventory?.vehicles)) {
+      setOwnedVehicles(Object.fromEntries(VEHICLES.map((vehicle) => [vehicle.id, profile.inventory.vehicles.includes(vehicle.id)])));
+    }
+    if (Array.isArray(profile.inventory?.vehicleUpgrades)) {
+      setOwnedVehicleUpgrades(Object.fromEntries(VEHICLES.map((vehicle) => [vehicle.upgradeEffect.id, profile.inventory.vehicleUpgrades.includes(vehicle.upgradeEffect.id)])));
+    }
     const urlChar = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('char') : null;
     const initialChar = urlChar && CHARACTERS.some((c) => c.id === urlChar) ? urlChar : (appearance.selectedCharacterId || 'buster-blitz');
-    setSelectedCharacterId(initialChar);
-    setEquippedCharacterId(appearance.equippedCharacterId || 'buster-blitz');
-    setEquippedCosmetics(appearance.equippedCosmetics || INITIAL_EQUIPPED_COSMETICS);
-    setEquippedOutfits(appearance.equippedOutfits || { 'buster-blitz': 'outfit-default' });
-    setCustomColors(appearance.customColors || getInitialColors());
-    setEquippedVehicleId(appearance.equippedVehicleId || null);
-    setEquippedVehicleUpgrades(appearance.equippedVehicleUpgrades || { 'vehicle-bike': null, 'vehicle-car': null, 'vehicle-rocket': null });
+    if (appearance.selectedCharacterId !== undefined || initialChar) setSelectedCharacterId(initialChar);
+    if (appearance.equippedCharacterId !== undefined) setEquippedCharacterId(appearance.equippedCharacterId);
+    if (appearance.equippedCosmetics !== undefined) setEquippedCosmetics(appearance.equippedCosmetics);
+    if (appearance.equippedOutfits !== undefined) setEquippedOutfits(appearance.equippedOutfits);
+    if (appearance.customColors !== undefined) setCustomColors(appearance.customColors);
+    if (appearance.equippedVehicleId !== undefined) setEquippedVehicleId(appearance.equippedVehicleId);
+    if (appearance.equippedVehicleUpgrades !== undefined) setEquippedVehicleUpgrades(appearance.equippedVehicleUpgrades);
+    if (appearance.raceMode !== undefined) setRaceMode(appearance.raceMode);
   };
 
   useEffect(() => {
@@ -184,34 +209,58 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
 
   useEffect(() => {
     if (!profileReady) return undefined;
-    const timer = setTimeout(() => {
-      const sanitizedCosmetics = {};
-      const sanitizedOutfits = {};
-      const sanitizedColors = {};
-      ownedCharacterIds.forEach((charId) => {
-        if (equippedCosmetics[charId]) sanitizedCosmetics[charId] = equippedCosmetics[charId];
-        if (equippedOutfits[charId]) sanitizedOutfits[charId] = equippedOutfits[charId];
-        if (customColors[charId]) sanitizedColors[charId] = customColors[charId];
-      });
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+      return undefined;
+    }
+    const sanitizedCosmetics = {};
+    const sanitizedOutfits = {};
+    const sanitizedColors = {};
+    ownedCharacterIds.forEach((charId) => {
+      if (equippedCosmetics[charId]) sanitizedCosmetics[charId] = equippedCosmetics[charId];
+      if (equippedOutfits[charId]) sanitizedOutfits[charId] = equippedOutfits[charId];
+      if (customColors[charId]) sanitizedColors[charId] = customColors[charId];
+    });
 
-      const payload = {
-        equippedCharacterId: ownedCharacterIds.includes(equippedCharacterId) ? equippedCharacterId : (ownedCharacterIds[0] || 'buster-blitz'),
-        equippedCosmetics: sanitizedCosmetics,
-        equippedOutfits: sanitizedOutfits,
-        customColors: sanitizedColors,
-        equippedVehicleId,
-        equippedVehicleUpgrades,
-      };
-      if (ownedCharacterIds.includes(selectedCharacterId)) {
-        payload.selectedCharacterId = selectedCharacterId;
-      }
+    const payload = {
+      equippedCharacterId: ownedCharacterIds.includes(equippedCharacterId) ? equippedCharacterId : (ownedCharacterIds[0] || 'buster-blitz'),
+      equippedCosmetics: sanitizedCosmetics,
+      equippedOutfits: sanitizedOutfits,
+      customColors: sanitizedColors,
+      equippedVehicleId,
+      equippedVehicleUpgrades,
+      raceMode,
+    };
+    if (ownedCharacterIds.includes(selectedCharacterId)) {
+      payload.selectedCharacterId = selectedCharacterId;
+    }
+    pendingPayloadRef.current = payload;
+
+    const timer = setTimeout(() => {
+      pendingPayloadRef.current = null;
       characterVerseRequest('/api/characterverse/me/appearance', {
         method: 'PUT',
         body: JSON.stringify(payload),
       }).catch((error) => showToast(error.message, 'error'));
     }, 350);
-    return () => clearTimeout(timer);
-  }, [profileReady, selectedCharacterId, equippedCharacterId, equippedCosmetics, equippedOutfits, customColors, equippedVehicleId, equippedVehicleUpgrades, ownedCharacterIds]);
+
+    return () => {
+      clearTimeout(timer);
+      if (pendingPayloadRef.current) {
+        const flushPayload = JSON.stringify(pendingPayloadRef.current);
+        pendingPayloadRef.current = null;
+        try {
+          fetch('/api/characterverse/me/appearance', {
+            method: 'PUT',
+            credentials: 'same-origin',
+            keepalive: true,
+            headers: { 'content-type': 'application/json' },
+            body: flushPayload,
+          }).catch(() => {});
+        } catch {}
+      }
+    };
+  }, [profileReady, selectedCharacterId, equippedCharacterId, equippedCosmetics, equippedOutfits, customColors, equippedVehicleId, equippedVehicleUpgrades, raceMode, ownedCharacterIds]);
 
   useEffect(() => {
     const receiveTab = (event) => {
@@ -250,13 +299,16 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     setPreviewOutfitId(null);
   };
 
-  const equipCurrentCharacter = () => {
+  const equipCurrentCharacter = async () => {
     if (!ownedCharacterIds.includes(selectedCharacterId)) {
       showToast(`${selectedCharacter.name} must be unlocked before equipping.`, 'error');
       return;
     }
     setEquippedCharacterId(selectedCharacterId);
-    showToast(`Equipped ${selectedCharacter.name} as active hero!`, 'success');
+    try {
+      await saveAppearanceImmediately({ equippedCharacterId: selectedCharacterId });
+      showToast(`Equipped ${selectedCharacter.name} as active hero!`, 'success');
+    } catch {}
   };
 
   const unlockCharacter = async (characterId) => {
@@ -473,7 +525,7 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     showToast(`Previewing ${outfit.name} outfit in 3D`, 'info');
   };
 
-  const equipOutfit = (outfit) => {
+  const equipOutfit = async (outfit) => {
     if (!outfit) return;
     if (selectedCharacter?.supportedOutfits && !selectedCharacter.supportedOutfits.includes(outfit.id)) {
       showToast(`${selectedCharacter.name} does not support this outfit.`, 'error');
@@ -504,7 +556,14 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
       [selectedCharacterId]: undefined,
     }));
     setPreviewOutfitId(null);
-    showToast(`Equipped ${outfit.name} outfit!`, 'success');
+    try {
+      await saveAppearanceImmediately({
+        equippedOutfits: { [selectedCharacterId]: outfit.id },
+        equippedCosmetics: { [selectedCharacterId]: { ...outfit.equipment } },
+        customColors: { [selectedCharacterId]: { ...outfit.colors } },
+      });
+      showToast(`Equipped ${outfit.name} outfit!`, 'success');
+    } catch {}
   };
 
   const unlockOutfit = async (outfitId) => {
@@ -622,7 +681,7 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
     } catch (error) { showToast(error.message, 'error'); }
   };
 
-  const equipVehicle = (vehicleId) => {
+  const equipVehicle = async (vehicleId) => {
     const v = getVehicleById(vehicleId);
     if (!v) return;
     if (!ownedVehicles[vehicleId]) {
@@ -634,14 +693,28 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
       setPreviewVehicleId(null);
       setPreviewVehicleUpgradeId(null);
     }
-    showToast(`Equipped ${v.name}!`, 'success');
+    try {
+      await saveAppearanceImmediately({
+        equippedVehicleId: vehicleId,
+      });
+      showToast(`Equipped ${v.name}!`, 'success');
+    } catch {
+      // Reverted upon server error
+    }
   };
 
-  const unequipVehicle = () => {
+  const unequipVehicle = async () => {
     setEquippedVehicleId(null);
     setPreviewVehicleId(null);
     setPreviewVehicleUpgradeId(null);
-    showToast('Unequipped vehicle (on foot)', 'info');
+    try {
+      await saveAppearanceImmediately({
+        equippedVehicleId: null,
+      });
+      showToast('Unequipped vehicle (on foot)', 'info');
+    } catch {
+      // Reverted upon server error
+    }
   };
 
   const unlockVehicleUpgrade = async (vehicleId, upgradeKey) => {
@@ -685,6 +758,26 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
       showToast(msg, 'info');
       return next;
     });
+  };
+
+  const selectRaceMode = async (mode) => {
+    if (mode === 'vehicle') {
+      if (!equippedVehicleId || !ownedVehicles[equippedVehicleId]) {
+        showToast('Equip a vehicle first to select Vehicle Mode for racing.', 'error');
+        return;
+      }
+      setRaceMode('vehicle');
+      try {
+        await saveAppearanceImmediately({ raceMode: 'vehicle' });
+        showToast('Switched to Vehicle Mode for racing!', 'success');
+      } catch {}
+    } else {
+      setRaceMode('character');
+      try {
+        await saveAppearanceImmediately({ raceMode: 'character' });
+        showToast('Switched to Character Mode (on foot / abilities) for racing!', 'success');
+      } catch {}
+    }
   };
 
   const resetVehicleLoadout = () => {
@@ -897,6 +990,9 @@ export const StudioProvider = ({ children, navigationTarget = null }) => {
         toggleVehicleUpgrade,
         toggleDrivingMode,
         resetVehicleLoadout,
+        raceMode,
+        setRaceMode,
+        selectRaceMode,
 
         // Modals & Feedback
         placeholderModal,
