@@ -21,6 +21,7 @@
     "node": ">=20 <21 || >=22 <23"
   },
   "dependencies": {
+    "@google/genai": "^2.32.0",
     "bcryptjs": "^2.4.3",
     "connect-mongo": "^5.1.0",
     "dotenv": "^16.4.7",

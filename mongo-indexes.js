@@ -30,7 +30,9 @@ const INDEXES = Object.freeze([
   { collection: "aiReviewSources", name: "userId_1_reviewId_1", key: { userId: 1, reviewId: 1 }, options: { unique: true } },
   { collection: "aiReviewSources", name: "expiresAt_1", key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
   { collection: "aiMentorUsage", name: "userId_1_date_1", key: { userId: 1, date: 1 }, options: { unique: true } },
-  { collection: "aiMentorUsage", name: "expiresAt_1", key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } }
+  { collection: "aiMentorUsage", name: "expiresAt_1", key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+  { collection: "aiUserSavedSources", name: "userId_1_submissionId_1", key: { userId: 1, submissionId: 1 }, options: {} },
+  { collection: "aiUserSavedSources", name: "userId_1_problemSlug_1", key: { userId: 1, problemSlug: 1 }, options: {} }
 ]);
 
 async function createRequiredIndexes(db) {

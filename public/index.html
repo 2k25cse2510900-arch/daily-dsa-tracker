@@ -630,6 +630,7 @@
             <span id="mentorStatusBadge" class="badge-status status-accepted">Accepted</span>
             <span id="mentorAttemptsBadge" class="badge-attempts">&#9889; 1 attempt</span>
             <span id="mentorLangBadge" class="badge-lang">Python 3</span>
+            <span id="mentorProviderBadge" class="badge-provider">Provider: Local Educational Knowledge Engine</span>
           </div>
           <h1 id="mentorProblemTitle" class="mentor-problem-title">Two Sum</h1>
           <p id="mentorProblemMeta" class="mentor-problem-meta">LeetCode Problem #1 &middot; AI Code Mentor Review</p>
@@ -660,7 +661,7 @@
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">CODE INPUT</span>
-                  <h3 class="mentor-card-title">Submitted Solution</h3>
+                  <h3 class="mentor-card-title">Submitted Solution <span id="mentorCodeSourceBadge" class="mentor-source-badge">Source: Manual Input</span></h3>
                 </div>
                 <div class="mentor-card-actions">
                   <label for="mentorLangSelect" class="sr-only">Language</label>
@@ -677,6 +678,10 @@
                     <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
                     Copy
                   </button>
+                  <button id="mentorImportCodeBtn" class="mentor-btn-sm mentor-btn-highlight" type="button" title="Import or paste your actual submitted code">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+                    Import Code
+                  </button>
                   <button id="mentorSampleToggleBtn" class="mentor-btn-sm" type="button">
                     Load Example
                   </button>
@@ -684,6 +689,66 @@
               </div>
 
               <!-- Code Editor Container -->
+              <!-- Source Notice Banner -->
+              <div id="mentorSourceNotice" class="mentor-alert-card source-alert" hidden>
+                <div class="mentor-alert-icon" id="mentorSourceNoticeIcon">&#9432;</div>
+                <div class="mentor-alert-content">
+                  <strong class="mentor-alert-title" id="mentorSourceNoticeTitle">Submitted Code Notice</strong>
+                  <p class="mentor-alert-body" id="mentorSourceNoticeBody">Original submitted source code is unavailable. Paste or import your code to continue the analysis.</p>
+                  <div class="mentor-source-actions" id="mentorSourceNoticeActions">
+                    <button id="mentorNoticeImportBtn" class="mentor-btn-link" type="button">Import Code</button>
+                    <button id="mentorReplaceCodeBtn" class="mentor-btn-link" type="button" hidden>Replace Code</button>
+                    <button id="mentorRemoveCodeBtn" class="mentor-btn-link mentor-btn-danger" type="button" hidden>Remove Code</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Import Submitted Code Modal -->
+              <div id="mentorImportModal" class="mentor-modal-overlay" hidden>
+                <div class="mentor-modal-card" role="dialog" aria-modal="true" aria-labelledby="mentorImportModalTitle">
+                  <div class="mentor-modal-header">
+                    <div>
+                      <span class="mentor-card-kicker">SUBMISSION CODE IMPORT</span>
+                      <h3 class="mentor-modal-title" id="mentorImportModalTitle">Import Submitted Code</h3>
+                      <p class="mentor-modal-subtitle" id="mentorImportModalSubtitle">Associate your code with this LeetCode submission.</p>
+                    </div>
+                    <button id="mentorImportModalClose" class="mentor-modal-close" type="button" aria-label="Close modal">&times;</button>
+                  </div>
+                  <div class="mentor-modal-body">
+                    <div class="mentor-modal-row">
+                      <div class="mentor-modal-field">
+                        <label for="mentorImportLangSelect"><strong>Language:</strong></label>
+                        <select id="mentorImportLangSelect" class="mentor-lang-select">
+                          <option value="python3">Python 3</option>
+                          <option value="java">Java</option>
+                          <option value="cpp">C++</option>
+                          <option value="javascript">JavaScript</option>
+                          <option value="typescript">TypeScript</option>
+                          <option value="go">Go</option>
+                          <option value="rust">Rust</option>
+                        </select>
+                      </div>
+                      <div class="mentor-modal-tools">
+                        <button id="mentorImportPasteClipboardBtn" class="btn btn-light btn-sm" type="button" title="Paste from clipboard">📋 Paste Clipboard</button>
+                        <label class="btn btn-light btn-sm file-upload-btn" title="Upload source file">
+                          📁 Choose File
+                          <input type="file" id="mentorImportFileInput" accept=".java,.py,.cpp,.c,.js,.ts,.go,.rs,.txt" style="display:none;">
+                        </label>
+                      </div>
+                    </div>
+                    <textarea id="mentorImportTextarea" class="mentor-import-textarea" placeholder="Paste your solution code as submitted to LeetCode..." spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+                    <div class="mentor-modal-meta">
+                      <span id="mentorImportCharCount">0 lines &middot; 0 chars</span>
+                      <span class="mentor-modal-privacy-note">🔒 Private to your account &middot; Never sent to AI until you request analysis</span>
+                    </div>
+                  </div>
+                  <div class="mentor-modal-footer">
+                    <button id="mentorImportCancelBtn" class="btn btn-light" type="button">Cancel</button>
+                    <button id="mentorImportSaveBtn" class="btn btn-primary" type="button">Import &amp; Save</button>
+                  </div>
+                </div>
+              </div>
+
               <div class="mentor-editor-container">
                 <div id="mentorLineNumbers" class="mentor-line-numbers" aria-hidden="true">1</div>
                 <textarea id="mentorCodeInput" class="mentor-code-textarea" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Paste or edit solution code here..." aria-label="Code Editor"></textarea>
@@ -734,6 +799,15 @@
               <span id="mentorQuotaText" class="mentor-quota-badge">10 reviews remaining today &middot; Resets 00:00 IST</span>
             </div>
 
+            <!-- AI Configuration Notice -->
+            <div id="mentorAiConfigNotice" class="mentor-alert-card config-alert" hidden>
+              <div class="mentor-alert-icon">&#9432;</div>
+              <div class="mentor-alert-content">
+                <strong class="mentor-alert-title">Knowledge Engine Active</strong>
+                <p id="mentorAiConfigText" class="mentor-alert-body">Primary AI provider is temporarily unavailable or unconfigured. AI Code Mentor is running in Local Educational Knowledge Engine mode.</p>
+              </div>
+            </div>
+
             <!-- Learning Action Pills (Table 6.1) -->
             <div class="mentor-action-bar" role="tablist" aria-label="Analysis perspective">
               <button class="mentor-action-chip active" type="button" data-mentor-mode="explain">Deep Analysis</button>
@@ -746,6 +820,18 @@
             </div>
 
             <!-- Mistake Detection Alert (When applicable) -->
+            <!-- Accepted Solution Affirmation Card -->
+            <div id="mentorAcceptedAlert" class="mentor-alert-card accepted-alert" hidden>
+              <div class="mentor-alert-icon">&#10004;</div>
+              <div class="mentor-alert-content">
+                <h4 class="mentor-alert-title" id="mentorAcceptedTitle">Solution Accepted</h4>
+                <p id="mentorAcceptedDetail" class="mentor-alert-body">Your solution was Accepted on LeetCode. No correctness issues identified.</p>
+                <div class="mentor-alert-fix" id="mentorAcceptedFix">
+                  <strong>Optimization Roadmap:</strong> Your solution is correct! Check the optimal solution below to compare asymptotic time and memory efficiency.
+                </div>
+              </div>
+            </div>
+
             <div id="mentorMistakeAlert" class="mentor-alert-card mistake-alert" hidden>
               <div class="mentor-alert-icon">&#9888;</div>
               <div class="mentor-alert-content">
@@ -845,6 +931,40 @@
               </div>
             </div>
 
+            <!-- Progressive Hint Card -->
+            <div id="mentorHintCard" class="mentor-card mentor-hint-card" hidden>
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">PROGRESSIVE GUIDANCE</span>
+                  <h4 class="mentor-card-subtitle" id="mentorHintLevelTitle">Hint 1 of 3: Conceptual Direction</h4>
+                </div>
+                <button id="mentorNextHintBtn" class="mentor-btn-sm" type="button">Next Hint &#8594;</button>
+              </div>
+              <div id="mentorHintBody" class="mentor-hint-body">
+                <p id="mentorHintText">Think about what invariant must be preserved at each step.</p>
+              </div>
+            </div>
+
+            <!-- Dry Run Trace Card -->
+            <div id="mentorDryRunCard" class="mentor-card mentor-dryrun-card" hidden>
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">STEP-BY-STEP TRACE</span>
+                  <h4 class="mentor-card-subtitle">Execution Trace &amp; Variable Watch</h4>
+                </div>
+              </div>
+              <div class="mentor-table-wrapper">
+                <table class="mentor-comparison-table mentor-dryrun-table">
+                  <thead id="mentorDryRunThead">
+                    <tr><th>Step</th><th>Pointer</th><th>Element</th><th>Target / Condition</th><th>Action</th></tr>
+                  </thead>
+                  <tbody id="mentorDryRunTbody">
+                    <tr><td>1</td><td>0</td><td>nums[0]</td><td>Evaluate</td><td>Check condition</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <!-- Final Takeaways Card -->
             <div class="mentor-card mentor-takeaways-card">
               <div class="mentor-card-head">
@@ -888,6 +1008,17 @@
             <div class="mentor-card-title-wrap">
               <span class="mentor-card-kicker">VISUAL STEPPER</span>
               <h3 class="mentor-card-title" id="animaticStageTitle">Array &amp; Hash Map Execution Trace</h3>
+            </div>
+            <div class="animatic-sound-controls" role="group" aria-label="Audio feedback">
+              <button id="animaticSoundToggle" class="animatic-sound-btn" type="button" aria-pressed="false" title="Toggle audio feedback">
+                <span id="animaticSoundIcon">&#128263;</span>
+                <span id="animaticSoundLabel">Sound: Muted</span>
+              </button>
+              <div class="animatic-volume-wrap">
+                <label for="animaticVolumeSlider" class="sr-only">Volume</label>
+                <input id="animaticVolumeSlider" class="animatic-volume-slider" type="range" min="0" max="1" step="0.05" value="0.3" aria-label="Volume">
+                <span id="animaticVolumeLabel" class="animatic-volume-label">30%</span>
+              </div>
             </div>
             <div class="animatic-stage-badges">
               <span class="badge-tag" id="animaticTargetBadge">Target: 9</span>

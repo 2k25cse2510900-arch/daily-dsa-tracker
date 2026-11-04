@@ -179,6 +179,7 @@ function groupDailySubmissions(submissions = [], questionDetailsMap = {}) {
       hasAccepted,
       language: latestAttempt.language,
       submittedAt: latestAttempt.submittedAt,
+      submissionId: latestAttempt.submissionId || null,
       url: entry.url,
       attemptsCount: attempts.length,
       verdicts: attempts.map(a => a.verdict),

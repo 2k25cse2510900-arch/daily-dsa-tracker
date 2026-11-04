@@ -1,0 +1,242 @@
+import bpy
+import bmesh
+import math
+import mathutils
+import os
+import shutil
+
+WORKSPACE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+src_glb = os.path.join(WORKSPACE, "characterverse", "public", "models", "Rogue.glb")
+brain_dir = os.environ.get("AGENT_BRAIN_DIR", os.path.join(WORKSPACE, "scratch"))
+os.makedirs(brain_dir, exist_ok=True)
+temp_out_glb = os.path.join(WORKSPACE, "scratch", "Rogue_nebula_final_v5.glb")
+
+target_destinations = [
+    os.path.join(WORKSPACE, "characterverse", "public", "models", "Rogue.glb"),
+    os.path.join(WORKSPACE, "characterverse", "dist", "models", "Rogue.glb"),
+    os.path.join(WORKSPACE, "characterverse", "dist-embed", "models", "Rogue.glb"),
+    os.path.join(WORKSPACE, "public", "characterverse", "models", "Rogue.glb"),
+    os.path.join(WORKSPACE, "public", "characterverse-embed", "models", "Rogue.glb"),
+]
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=src_glb)
+
+rig = bpy.data.objects['Rig']
+chest_bone = rig.pose.bones['chest']
+
+# 1. Cleanly remove Knife, Throwable, 2H_Crossbow, Crossbow_Harness_Strap
+for name in ['Knife', 'Throwable', '2H_Crossbow', 'Crossbow_Harness_Strap']:
+    obj = bpy.data.objects.get(name)
+    if obj:
+        mesh_data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if mesh_data:
+            bpy.data.meshes.remove(mesh_data, do_unlink=True)
+
+# 2. Update affected right hand to green glove on Rogue_ArmRight
+arm_r = bpy.data.objects['Rogue_ArmRight']
+mesh_r = arm_r.data
+uv_layer_arm = mesh_r.uv_layers.active.data
+
+hand_poly_count = 0
+for poly in mesh_r.polygons:
+    p_verts = [mesh_r.vertices[vi] for vi in poly.vertices]
+    if all(v.co.x < -0.805 for v in p_verts):
+        hand_poly_count += 1
+        for loop_idx in poly.loop_indices:
+            uv_layer_arm[loop_idx].uv = (0.08, 0.12)  # Emerald green
+
+print(f"Cleanly remapped {hand_poly_count} hand polygons to emerald green.")
+
+# 3. Mount 1H_Crossbow to chest bone on her back
+xb = bpy.data.objects['1H_Crossbow']
+xb.parent = None
+
+center_offset = mathutils.Matrix.Translation(mathutils.Vector((-0.0012, 0.3333, -0.0317)))
+base_rot = mathutils.Matrix.Rotation(-math.pi/2, 4, 'X')
+diag_tilt = mathutils.Matrix.Rotation(math.radians(-35), 4, 'Y')
+loc_target = mathutils.Vector((-0.02, 0.42, 0.58))
+world_mat = mathutils.Matrix.Translation(loc_target) @ diag_tilt @ base_rot @ center_offset
+
+xb.parent = rig
+xb.parent_type = 'BONE'
+xb.parent_bone = 'chest'
+xb.matrix_world = world_mat
+bpy.context.view_layer.update()
+
+# 4. Create dedicated secure-looking leather mounting harness straps on the back
+strap_mesh = bpy.data.meshes.new("Crossbow_Harness_Strap")
+strap_obj = bpy.data.objects.new("Crossbow_Harness_Strap", strap_mesh)
+bpy.context.scene.collection.objects.link(strap_obj)
+
+bm = bmesh.new()
+
+def add_thick_strap(points, width=0.038, thickness=0.005, normal_bias=mathutils.Vector((0, 0.9, 0.2))):
+    faces = []
+    ribbon_verts = []
+    for i in range(len(points)):
+        p = points[i]
+        if i == 0:
+            seg_dir = (points[1] - points[0]).normalized()
+        elif i == len(points) - 1:
+            seg_dir = (points[-1] - points[-2]).normalized()
+        else:
+            seg_dir = (points[i+1] - points[i-1]).normalized()
+        
+        side = seg_dir.cross(normal_bias).normalized() * (width * 0.5)
+        norm = normal_bias.normalized() * thickness
+        
+        tl = bm.verts.new(p - side + norm)
+        tr = bm.verts.new(p + side + norm)
+        br = bm.verts.new(p + side - norm)
+        bl = bm.verts.new(p - side - norm)
+        ribbon_verts.append((tl, tr, br, bl))
+        
+    for i in range(len(points) - 1):
+        tl0, tr0, br0, bl0 = ribbon_verts[i]
+        tl1, tr1, br1, bl1 = ribbon_verts[i+1]
+        # Top face
+        faces.append(bm.faces.new([tl0, tr0, tr1, tl1]))
+        # Bottom face
+        faces.append(bm.faces.new([bl1, br1, br0, bl0]))
+        # Left side
+        faces.append(bm.faces.new([tl0, tl1, bl1, bl0]))
+        # Right side
+        faces.append(bm.faces.new([tr1, tr0, br0, br1]))
+        
+    # Start and end caps
+    tl0, tr0, br0, bl0 = ribbon_verts[0]
+    faces.append(bm.faces.new([tl0, bl0, br0, tr0]))
+    tlN, trN, brN, blN = ribbon_verts[-1]
+    faces.append(bm.faces.new([tlN, trN, brN, blN]))
+    return faces
+
+# Strap 1: From right shoulder down across stock to left waist
+s1_pts = [
+    mathutils.Vector((-0.18, 0.24, 1.04)),  # Right shoulder anchor
+    mathutils.Vector((-0.16, 0.37, 0.94)),  # Upper right cape
+    mathutils.Vector((-0.09, 0.47, 0.84)),  # Crossbow stock approach
+    mathutils.Vector((-0.02, 0.54, 0.74)),  # Over crossbow wood stock
+    mathutils.Vector((0.08, 0.48, 0.65)),   # Lower stock exit
+    mathutils.Vector((0.15, 0.38, 0.56)),   # Lower left cape
+    mathutils.Vector((0.21, 0.26, 0.54)),   # Left waist anchor
+]
+s1_faces = add_thick_strap(s1_pts, width=0.038)
+
+# Strap 2: From left shoulder down across stock to right waist (completing X harness)
+s2_pts = [
+    mathutils.Vector((0.18, 0.24, 1.04)),   # Left shoulder anchor
+    mathutils.Vector((0.15, 0.37, 0.94)),   # Upper left cape
+    mathutils.Vector((0.06, 0.47, 0.84)),   # Crossbow stock approach
+    mathutils.Vector((-0.02, 0.55, 0.74)),  # Over crossing junction
+    mathutils.Vector((-0.09, 0.46, 0.65)),  # Crossbow stock exit
+    mathutils.Vector((-0.15, 0.38, 0.56)),  # Lower right cape
+    mathutils.Vector((-0.21, 0.26, 0.54)),  # Right waist anchor
+]
+s2_faces = add_thick_strap(s2_pts, width=0.038)
+
+# Silver central buckle plate at the X crossing
+bc = mathutils.Vector((-0.02, 0.56, 0.74))
+bw, bh, bd = 0.028, 0.028, 0.008
+bv0 = bm.verts.new(bc + mathutils.Vector((-bw, bd, -bh)))
+bv1 = bm.verts.new(bc + mathutils.Vector((bw, bd, -bh)))
+bv2 = bm.verts.new(bc + mathutils.Vector((bw, bd, bh)))
+bv3 = bm.verts.new(bc + mathutils.Vector((-bw, bd, bh)))
+buckle_face = bm.faces.new([bv0, bv1, bv2, bv3])
+buckle_idx = buckle_face.index
+
+bm.to_mesh(strap_mesh)
+bm.free()
+
+mat = bpy.data.materials.get("rogue_texture")
+if mat:
+    strap_mesh.materials.append(mat)
+
+uv_layer_strap = strap_mesh.uv_layers.new(name="UVMap")
+for poly in strap_mesh.polygons:
+    if poly.index == buckle_idx:
+        for loop_idx in poly.loop_indices:
+            uv_layer_strap.data[loop_idx].uv = (0.15, 0.15)  # Silver buckle
+    else:
+        for loop_idx in poly.loop_indices:
+            uv_layer_strap.data[loop_idx].uv = (0.69, 0.34)  # Leather brown
+
+strap_obj.parent = rig
+strap_obj.parent_type = 'BONE'
+strap_obj.parent_bone = 'chest'
+strap_obj.matrix_world = mathutils.Matrix.Identity(4)
+bpy.context.view_layer.update()
+print("Back X-harness straps created cleanly.")
+
+# 5. Export clean GLB
+print(f"Exporting clean GLB to {temp_out_glb}...")
+bpy.ops.export_scene.gltf(
+    filepath=temp_out_glb,
+    export_format='GLB',
+    use_selection=False,
+    export_animations=True,
+    export_apply=False,
+    export_skins=True,
+    export_morph=True,
+    export_lights=False,
+    export_cameras=False
+)
+
+sz = os.path.getsize(temp_out_glb)
+print(f"Exported clean GLB: {sz} bytes")
+assert sz > 2000000, "Export size too small!"
+
+# Deploy to all 5 project model paths
+for dest in target_destinations:
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copy2(temp_out_glb, dest)
+    print(f"Copied to {dest} ({os.path.getsize(dest)} bytes)")
+
+# 6. Render 4 views for visual verification: Front, Three-quarter, Side, Back
+bpy.context.scene.render.engine = 'CYCLES'
+bpy.context.scene.cycles.samples = 12
+bpy.context.scene.cycles.adaptive_threshold = 0.1
+
+cam_data = bpy.data.cameras.new("Cam")
+cam_obj = bpy.data.objects.new("Cam", cam_data)
+bpy.context.scene.collection.objects.link(cam_obj)
+bpy.context.scene.camera = cam_obj
+
+world = bpy.data.worlds.new("World")
+bpy.context.scene.world = world
+bg_node = world.node_tree.nodes.get("Background")
+if bg_node:
+    bg_node.inputs['Color'].default_value = (0.92, 0.92, 0.94, 1.0)
+    bg_node.inputs['Strength'].default_value = 1.0
+
+light_key = bpy.data.lights.new("SunKey", type='SUN')
+light_key.energy = 2.5
+obj_key = bpy.data.objects.new("SunKey", light_key)
+bpy.context.scene.collection.objects.link(obj_key)
+obj_key.location = (2, -2, 4)
+
+light_fill = bpy.data.lights.new("SunFill", type='SUN')
+light_fill.energy = 1.5
+obj_fill = bpy.data.objects.new("SunFill", light_fill)
+bpy.context.scene.collection.objects.link(obj_fill)
+obj_fill.location = (-2, 2, 3)
+
+bpy.context.scene.render.resolution_x = 700
+bpy.context.scene.render.resolution_y = 700
+
+views = [
+    ("nebula_final_front.png", (0, -2.4, 0.95), (math.radians(90), 0, 0)),
+    ("nebula_final_threequarter.png", (-1.7, -1.7, 1.1), (math.radians(75), 0, math.radians(-45))),
+    ("nebula_final_side.png", (-2.4, 0, 0.95), (math.radians(90), 0, math.radians(-90))),
+    ("nebula_final_back.png", (0, 2.4, 0.95), (math.radians(90), 0, math.radians(180))),
+]
+
+for fname, pos, rot in views:
+    cam_obj.location = pos
+    cam_obj.rotation_euler = rot
+    bpy.context.scene.render.filepath = os.path.join(brain_dir, fname)
+    bpy.ops.render.render(write_still=True)
+    print(f"Rendered {fname}")
+
+print("All nebula final views rendered successfully!")

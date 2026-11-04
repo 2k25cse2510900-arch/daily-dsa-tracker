@@ -36,7 +36,7 @@ const { createGroupRouter } = require("./group-routes");
 const { createDailyWorkspaceService } = require("./daily-workspace");
 const { createDailyWorkspaceRouter } = require("./daily-workspace-routes");
 const { createAiCodeMentorService } = require("./ai-code-mentor");
-const { createOpenAIMentorProvider } = require("./ai-code-mentor-provider");
+const { createUnifiedMentorProvider } = require("./ai-code-mentor-provider");
 const { createAiCodeMentorRouter } = require("./ai-code-mentor-routes");
 const { groupDailySubmissions, fetchLeetCodeQuestionDetail } = require("./daily-activity-helper");
 
@@ -311,7 +311,7 @@ const aiMentorReviewLimit = mongoRateLimit("ai-code-mentor-review", 6);
 const resolvePersonalProfile = createPersonalProfileResolver({ collection: { updateOne: (...args) => db.collection("memberProfiles").updateOne(...args), findOne: (...args) => db.collection("memberProfiles").findOne(...args) } });
 const dailyWorkspaceService = () => createDailyWorkspaceService({ db, fetchProfile, fetchRecentSubmissions, currentActivityDate, lockOwnerId: activityLockOwnerId });
 const aiMentorNumber = (name, fallback, min, max) => { const value = Number(process.env[name]); return Number.isInteger(value) && value >= min && value <= max ? value : fallback; };
-const aiCodeMentorService = () => createAiCodeMentorService({ db, provider: createOpenAIMentorProvider(), dailyQuota: aiMentorNumber("AI_MENTOR_DAILY_QUOTA", 10, 1, 100), reviewRetentionDays: aiMentorNumber("AI_MENTOR_REVIEW_RETENTION_DAYS", 180, 1, 3650), sourceRetentionDays: aiMentorNumber("AI_MENTOR_SOURCE_RETENTION_DAYS", 30, 1, 365), maxSourceChars: Math.min(40_000, aiMentorNumber("AI_MENTOR_MAX_INPUT_TOKENS", 10_000, 1_000, 10_000) * 4), maxDescriptionChars: 8_000 });
+const aiCodeMentorService = () => createAiCodeMentorService({ db, provider: createUnifiedMentorProvider({ env: process.env }), dailyQuota: aiMentorNumber("AI_MENTOR_DAILY_QUOTA", 10, 1, 100), reviewRetentionDays: aiMentorNumber("AI_MENTOR_REVIEW_RETENTION_DAYS", 180, 1, 3650), sourceRetentionDays: aiMentorNumber("AI_MENTOR_SOURCE_RETENTION_DAYS", 30, 1, 365), maxSourceChars: Math.min(40_000, aiMentorNumber("AI_MENTOR_MAX_INPUT_TOKENS", 10_000, 1_000, 10_000) * 4), maxDescriptionChars: 8_000 });
 
 app.disable("x-powered-by");
 app.set("trust proxy", production ? 1 : false);
