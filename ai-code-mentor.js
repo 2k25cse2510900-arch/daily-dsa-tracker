@@ -5,7 +5,11 @@ const { resolveProblemIdentity, buildProblemPromptContext } = require("./leetcod
 const { validateGeneratedAnalysis } = require("./code-validation-pipeline");
 const { AiMentorCache } = require("./ai-mentor-cache");
 
-const MODES = Object.freeze(["explain", "mistake", "hint", "complexity", "optimize", "dry-run", "teach", "brute-force", "optimal", "tle", "runtime-error", "compilation-error"]);
+const MODES = Object.freeze([
+  "explain", "mistake", "hint", "complexity", "optimize", "dry-run", "teach",
+  "brute-force", "optimal", "tle", "runtime-error", "compilation-error",
+  "deep-analysis", "track-vars", "learn-concepts", "hints", "find-mistakes", "optimal-solution", "edge-cases", "code-comparison"
+]);
 const LANGUAGES = Object.freeze(["c", "cpp", "csharp", "go", "java", "javascript", "kotlin", "python", "python3", "ruby", "rust", "scala", "swift", "typescript"]);
 const SECTION_IDS = new Set([
   "problem-understanding", "student-approach", "step-by-step-logic", "time-complexity", "space-complexity",
@@ -72,7 +76,7 @@ function validateRequest(body, { maxSourceChars = 40_000, maxDescriptionChars = 
     }
   }
 
-  if (body.submissionId !== undefined && (typeof body.submissionId !== "string" || body.submissionId.length > 200)) {
+  if (body.submissionId !== undefined && body.submissionId !== null && (typeof body.submissionId !== "string" || body.submissionId.length > 200)) {
     throw mentorError("INVALID_SUBMISSION", "Submission selection is invalid.");
   }
   if (body.retainSource !== undefined && typeof body.retainSource !== "boolean") {
@@ -177,21 +181,71 @@ function validateAnalysis(value) {
   };
 }
 
-function instructionsFor(mode, problem, language) {
-  let modeRule = "Provide concise educational analysis, optimal solutions, time & space complexity, dry-run traces, and animation instructions.";
-  if (mode === "hint") {
+function instructionsFor(mode, problem, language, verdict = "Accepted") {
+  const normVerdict = String(verdict || "Accepted").trim();
+  const m = String(mode || "explain").toLowerCase().trim();
+  const normalizedMode = {
+    "deep-analysis": "explain",
+    "track-vars": "dry-run",
+    "learn-concepts": "teach",
+    "hints": "hint",
+    "find-mistakes": "mistake",
+    "optimal-solution": "optimal",
+    "edge-cases": "explain",
+    "code-comparison": "explain"
+  }[m] || m;
+  let verdictDirective = "";
+
+  if (/accepted/i.test(normVerdict)) {
+    verdictDirective = `
+VERDICT DIRECTIVE - ACCEPTED SUBMISSION:
+The student's submission has passed all LeetCode tests and is marked ACCEPTED.
+1. DO NOT claim the student's solution failed or produce false bug warnings.
+2. DO NOT hallucinate edge-case failures, unhandled exceptions, or incorrect bounds.
+3. Validate why their logic is sound, highlight strong algorithmic invariants, and explore whether their time/space complexity can be improved.
+4. Set mistakeDiagnosis.hasMistake = false.`;
+  } else if (/wrong\s*answer/i.test(normVerdict)) {
+    verdictDirective = `
+VERDICT DIRECTIVE - WRONG ANSWER SUBMISSION:
+The student's submission produced an incorrect output on at least one test case.
+1. Identify the precise logical flaw or boundary condition causing the failure.
+2. Provide a concrete failing counterexample with input, actual output, and expected output.
+3. In mistakeDiagnosis, set hasMistake = true, explain the flaw, and provide a minimal suggested fix.`;
+  } else if (/time\s*limit/i.test(normVerdict) || /tle/i.test(normVerdict)) {
+    verdictDirective = `
+VERDICT DIRECTIVE - TIME LIMIT EXCEEDED (TLE):
+The submission exceeded the runtime threshold on larger input scales.
+1. Pinpoint the computational bottleneck (e.g., O(n²) nested loop or redundant recursion).
+2. Compare the required operational budget (~10^8 operations per second) against the worst-case input constraints (N up to ${problem.constraints || "10^5"}).
+3. Explain how to transition from the bottleneck to the optimal complexity.`;
+  } else if (/runtime\s*error/i.test(normVerdict)) {
+    verdictDirective = `
+VERDICT DIRECTIVE - RUNTIME ERROR:
+The submission crashed during execution (e.g., index out of bounds, null pointer, division by zero, or stack overflow).
+1. If actual student code is provided, identify the exact line or unsafe boundary operation.
+2. If the user's submitted source code is not provided or marked unavailable, DO NOT invent line numbers or fabricate boundary operations. State clearly that the runtime error occurred in live LeetCode execution and provide defensive programming recommendations with optimal code.`;
+  } else if (/compil/i.test(normVerdict)) {
+    verdictDirective = `
+VERDICT DIRECTIVE - COMPILATION ERROR:
+The submission failed to compile.
+1. Analyze the exact syntax, typing, missing imports, or incorrect method signature for ${language}.
+2. Provide the corrected signature and minimal fix to achieve clean compilation.`;
+  }
+
+  let modeRule = "Provide concise educational analysis, optimal solutions, 4-card complexity metrics, problemUnderstanding, edgeCases, variableTracking with step-by-step state traces, dry-run traces, and animation instructions.";
+  if (normalizedMode === "hint") {
     modeRule = "Give progressive guidance in the hints array: observation, then direction, then partial strategy. Do not reveal the full code.";
-  } else if (mode === "mistake") {
+  } else if (normalizedMode === "mistake") {
     modeRule = "Focus on debugging. Identify what the student's code intended, where the logic fails with line reference, provide a clear counterexample, and describe the fix.";
-  } else if (mode === "tle") {
+  } else if (normalizedMode === "tle") {
     modeRule = "Analyze execution time bottlenecks: nested loops, repeated computations, or inefficient data structures. Explain the estimated complexity and how optimal reduces operations.";
-  } else if (mode === "brute-force") {
+  } else if (normalizedMode === "brute-force") {
     modeRule = "Explain the intuitive brute force approach: step-by-step algorithm, O(...) time and space complexity, and its scalability limitations.";
-  } else if (mode === "optimal") {
+  } else if (normalizedMode === "optimal") {
     modeRule = "Provide the optimal algorithm and complete, working optimal code in the requested language matching standard LeetCode signatures. Explain time, auxiliary space, and total space.";
-  } else if (mode === "runtime-error") {
+  } else if (normalizedMode === "runtime-error") {
     modeRule = "Identify likely unsafe runtime operations or boundary guards only when actual student code demonstrates them. If code is unavailable, state that source code was not available, do not invent line numbers or fake boundary operations, and provide the clean defensive optimal solution.";
-  } else if (mode === "compilation-error") {
+  } else if (normalizedMode === "compilation-error") {
     modeRule = "Analyze syntax or type errors, explain language-specific diagnostics, and provide the clean corrected signature.";
   }
 
@@ -201,6 +255,7 @@ Never claim code was executed by you; mark uncertainty when code correctness can
 Never invent a failing line or claim code had an unsafe boundary operation unless actual code was reviewed.
 Target Problem: ${problem.title} (LeetCode #${problem.number || "unknown"})
 Language: ${language}
+${verdictDirective}
 ${modeRule}
 Return a strict JSON object conforming to the universal analysis schema.`;
 }
@@ -336,7 +391,7 @@ function createAiCodeMentorService({
     const reservation = await reserve(user.id);
     try {
       const problemContext = buildProblemPromptContext(problem, input.language);
-      const instructions = instructionsFor(input.mode, problem, input.language);
+      const instructions = instructionsFor(input.mode, problem, input.language, input.verdict);
 
       const result = await provider.analyze({
         instructions,
@@ -452,7 +507,7 @@ function createAiCodeMentorService({
     if (cached) return { ...cached, cached: true, problemTitle: problem.title, language: lang };
 
     // Request optimal solution from provider
-    const instructions = instructionsFor("optimal", problem, lang);
+    const instructions = instructionsFor("optimal", problem, lang, "Accepted");
     const input = JSON.stringify({
       task: "optimal",
       language: lang,
@@ -493,6 +548,10 @@ function createAiCodeMentorService({
       correctnessStatus: validated.correctnessStatus,
       mistakeDiagnosis: validated.mistakeDiagnosis,
       summary: validated.summary,
+      problemUnderstanding: validated.problemUnderstanding,
+      edgeCases: validated.edgeCases,
+      variableTracking: validated.variableTracking,
+      comparison: validated.comparison,
       sections: validated.sections,
       dryRunSteps: validated.dryRunSteps,
       hints: validated.hints,
@@ -592,6 +651,136 @@ function createAiCodeMentorService({
     };
   }
 
+  async function autoSyncSubmission(user, body) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    if (!body || typeof body !== "object") throw mentorError("INVALID_SUBMISSION", "Invalid submission payload.", 400);
+
+    const sourceCode = safeText(body.sourceCode, maxSourceChars);
+    if (!sourceCode) throw mentorError("SOURCE_REQUIRED", "Source code is required.", 400);
+
+    const language = LANGUAGES.includes(body.language) ? body.language : "python3";
+    const problemSlug = safeText(body.problemSlug, 200).toLowerCase();
+    if (!problemSlug) throw mentorError("SLUG_REQUIRED", "Problem slug is required.", 400);
+
+    const problemTitle = safeText(body.problemTitle, 240) || problemSlug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    const submissionId = safeText(body.submissionId, 200) || String(Date.now());
+    const submittedAt = body.submittedAt ? new Date(body.submittedAt) : now();
+    const verdict = ["Accepted", "Wrong Answer", "Time Limit Exceeded", "Runtime Error", "Compilation Error", "Memory Limit Exceeded"].includes(body.verdict)
+      ? body.verdict
+      : "Submitted";
+    const difficulty = ["Easy", "Medium", "Hard"].includes(body.difficulty) ? body.difficulty : "Medium";
+    const questionFrontendId = safeText(body.questionFrontendId, 50) || null;
+    const runtime = safeText(body.runtime, 50) || null;
+    const memory = safeText(body.memory, 50) || null;
+    const diagnosticContext = body.diagnosticContext && typeof body.diagnosticContext === "object" ? body.diagnosticContext : null;
+    const at = now();
+
+    const subDocId = `src:${user.id}:sub:${submissionId}`;
+    const slugDocId = `src:${user.id}:slug:${problemSlug}`;
+
+    const sourceRecord = {
+      _id: subDocId,
+      userId: user.id,
+      submissionId,
+      problemSlug,
+      problemTitle,
+      questionFrontendId,
+      difficulty,
+      language,
+      verdict,
+      runtime,
+      memory,
+      sourceCode,
+      diagnosticContext,
+      sourceProvenance: "authorized_extension",
+      importedAt: at,
+      updatedAt: at
+    };
+
+    // Save individual attempt by submissionId to preserve ALL attempts
+    await userSavedSources.updateOne(
+      { _id: subDocId },
+      { $set: sourceRecord },
+      { upsert: true }
+    );
+
+    // Also update current active problem slug pointer
+    await userSavedSources.updateOne(
+      { _id: slugDocId },
+      { $set: { ...sourceRecord, _id: slugDocId } },
+      { upsert: true }
+    );
+
+    // Save into leetcodeSubmissions for Daily Activity
+    if (db && typeof db.collection === "function") {
+      try {
+        const { effectiveActivityDate } = require("./activity-date");
+        const activityTimestampSeconds = Math.floor(submittedAt.getTime() / 1000);
+        const activityDate = effectiveActivityDate(activityTimestampSeconds);
+
+        const submissionDocId = `sub:${user.id}:${submissionId}`;
+        const dailyRecord = {
+          _id: submissionDocId,
+          memberId: user.id,
+          activityDate,
+          submissionId: String(submissionId),
+          problemIdentifier: problemSlug,
+          title: problemTitle,
+          titleSlug: problemSlug,
+          questionFrontendId,
+          difficulty,
+          language,
+          verdict,
+          runtime,
+          memory,
+          sourceCode,
+          sourceProvenance: "authorized_extension",
+          submittedAt,
+          timestamp: activityTimestampSeconds,
+          updatedAt: at
+        };
+
+        await db.collection("leetcodeSubmissions").updateOne(
+          { _id: submissionDocId },
+          { $set: dailyRecord },
+          { upsert: true }
+        );
+
+        // Also save problem metadata if provided
+        const problemDoc = {
+          _id: problemSlug,
+          questionFrontendId,
+          title: problemTitle,
+          difficulty,
+          updatedAt: at
+        };
+        if (body.problemDescription) problemDoc.description = safeText(body.problemDescription, 20000);
+        if (body.constraints) problemDoc.constraints = safeText(body.constraints, 5000);
+        if (Array.isArray(body.topicTags)) problemDoc.tags = body.topicTags;
+
+        await db.collection("leetcodeProblems").updateOne(
+          { _id: problemSlug },
+          { $set: problemDoc },
+          { upsert: true }
+        );
+      } catch (dbErr) {
+        console.warn("[autoSyncSubmission] DB collection sync warning:", dbErr?.message);
+      }
+    }
+
+    return {
+      success: true,
+      synced: true,
+      submissionId,
+      problemSlug,
+      problemTitle,
+      verdict,
+      language,
+      sourceProvenance: "authorized_extension",
+      updatedAt: at
+    };
+  }
+
   async function getUserSource(user, { submissionId, problemSlug, problemTitle } = {}) {
     if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
     const cleanSubId = safeText(submissionId, 200);
@@ -608,6 +797,13 @@ function createAiCodeMentorService({
           language: saved.language || "python3",
           submissionId: saved.submissionId || cleanSubId,
           sourceProvenance: saved.sourceProvenance || "manual_import",
+          verdict: saved.verdict || null,
+          runtime: saved.runtime || null,
+          memory: saved.memory || null,
+          problemTitle: saved.problemTitle || null,
+          difficulty: saved.difficulty || null,
+          questionFrontendId: saved.questionFrontendId || null,
+          diagnosticContext: saved.diagnosticContext || null,
           updatedAt: saved.updatedAt || saved.importedAt || null
         };
       }
@@ -619,6 +815,12 @@ function createAiCodeMentorService({
           language: submission.language || "python3",
           submissionId: cleanSubId,
           sourceProvenance: "verified_submission",
+          verdict: submission.verdict || null,
+          runtime: submission.runtime || null,
+          memory: submission.memory || null,
+          problemTitle: submission.title || null,
+          difficulty: submission.difficulty || null,
+          questionFrontendId: submission.questionFrontendId || null,
           updatedAt: submission.submittedAt || submission.createdAt || null
         };
       }
@@ -637,6 +839,13 @@ function createAiCodeMentorService({
           language: saved.language || "python3",
           submissionId: saved.submissionId || null,
           sourceProvenance: saved.sourceProvenance || "manual_import",
+          verdict: saved.verdict || null,
+          runtime: saved.runtime || null,
+          memory: saved.memory || null,
+          problemTitle: saved.problemTitle || null,
+          difficulty: saved.difficulty || null,
+          questionFrontendId: saved.questionFrontendId || null,
+          diagnosticContext: saved.diagnosticContext || null,
           updatedAt: saved.updatedAt || saved.importedAt || null
         };
       }
@@ -655,6 +864,13 @@ function createAiCodeMentorService({
           language: saved.language || "python3",
           submissionId: saved.submissionId || null,
           sourceProvenance: saved.sourceProvenance || "manual_import",
+          verdict: saved.verdict || null,
+          runtime: saved.runtime || null,
+          memory: saved.memory || null,
+          problemTitle: saved.problemTitle || null,
+          difficulty: saved.difficulty || null,
+          questionFrontendId: saved.questionFrontendId || null,
+          diagnosticContext: saved.diagnosticContext || null,
           updatedAt: saved.updatedAt || saved.importedAt || null
         };
       }
@@ -700,6 +916,9 @@ function createAiCodeMentorService({
         language: doc.language,
         submissionId: doc.submissionId || null,
         problemSlug: doc.problemSlug || null,
+        verdict: doc.verdict || null,
+        runtime: doc.runtime || null,
+        memory: doc.memory || null,
         sourceProvenance: doc.sourceProvenance || "manual_import",
         updatedAt: doc.updatedAt
       };
@@ -723,6 +942,7 @@ function createAiCodeMentorService({
     reviewFor,
     deleteReview,
     saveUserSource,
+    autoSyncSubmission,
     getUserSource,
     deleteUserSource,
     listUserSources
@@ -738,5 +958,6 @@ module.exports = {
   validateRequest,
   validateAnalysis,
   resolveMentorEntitlement,
-  createAiCodeMentorService
+  createAiCodeMentorService,
+  instructionsFor
 };

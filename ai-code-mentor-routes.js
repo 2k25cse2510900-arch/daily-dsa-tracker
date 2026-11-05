@@ -53,6 +53,26 @@ function createAiCodeMentorRouter({ memberOnly, serviceFor, reviewRateLimit, aud
     }
   });
 
+  router.post("/submissions/auto-sync", async (req, res) => {
+    try {
+      const result = await serviceFor().autoSyncSubmission(req.member, req.body);
+      audit(req, "ai-code-mentor-auto-sync", result.submissionId);
+      res.status(201).json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/submissions/import-source", async (req, res) => {
+    try {
+      const result = await serviceFor().autoSyncSubmission(req.member, req.body);
+      audit(req, "ai-code-mentor-import-source", result.submissionId);
+      res.status(201).json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.delete("/source", async (req, res) => {
     try {
       const result = await serviceFor().deleteUserSource(req.member, {
