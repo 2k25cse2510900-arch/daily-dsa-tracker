@@ -7,12 +7,11 @@
   if (window.__dsaverse_hook_installed) return;
   window.__dsaverse_hook_installed = true;
 
-  console.log("[DSAverse Auto-Sync] Page hook initialized.");
+  console.log("[DSAverse Auto-Sync] Page hook v1.2 initialized.");
 
   // Track active submission state
   let currentSubmission = null;
 
-  // Helper to post message to content script
   function dispatchToContent(type, detail) {
     try {
       window.postMessage({ source: "dsaverse_extension_hook", type, detail }, "*");
@@ -38,16 +37,11 @@
         const pathParts = window.location.pathname.split("/").filter(Boolean);
         const problemSlug = pathParts[1] || "";
 
-        // Extract code from submit body
-        const sourceCode = bodyData?.typed_code || "";
-        const language = bodyData?.lang || "";
-        const questionId = bodyData?.question_id || "";
-
         currentSubmission = {
           problemSlug,
-          questionId,
-          language,
-          sourceCode,
+          questionId: bodyData?.question_id || "",
+          language: bodyData?.lang || "",
+          sourceCode: bodyData?.typed_code || "",
           submittedAt: new Date().toISOString(),
           state: "SUBMITTED"
         };
@@ -58,7 +52,6 @@
       }
     }
 
-    // Call the original fetch
     const response = await originalFetch.apply(this, args);
 
     try {
@@ -82,13 +75,34 @@
         cloned.json().then(data => {
           if (!data) return;
 
-          // Check if judging finished
+          // Only proceed when LeetCode officially finishes judging (state === "SUCCESS")
           if (data.state === "SUCCESS") {
-            const verdict = data.status_display || "Submitted";
+            const verdict = data.status_display || data.status_msg || "Submitted";
             const runtime = data.status_runtime || data.runtime || "";
             const memory = data.status_memory || data.memory || "";
             const submissionId = String(data.submission_id || currentSubmission?.submissionId || "");
             const lang = data.lang || currentSubmission?.language || "";
+
+            // Capture rich diagnostic context for WA / RE / CE
+            const diagnosticContext = {};
+            if (data.compile_error || data.full_compile_error) {
+              diagnosticContext.compileError = data.full_compile_error || data.compile_error;
+            }
+            if (data.runtime_error || data.full_runtime_error) {
+              diagnosticContext.runtimeError = data.full_runtime_error || data.runtime_error;
+            }
+            if (data.last_testcase) {
+              diagnosticContext.lastTestcase = data.last_testcase;
+            }
+            if (data.expected_output) {
+              diagnosticContext.expectedOutput = data.expected_output;
+            }
+            if (data.code_output) {
+              diagnosticContext.actualOutput = data.code_output;
+            }
+            if (data.total_correct !== undefined && data.total_testcases !== undefined) {
+              diagnosticContext.testcasesPassed = `${data.total_correct} / ${data.total_testcases}`;
+            }
 
             const completedPayload = {
               submissionId,
@@ -98,9 +112,7 @@
               memory,
               language: lang,
               sourceCode: currentSubmission?.sourceCode || null,
-              totalCorrect: data.total_correct,
-              totalTestcases: data.total_testcases,
-              compareResult: data.compare_result,
+              diagnosticContext,
               timestamp: new Date().toISOString()
             };
 
@@ -114,18 +126,5 @@
     }
 
     return response;
-  };
-
-  // Also support reading from Monaco Editor in main world if needed
-  window.__dsaverse_get_editor_code = function() {
-    try {
-      if (window.monaco && window.monaco.editor) {
-        const models = window.monaco.editor.getModels();
-        if (models && models.length > 0) {
-          return models[0].getValue();
-        }
-      }
-    } catch {}
-    return null;
   };
 })();

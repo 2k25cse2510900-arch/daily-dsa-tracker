@@ -55,6 +55,14 @@
       else if (dt.includes("medium")) difficulty = "Medium";
     }
 
+    // Topic tags
+    const topicTags = [];
+    const tagEls = document.querySelectorAll("a[href*='/tag/']");
+    tagEls.forEach(el => {
+      const tag = el.textContent.trim();
+      if (tag && !topicTags.includes(tag)) topicTags.push(tag);
+    });
+
     // Problem description & constraints
     let description = "";
     let constraints = "";
@@ -74,6 +82,7 @@
       title,
       questionFrontendId,
       difficulty,
+      topicTags,
       description,
       constraints,
       url
@@ -280,6 +289,7 @@
       problemTitle: meta.title,
       questionFrontendId: meta.questionFrontendId,
       difficulty: meta.difficulty,
+      topicTags: meta.topicTags || [],
       language,
       verdict,
       runtime,
@@ -288,6 +298,7 @@
       submittedAt,
       problemDescription: meta.description,
       constraints: meta.constraints,
+      diagnosticContext: judgingDetail.diagnosticContext || {},
       problemUrl: meta.url,
       sourceProvenance: "authorized_extension"
     };
