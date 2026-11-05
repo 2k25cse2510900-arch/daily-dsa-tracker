@@ -317,8 +317,22 @@
     await dispatchAutoSync(payload);
   }
 
-  // Dispatch payload to DSAverse
+  // Dispatch payload to DSAverse with duplicate prevention and retry queue
   async function dispatchAutoSync(payload) {
+    const key = payload.submissionId ? `sub:${payload.submissionId}` : `slug:${payload.problemSlug}:${payload.submittedAt}`;
+
+    // Check duplicate in local extension storage
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      const data = await new Promise(resolve => {
+        chrome.storage.local.get(["syncedSubmissions", "dsaServer"], resolve);
+      });
+      const synced = data?.syncedSubmissions || {};
+      if (synced[key] && synced[key].status === "synced") {
+        console.log("[DSAverse Auto-Sync] Submission already synced, skipping duplicate:", key);
+        return;
+      }
+    }
+
     const defaultHost = "http://localhost:3000";
     try {
       const res = await fetch(`${defaultHost}/api/ai-code-mentor/submissions/auto-sync`, {
@@ -331,6 +345,21 @@
       if (res.ok) {
         const json = await res.json().catch(() => ({}));
         console.log("[DSAverse Auto-Sync] Auto-sync SUCCESS:", json);
+
+        // Mark as synced locally
+        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get("syncedSubmissions", d => {
+            const subs = d.syncedSubmissions || {};
+            subs[key] = {
+              status: "synced",
+              syncedAt: new Date().toISOString(),
+              submissionId: payload.submissionId,
+              problemSlug: payload.problemSlug
+            };
+            chrome.storage.local.set({ syncedSubmissions: subs, lastSynced: payload });
+          });
+        }
+
         showSyncNotification(payload.problemTitle, payload.verdict, "synced");
         return;
       }
@@ -339,8 +368,14 @@
       console.warn("[DSAverse Auto-Sync] Network error syncing to DSAverse:", netErr.message);
     }
 
-    // If failed, enqueue in retry queue
-    enqueueRetry(payload);
+    // If direct sync was unreached or errored, enqueue in background retry queue
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ action: "ENQUEUE_SUBMISSION", payload }, () => {
+        showSyncNotification(payload.problemTitle, payload.verdict, "enqueued");
+      });
+    } else {
+      enqueueRetry(payload);
+    }
   }
 
   // Enqueue in storage retry queue

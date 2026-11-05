@@ -1,14 +1,13 @@
 // DSAverse LeetCode Auto-Sync - Background Service Worker
-// Manages the persistent retry queue and background sync alarms
+// Manages safe retry queues, exponential backoff, and duplicate prevention
 "use strict";
 
 const DEFAULT_DSA_SERVER = "http://localhost:3000";
 const RETRY_ALARM_NAME = "dsaverse_sync_retry_alarm";
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[DSAverse Auto-Sync] Background service worker installed.");
-  // Setup periodic retry check every 1 minute
-  chrome.alarms.create(RETRY_ALARM_NAME, { periodInMinutes: 1 });
+  console.log("[DSAverse Auto-Sync] Background service worker initialized.");
+  chrome.alarms.create(RETRY_ALARM_NAME, { periodInMinutes: 0.5 }); // Check every 30s
 });
 
 chrome.alarms.onAlarm.addListener(alarm => {
@@ -17,18 +16,49 @@ chrome.alarms.onAlarm.addListener(alarm => {
   }
 });
 
+function calculateBackoffMs(attempts) {
+  const base = 2000;
+  const max = 60000;
+  const backoff = Math.min(max, base * Math.pow(2, attempts));
+  const jitter = Math.floor(Math.random() * 1000);
+  return backoff + jitter;
+}
+
 async function processPendingQueue() {
   const { syncQueue = [] } = await chrome.storage.local.get("syncQueue");
   if (!syncQueue.length) return;
 
   const { dsaServer = DEFAULT_DSA_SERVER } = await chrome.storage.local.get("dsaServer");
+  const { syncedSubmissions = {} } = await chrome.storage.local.get("syncedSubmissions");
+
+  const now = Date.now();
   const remainingQueue = [];
 
   for (const item of syncQueue) {
-    if (item.attempts >= 5) {
-      console.warn("[DSAverse Auto-Sync] Max retries reached for submission:", item.submissionId || item.problemSlug);
+    const key = item.submissionId ? `sub:${item.submissionId}` : `slug:${item.problemSlug}:${item.submittedAt}`;
+
+    // Prevent duplicate sync if already marked synced
+    if (syncedSubmissions[key] && syncedSubmissions[key].status === "synced") {
+      console.log("[DSAverse Auto-Sync] Item already synced, dropping from queue:", key);
       continue;
     }
+
+    // Check if backoff window has elapsed
+    if (item.nextRetryAt && item.nextRetryAt > now) {
+      remainingQueue.push(item);
+      continue;
+    }
+
+    if (item.attempts >= 8) {
+      console.warn("[DSAverse Auto-Sync] Max retries reached for:", key);
+      syncedSubmissions[key] = {
+        status: "retry_exhausted",
+        lastError: item.lastError || "Maximum retries reached",
+        updatedAt: new Date().toISOString()
+      };
+      continue;
+    }
+
     try {
       const res = await fetch(`${dsaServer}/api/ai-code-mentor/submissions/auto-sync`, {
         method: "POST",
@@ -36,40 +66,97 @@ async function processPendingQueue() {
         credentials: "include",
         body: JSON.stringify(item.payload)
       });
+
       if (res.ok) {
-        console.log("[DSAverse Auto-Sync] Successfully processed queued submission:", item.submissionId);
-        // Mark as synced
-        const { syncedSubmissions = {} } = await chrome.storage.local.get("syncedSubmissions");
-        const key = item.submissionId || `${item.problemSlug}_${item.submittedAt}`;
+        console.log("[DSAverse Auto-Sync] Successfully synced queued submission:", key);
         syncedSubmissions[key] = {
           syncedAt: new Date().toISOString(),
-          status: "synced"
+          status: "synced",
+          submissionId: item.submissionId,
+          problemSlug: item.problemSlug
         };
-        await chrome.storage.local.set({ syncedSubmissions });
       } else {
-        item.attempts = (item.attempts || 0) + 1;
-        item.lastError = `Server responded with ${res.status}`;
-        remainingQueue.push(item);
+        const errorData = await res.json().catch(() => ({}));
+        const attempts = (item.attempts || 0) + 1;
+        const nextRetryAt = now + calculateBackoffMs(attempts);
+        console.warn(`[DSAverse Auto-Sync] Server error (${res.status}) on attempt ${attempts}:`, errorData.message || errorData.error);
+        
+        // Permanent 4xx errors (except 429) shouldn't be indefinitely retried
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          syncedSubmissions[key] = {
+            status: "rejected",
+            lastError: errorData.message || errorData.error || `Client error ${res.status}`,
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          remainingQueue.push({
+            ...item,
+            attempts,
+            nextRetryAt,
+            lastError: errorData.message || `Server status ${res.status}`
+          });
+        }
       }
-    } catch (err) {
-      item.attempts = (item.attempts || 0) + 1;
-      item.lastError = err.message || "Network unreachable";
-      remainingQueue.push(item);
+    } catch (netErr) {
+      const attempts = (item.attempts || 0) + 1;
+      const nextRetryAt = now + calculateBackoffMs(attempts);
+      console.warn(`[DSAverse Auto-Sync] Network failure on attempt ${attempts}:`, netErr.message);
+      remainingQueue.push({
+        ...item,
+        attempts,
+        nextRetryAt,
+        lastError: netErr.message || "Network unreachable"
+      });
     }
   }
 
-  await chrome.storage.local.set({ syncQueue: remainingQueue });
+  await chrome.storage.local.set({
+    syncQueue: remainingQueue,
+    syncedSubmissions
+  });
 }
 
-// Listen for messages from content scripts
+// Runtime message listener
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === "TRIGGER_QUEUE_PROCESS") {
-    processPendingQueue().then(() => sendResponse({ status: "processing" }));
+    processPendingQueue().then(() => sendResponse({ status: "processed" }));
     return true;
   }
   if (request.action === "GET_SYNC_STATUS") {
-    chrome.storage.local.get(["syncQueue", "syncedSubmissions", "lastSubmission"], data => {
+    chrome.storage.local.get(["syncQueue", "syncedSubmissions", "lastSynced"], data => {
       sendResponse(data);
+    });
+    return true;
+  }
+  if (request.action === "ENQUEUE_SUBMISSION") {
+    const { payload } = request;
+    if (!payload) return;
+    chrome.storage.local.get(["syncQueue", "syncedSubmissions"], async data => {
+      const queue = data.syncQueue || [];
+      const synced = data.syncedSubmissions || {};
+      const key = payload.submissionId ? `sub:${payload.submissionId}` : `slug:${payload.problemSlug}:${payload.submittedAt}`;
+
+      if (synced[key] && synced[key].status === "synced") {
+        sendResponse({ status: "already_synced" });
+        return;
+      }
+
+      const exists = queue.some(q => (q.submissionId && q.submissionId === payload.submissionId));
+      if (!exists) {
+        queue.push({
+          submissionId: payload.submissionId,
+          problemSlug: payload.problemSlug,
+          submittedAt: payload.submittedAt,
+          payload,
+          attempts: 0,
+          nextRetryAt: 0,
+          enqueuedAt: new Date().toISOString()
+        });
+        await chrome.storage.local.set({ syncQueue: queue });
+      }
+
+      // Immediately attempt processing
+      processPendingQueue().then(() => sendResponse({ status: "enqueued" }));
     });
     return true;
   }
