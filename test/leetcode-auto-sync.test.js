@@ -2,6 +2,8 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const { createAiCodeMentorService } = require("../ai-code-mentor");
 
@@ -218,4 +220,88 @@ test("3. Cross-user isolation: User B cannot access or view User A's synced subm
   // User B tries to list sources
   const bobList = await service.listUserSources(userB, { problemSlugs: ["median-of-two-sorted-arrays"] });
   assert.deepEqual(bobList.sources, {}, "User B list must be empty");
+});
+
+test("4. All verdicts (WA, TLE, RE, CE, Accepted) and diagnostic context are captured faithfully", async () => {
+  const { service } = fixture();
+  const user = { id: "member-tester" };
+
+  const verdictsToTest = [
+    { verdict: "Wrong Answer", diag: { actualOutput: "[0,0]", expectedOutput: "[0,1]", testcasesPassed: "45 / 50" } },
+    { verdict: "Time Limit Exceeded", diag: { testcasesPassed: "48 / 50" } },
+    { verdict: "Runtime Error", diag: { runtimeError: "IndexError: list index out of range" } },
+    { verdict: "Compilation Error", diag: { compileError: "SyntaxError: invalid syntax" } },
+    { verdict: "Accepted", diag: { testcasesPassed: "50 / 50" } }
+  ];
+
+  for (let i = 0; i < verdictsToTest.length; i++) {
+    const item = verdictsToTest[i];
+    const subId = `sub-verdict-${i}`;
+    await service.autoSyncSubmission(user, {
+      submissionId: subId,
+      problemSlug: "two-sum",
+      sourceCode: `def twoSum(): pass # attempt ${i}`,
+      verdict: item.verdict,
+      diagnosticContext: item.diag
+    });
+
+    const res = await service.getUserSource(user, { submissionId: subId });
+    assert.strictEqual(res.verdict, item.verdict);
+    assert.deepEqual(res.diagnosticContext, item.diag);
+  }
+});
+
+test("5. Input validation rejects missing source code or missing problem slug", async () => {
+  const { service } = fixture();
+  const user = { id: "member-validator" };
+
+  await assert.rejects(
+    async () => service.autoSyncSubmission(user, { problemSlug: "two-sum" }),
+    /Source code is required/
+  );
+
+  await assert.rejects(
+    async () => service.autoSyncSubmission(user, { sourceCode: "print(1)" }),
+    /Problem slug is required/
+  );
+});
+
+test("6. Manual import fallback remains functional alongside auto-sync", async () => {
+  const { service } = fixture();
+  const user = { id: "member-manual" };
+
+  const manualRes = await service.saveUserSource(user, {
+    problemSlug: "climbing-stairs",
+    sourceCode: "def climbStairs(n): return n",
+    sourceProvenance: "manual_import",
+    language: "python3"
+  });
+
+  assert.strictEqual(manualRes.saved, true);
+  assert.strictEqual(manualRes.sourceProvenance, "manual_import");
+
+  const fetched = await service.getUserSource(user, { problemSlug: "climbing-stairs" });
+  assert.strictEqual(fetched.sourceProvenance, "manual_import");
+  assert.match(fetched.sourceCode, /def climbStairs/);
+});
+
+test("7. Frontend UI script and HTML correctly support synced and waiting badges", () => {
+  const scriptContent = fs.readFileSync(path.join(__dirname, "../script.js"), "utf8");
+  assert.match(scriptContent, /✓ Synced/, "script.js must render ✓ Synced badge");
+  assert.match(scriptContent, /Waiting for sync/, "script.js must render Waiting for sync");
+  assert.match(scriptContent, /Synced LeetCode Submission Loaded/, "script.js must show Synced LeetCode Submission Loaded banner");
+});
+
+test("8. Root and public assets maintain 100% byte synchronization", () => {
+  const rootScript = fs.readFileSync(path.join(__dirname, "../script.js"));
+  const pubScript = fs.readFileSync(path.join(__dirname, "../public/script.js"));
+  assert.deepEqual(rootScript, pubScript, "script.js and public/script.js must be byte-identical");
+
+  const rootIndex = fs.readFileSync(path.join(__dirname, "../index.html"));
+  const pubIndex = fs.readFileSync(path.join(__dirname, "../public/index.html"));
+  assert.deepEqual(rootIndex, pubIndex, "index.html and public/index.html must be byte-identical");
+
+  const rootStyle = fs.readFileSync(path.join(__dirname, "../style.css"));
+  const pubStyle = fs.readFileSync(path.join(__dirname, "../public/style.css"));
+  assert.deepEqual(rootStyle, pubStyle, "style.css and public/style.css must be byte-identical");
 });

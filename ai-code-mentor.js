@@ -659,8 +659,9 @@ function createAiCodeMentorService({
     if (!sourceCode) throw mentorError("SOURCE_REQUIRED", "Source code is required.", 400);
 
     const language = LANGUAGES.includes(body.language) ? body.language : "python3";
-    const problemSlug = safeText(body.problemSlug, 200).toLowerCase();
-    if (!problemSlug) throw mentorError("SLUG_REQUIRED", "Problem slug is required.", 400);
+    const rawSlug = safeText(body.problemSlug, 200);
+    if (!rawSlug) throw mentorError("SLUG_REQUIRED", "Problem slug is required.", 400);
+    const problemSlug = rawSlug.toLowerCase();
 
     const problemTitle = safeText(body.problemTitle, 240) || problemSlug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
     const submissionId = safeText(body.submissionId, 200) || String(Date.now());
