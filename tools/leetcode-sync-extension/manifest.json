@@ -28,6 +28,15 @@
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://leetcode.com/problems/*",
+        "*://leetcode.cn/problems/*"
+      ],
+      "js": ["page-hook.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
