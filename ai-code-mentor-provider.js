@@ -145,6 +145,48 @@ const UNIVERSAL_ANALYSIS_SCHEMA = Object.freeze({
       type: "array",
       items: { type: "string" }
     },
+    problemUnderstanding: {
+      type: "object",
+      properties: {
+        whatItAsks: { type: "string" },
+        inputOutput: { type: "string" },
+        constraints: { type: "string" },
+        keyObservation: { type: "string" }
+      }
+    },
+    edgeCases: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          caseName: { type: "string" },
+          input: { type: "string" },
+          expected: { type: "string" },
+          explanation: { type: "string" },
+          handledBy: { type: "string" }
+        }
+      }
+    },
+    variableTracking: {
+      type: "object",
+      required: ["variableNames", "steps"],
+      properties: {
+        variableNames: { type: "array", items: { type: "string" } },
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["step", "vars", "evaluation", "memory"],
+            properties: {
+              step: { type: "string" },
+              vars: { type: "string" },
+              evaluation: { type: "string" },
+              memory: { type: "string" }
+            }
+          }
+        }
+      }
+    },
     animationType: { type: "string" },
     animationSteps: {
       type: "array",
@@ -196,6 +238,55 @@ function providerError(code, message, status = 503) {
   error.code = code;
   error.status = status;
   return error;
+}
+
+/**
+ * Validates that every array definition within a JSON schema specifies a valid "items" schema object.
+ * Throws AI_INVALID_ARGUMENT (400) when an array lacks an items schema or defines an empty item.
+ */
+function validateSchemaContract(schema, path = "root") {
+  if (!schema || typeof schema !== "object") return;
+
+  if (schema.type === "array") {
+    if (!schema.items || typeof schema.items !== "object" || (Array.isArray(schema.items) && schema.items.length === 0)) {
+      throw providerError(
+        "AI_INVALID_ARGUMENT",
+        `Schema validation error at "${path}": Array property requires a valid "items" schema definition.`,
+        400
+      );
+    }
+    if (Array.isArray(schema.items)) {
+      schema.items.forEach((item, idx) => validateSchemaContract(item, `${path}.items[${idx}]`));
+    } else {
+      validateSchemaContract(schema.items, `${path}.items`);
+    }
+  }
+
+  if (schema.type === "object" || schema.properties) {
+    if (schema.properties && typeof schema.properties === "object") {
+      for (const [key, prop] of Object.entries(schema.properties)) {
+        validateSchemaContract(prop, `${path}.${key}`);
+      }
+    }
+  }
+}
+
+/**
+ * Provider-specific schema adapter for Google Gemini API (Google GenAI SDK)
+ */
+function adaptSchemaForGemini(schema = UNIVERSAL_ANALYSIS_SCHEMA) {
+  const cloned = JSON.parse(JSON.stringify(schema));
+  validateSchemaContract(cloned, "gemini_response_schema");
+  return cloned;
+}
+
+/**
+ * Provider-specific schema adapter for OpenAI structured outputs
+ */
+function adaptSchemaForOpenAI(schema = UNIVERSAL_ANALYSIS_SCHEMA) {
+  const cloned = JSON.parse(JSON.stringify(schema));
+  validateSchemaContract(cloned, "openai_response_schema");
+  return cloned;
 }
 
 function numberSetting(value, fallback, min, max) {
@@ -285,17 +376,21 @@ function createGeminiMentorProvider({ env = process.env, client } = {}) {
           throw providerError("AI_TIMEOUT", "Gemini API timed out. Try again.", 504);
         }
 
+        let timer = null;
         try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(providerError("AI_TIMEOUT", "Gemini API timed out. Try again.", 504)), remainingBudgetMs)
-          );
+          const timeoutPromise = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(providerError("AI_TIMEOUT", "Gemini API timed out. Try again.", 504)), remainingBudgetMs);
+            if (timer?.unref) timer.unref();
+          });
+
+          const adaptedSchema = adaptSchemaForGemini(UNIVERSAL_ANALYSIS_SCHEMA);
 
           const generatePromise = ai.models.generateContent({
             model,
             contents: prompt,
             config: {
               responseMimeType: "application/json",
-              responseSchema: UNIVERSAL_ANALYSIS_SCHEMA,
+              responseSchema: adaptedSchema,
               temperature: 0.2
             }
           });
@@ -325,8 +420,11 @@ function createGeminiMentorProvider({ env = process.env, client } = {}) {
           if (error.code === "AI_TIMEOUT" || error.name === "AbortError") {
             throw providerError("AI_TIMEOUT", "Gemini API timed out. Try again.", 504);
           }
-          if (error.code === "AI_INVALID_RESPONSE") {
+          if (error.code === "AI_INVALID_RESPONSE" || error.code === "AI_INVALID_ARGUMENT") {
             throw error;
+          }
+          if (error.status === 400 || error.code === 400 || /INVALID_ARGUMENT|response_schema/i.test(error.message)) {
+            throw providerError("AI_INVALID_ARGUMENT", `Gemini request or schema validation failed: ${error.message}`, 400);
           }
           if (error.status === 401 || error.status === 403 || /API_KEY_INVALID/i.test(error.message)) {
             throw providerError("AI_MODEL_UNAVAILABLE", "Gemini API key is invalid or unauthorized.", 503);
@@ -362,6 +460,8 @@ function createGeminiMentorProvider({ env = process.env, client } = {}) {
 
           console.warn(`[GEMINI RETRY]: Attempt ${attempt + 1} failed with transient error (${error.status || error.code || '503'}: ${error.message?.slice(0, 80)}). Backing off ${delayMs}ms before retry...`);
           await sleep(delayMs);
+        } finally {
+          if (timer) clearTimeout(timer);
         }
       }
 
@@ -372,12 +472,16 @@ function createGeminiMentorProvider({ env = process.env, client } = {}) {
 
 /**
  * Creates OpenAI Mentor Provider
+ * Supports both openai.responses.create (for tests / preview models) and openai.chat.completions.create (standard SDK)
+ * with bounded retries, exponential backoff, and transparent error handling.
  */
 function createOpenAIMentorProvider({ env = process.env, client } = {}) {
   const apiKey = env.OPENAI_API_KEY;
   const model = env.AI_MENTOR_MODEL || "gpt-4o-mini";
   const timeoutMs = numberSetting(env.AI_MENTOR_TIMEOUT_MS, 45_000, 10, 120_000);
-  const maxOutputTokens = numberSetting(env.AI_MENTOR_MAX_OUTPUT_TOKENS, 2_000, 256, 8_000);
+  const maxOutputTokens = numberSetting(env.AI_MENTOR_MAX_OUTPUT_TOKENS, 3_000, 256, 12_000);
+  const maxRetries = numberSetting(env.AI_MENTOR_MAX_RETRIES, 2, 0, 5);
+  const baseDelayMs = numberSetting(env.AI_MENTOR_RETRY_BASE_MS, 1000, 10, 5000);
 
   if (!client && (!apiKey || /^replace-with/i.test(apiKey))) {
     throw providerError("AI_NOT_CONFIGURED", "OpenAI API key is not configured.", 503);
@@ -390,54 +494,146 @@ function createOpenAIMentorProvider({ env = process.env, client } = {}) {
     model,
     async analyze({ instructions, input, problemContext }) {
       const fullInput = problemContext ? `${problemContext}\n\n${input}` : input;
-      let response;
-      try {
-        response = await openai.responses.create({
-          model,
-          instructions,
-          input: fullInput,
-          max_output_tokens: maxOutputTokens,
-          text: {
-            format: {
-              type: "json_schema",
-              name: "ai_code_mentor_analysis",
-              strict: true,
-              schema: UNIVERSAL_ANALYSIS_SCHEMA
+
+      // Path A: openai.responses.create (Mock in tests or Responses API)
+      if (typeof openai?.responses?.create === "function") {
+        const adaptedSchema = adaptSchemaForOpenAI(UNIVERSAL_ANALYSIS_SCHEMA);
+        let response;
+        try {
+          response = await openai.responses.create({
+            model,
+            instructions,
+            input: fullInput,
+            max_output_tokens: maxOutputTokens,
+            text: {
+              format: {
+                type: "json_schema",
+                name: "ai_code_mentor_analysis",
+                strict: true,
+                schema: adaptedSchema
+              }
             }
+          });
+        } catch (error) {
+          if (error?.name === "APIConnectionTimeoutError" || error?.name === "AbortError") {
+            throw providerError("AI_TIMEOUT", "AI Code Mentor timed out. Try again.", 504);
           }
-        });
-      } catch (error) {
-        if (error?.name === "APIConnectionTimeoutError" || error?.name === "AbortError") {
-          throw providerError("AI_TIMEOUT", "AI Code Mentor timed out. Try again.", 504);
+          if (error?.status === 400 || /invalid_request_error|bad_request|schema/i.test(error?.message)) {
+            throw providerError("AI_INVALID_ARGUMENT", `OpenAI request or schema validation failed: ${error.message}`, 400);
+          }
+          if (error?.status === 429) {
+            throw providerError("AI_RATE_LIMITED", "AI Code Mentor is busy. Try again later.", 429);
+          }
+          if (error?.status === 401 || error?.status === 403 || error?.status === 404 || error?.code === "model_not_found") {
+            throw providerError("AI_MODEL_UNAVAILABLE", "The configured OpenAI model is unavailable.", 503);
+          }
+          throw providerError("AI_PROVIDER_UNAVAILABLE", "AI Code Mentor is temporarily unavailable.");
         }
-        if (error?.status === 429) {
-          throw providerError("AI_RATE_LIMITED", "AI Code Mentor is busy. Try again later.", 429);
+
+        if (response?.status === "incomplete") {
+          throw providerError("AI_INCOMPLETE", "AI Code Mentor could not complete this review.");
         }
-        if (error?.status === 401 || error?.status === 403 || error?.status === 404 || error?.code === "model_not_found") {
-          throw providerError("AI_MODEL_UNAVAILABLE", "The configured OpenAI model is unavailable.", 503);
+        const refusal = response?.output?.find(item => item?.type === "message")?.content?.find(item => item?.type === "refusal");
+        if (refusal) {
+          throw providerError("AI_REFUSED", "AI Code Mentor could not review this request.", 422);
         }
-        throw providerError("AI_PROVIDER_UNAVAILABLE", "AI Code Mentor is temporarily unavailable.");
+        if (typeof response?.output_text !== "string" || !response.output_text.trim()) {
+          throw providerError("AI_INVALID_RESPONSE", "AI Code Mentor returned an invalid response.");
+        }
+
+        try {
+          const parsed = JSON.parse(response.output_text);
+          parsed.provider = "openai";
+          parsed.model = model;
+          return { analysis: parsed, usage: response.usage || null, model, provider: "openai" };
+        } catch {
+          throw providerError("AI_INVALID_RESPONSE", "AI Code Mentor returned an invalid response.");
+        }
       }
 
-      if (response?.status === "incomplete") {
-        throw providerError("AI_INCOMPLETE", "AI Code Mentor could not complete this review.");
-      }
-      const refusal = response?.output?.find(item => item?.type === "message")?.content?.find(item => item?.type === "refusal");
-      if (refusal) {
-        throw providerError("AI_REFUSED", "AI Code Mentor could not review this request.", 422);
-      }
-      if (typeof response?.output_text !== "string" || !response.output_text.trim()) {
-        throw providerError("AI_INVALID_RESPONSE", "AI Code Mentor returned an invalid response.");
+      // Path B: Standard Chat Completions with Structured Outputs and Bounded Retry
+      const systemPrompt = `${instructions}\n\nYou must return valid JSON that conforms to the schema. Ensure optimalCode contains complete, non-generic, working code in the requested language for this exact problem.`;
+      const messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: fullInput }
+      ];
+
+      const startTime = Date.now();
+      let lastError = null;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const elapsed = Date.now() - startTime;
+        if (timeoutMs - elapsed <= 1000) {
+          throw providerError("AI_TIMEOUT", "OpenAI API timed out. Try again.", 504);
+        }
+
+        try {
+          const adaptedSchema = adaptSchemaForOpenAI(UNIVERSAL_ANALYSIS_SCHEMA);
+          const completion = await openai.chat.completions.create({
+            model,
+            messages,
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "ai_code_mentor_analysis",
+                strict: true,
+                schema: adaptedSchema
+              }
+            },
+            max_tokens: maxOutputTokens,
+            temperature: 0.2
+          });
+
+          const choice = completion?.choices?.[0];
+          if (choice?.message?.refusal) {
+            throw providerError("AI_REFUSED", "OpenAI refused this analysis request.", 422);
+          }
+          const rawText = choice?.message?.content;
+          if (!rawText || typeof rawText !== "string") {
+            throw providerError("AI_INVALID_RESPONSE", "OpenAI returned an empty response.");
+          }
+
+          let parsed;
+          try {
+            parsed = JSON.parse(rawText);
+          } catch {
+            throw providerError("AI_INVALID_RESPONSE", "OpenAI response could not be parsed as JSON.");
+          }
+
+          parsed.provider = "openai";
+          parsed.model = model;
+          return { analysis: parsed, usage: completion.usage || null, model, provider: "openai" };
+        } catch (error) {
+          lastError = error;
+          if (error.code === "AI_TIMEOUT" || error.name === "AbortError" || error.name === "APIConnectionTimeoutError") {
+            throw providerError("AI_TIMEOUT", "OpenAI API timed out. Try again.", 504);
+          }
+          if (error.code === "AI_INVALID_RESPONSE" || error.code === "AI_REFUSED" || error.code === "AI_INVALID_ARGUMENT") {
+            throw error;
+          }
+          if (error.status === 400 || error.code === 400 || /invalid_request_error|bad_request|schema/i.test(error.message)) {
+            throw providerError("AI_INVALID_ARGUMENT", `OpenAI request or schema validation failed: ${error.message}`, 400);
+          }
+          if (error.status === 401 || error.status === 403 || error.code === "model_not_found") {
+            throw providerError("AI_MODEL_UNAVAILABLE", "The configured OpenAI model or API key is invalid.", 503);
+          }
+
+          if (attempt >= maxRetries) {
+            if (error.status === 429) {
+              throw providerError("AI_RATE_LIMITED", "OpenAI API rate limit or quota exceeded. Try again later.", 429);
+            }
+            throw providerError("AI_PROVIDER_UNAVAILABLE", `OpenAI API is temporarily unavailable: ${error.message || "Retry limit reached"}`);
+          }
+
+          const exponential = Math.min(baseDelayMs * Math.pow(2, attempt), 6000);
+          const jitter = (Math.random() * 0.4 - 0.2) * exponential;
+          const delayMs = Math.round(exponential + jitter);
+          console.warn(`[OPENAI RETRY]: Attempt ${attempt + 1} failed (${error.status || error.code || '503'}). Backing off ${delayMs}ms...`);
+          await sleep(delayMs);
+        }
       }
 
-      try {
-        const parsed = JSON.parse(response.output_text);
-        parsed.provider = "openai";
-        parsed.model = model;
-        return { analysis: parsed, usage: response.usage || null, model, provider: "openai" };
-      } catch {
-        throw providerError("AI_INVALID_RESPONSE", "AI Code Mentor returned an invalid response.");
-      }
+      throw providerError("AI_PROVIDER_UNAVAILABLE", `OpenAI API is temporarily unavailable: ${lastError?.message || "Exceeded retry limit"}`);
     }
   };
 }
@@ -496,6 +692,23 @@ function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
               explanation: verified.timeExplain || "Optimized time bounds."
             },
             summary: `Educational curriculum analysis for ${verified.title}.`,
+            problemUnderstanding: {
+              whatItAsks: verified.whatItAsks || `Find the optimal solution for ${verified.title}.`,
+              inputOutput: verified.inputOutput || "Valid array or sequence inputs to optimal output.",
+              constraints: verified.constraints || "Standard curriculum bounds.",
+              keyObservation: verified.keyObservation || verified.optimalExplain || "Maintain core algorithmic invariants."
+            },
+            edgeCases: verified.edgeCases || [
+              { caseName: "Boundary or minimal input", input: "Minimal constraints", expected: "Base case result", explanation: "Handles edge bounds gracefully.", handledBy: "Guard clause" }
+            ],
+            variableTracking: verified.variableTracking || {
+              variableNames: ["left", "right", "state"],
+              steps: [
+                { step: "Init", vars: "pointers = 0, state = ready", evaluation: "Pre-loop invariant verified", memory: "Stack variables initialized" },
+                { step: "Iteration 1", vars: "curr = element[0], memo = updated", evaluation: "Condition evaluated true", memory: "Heap state mutated" },
+                { step: "Final", vars: "return = target_result", evaluation: "Algorithm converged", memory: "Garbage collection ready" }
+              ]
+            },
             sections: [
               { id: "problem-understanding", title: "Problem Overview", content: verified.description || "" },
               { id: "optimal-approach", title: "Optimal Strategy", content: verified.optimalExplain || "" }
@@ -539,6 +752,17 @@ function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
             explanation: "Requires live AI mentor"
           },
           summary: "This problem is not part of the verified offline curriculum. Configure GEMINI_API_KEY to enable live AI analysis.",
+          problemUnderstanding: {
+            whatItAsks: "Requires live AI mentor analysis.",
+            inputOutput: "—",
+            constraints: "—",
+            keyObservation: "Curated solution not present in local educational engine."
+          },
+          edgeCases: [],
+          variableTracking: {
+            variableNames: [],
+            steps: []
+          },
           sections: [],
           unavailableSections: [
             { id: "optimal-approach", reason: "Requires GEMINI_API_KEY or OPENAI_API_KEY on the server." }
@@ -664,6 +888,9 @@ module.exports = {
   ANALYSIS_SCHEMA,
   UNIVERSAL_ANALYSIS_SCHEMA,
   providerError,
+  validateSchemaContract,
+  adaptSchemaForGemini,
+  adaptSchemaForOpenAI,
   createGeminiMentorProvider,
   createOpenAIMentorProvider,
   createLocalKnowledgeProvider,

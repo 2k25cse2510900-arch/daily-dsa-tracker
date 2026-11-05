@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DSAverse Sync</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 10px;
+    }
+    .logo {
+      font-size: 20px;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+    .subtitle {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .label {
+      color: #94a3b8;
+    }
+    .val {
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+    .badge-accepted { color: #34d399; }
+    .badge-wa { color: #f87171; }
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border-radius: 6px;
+      border: none;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 8px;
+    }
+    .btn-primary {
+      background: #38bdf8;
+      color: #0f172a;
+    }
+    .btn-primary:hover {
+      background: #0ea5e9;
+    }
+    .btn-secondary {
+      background: #334155;
+      color: #f8fafc;
+    }
+    .status-msg {
+      font-size: 11px;
+      text-align: center;
+      margin-top: 8px;
+    }
+    .status-success { color: #34d399; }
+    .status-error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">⚡</div>
+    <div>
+      <div class="title">DSAverse LeetCode Sync</div>
+      <div class="subtitle">Authorized Submission Importer</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="label">Problem:</span>
+      <span class="val" id="slugVal">Detecting...</span>
+    </div>
+    <div class="row">
+      <span class="label">Language:</span>
+      <span class="val" id="langVal">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Verdict:</span>
+      <span class="val" id="verdictVal">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Code Length:</span>
+      <span class="val" id="codeLenVal">—</span>
+    </div>
+  </div>
+
+  <button id="syncBtn" class="btn btn-primary" type="button">Sync to DSAverse</button>
+  <button id="copyBtn" class="btn btn-secondary" type="button">Copy Import Payload</button>
+  <div id="statusMsg" class="status-msg"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
