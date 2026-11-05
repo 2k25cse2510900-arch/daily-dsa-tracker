@@ -808,15 +808,19 @@
               </div>
             </div>
 
-            <!-- Learning Action Pills (Table 6.1) -->
+            <!-- 11 Learning Action Chips (Module 5) -->
             <div class="mentor-action-bar" role="tablist" aria-label="Analysis perspective">
-              <button class="mentor-action-chip active" type="button" data-mentor-mode="explain">Deep Analysis</button>
-              <button class="mentor-action-chip" type="button" data-mentor-mode="mistake">Find My Mistake</button>
-              <button class="mentor-action-chip" type="button" data-mentor-mode="complexity">Time &amp; Space</button>
-              <button class="mentor-action-chip" type="button" data-mentor-mode="optimize">Optimize Code</button>
-              <button class="mentor-action-chip" type="button" data-mentor-mode="dry-run">Dry Run Trace</button>
-              <button class="mentor-action-chip" type="button" data-mentor-mode="teach">Teach Concept</button>
-              <button class="mentor-action-chip" type="button" data-mentor-mode="hint">Hint</button>
+              <button class="mentor-action-chip active" type="button" data-mentor-chip="deep-analysis">Deep Analysis</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="dry-run">Dry Run</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="track-vars">Track Variables</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="learn-concepts">Learn Concepts</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="hints">Progressive Hints</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="find-mistakes">Find Mistakes / Review</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="brute-force">Brute Force</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="optimal-solution">Optimal Solution</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="complexity">Complexity Analysis</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="edge-cases">Edge Cases</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="code-comparison">Code Comparison</button>
             </div>
 
             <!-- Mistake Detection Alert (When applicable) -->
@@ -845,8 +849,36 @@
               </div>
             </div>
 
-            <!-- Complexity Metrics Grid -->
-            <div class="mentor-complexity-row">
+            <!-- Problem Understanding Card (Module 4) -->
+            <div id="mentorProblemUnderstandingCard" class="mentor-card mentor-understanding-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">PROBLEM UNDERSTANDING</span>
+                  <h4 class="mentor-card-subtitle">Task Scope &amp; Core Invariants</h4>
+                </div>
+              </div>
+              <div class="mentor-understanding-grid">
+                <div class="understanding-item">
+                  <strong>What It Asks:</strong>
+                  <p id="mentorProblemWhatItAsks">Find two distinct indices in the array whose elements sum to target.</p>
+                </div>
+                <div class="understanding-item">
+                  <strong>Input &amp; Output:</strong>
+                  <p id="mentorProblemInputOutput">Input: <code>nums: int[]</code>, <code>target: int</code>. Output: <code>[index1, index2]</code>.</p>
+                </div>
+                <div class="understanding-item">
+                  <strong>Constraints &amp; Scale:</strong>
+                  <p id="mentorProblemConstraints">2 &le; nums.length &le; 10⁴, -10⁹ &le; nums[i], target &le; 10⁹. Exactly one valid answer exists.</p>
+                </div>
+                <div class="understanding-item highlight-observation">
+                  <strong>Key Algorithmic Observation:</strong>
+                  <p id="mentorProblemKeyObservation">For each element x, the required partner is uniquely determined as (target - x), enabling single-pass hash lookups.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Complexity Metrics Grid (Module 4 - All 4 Metrics, No Blank Dashes) -->
+            <div id="mentorComplexityCard" class="mentor-complexity-row">
               <div class="mentor-stat-card">
                 <span class="mentor-stat-label">Time Complexity</span>
                 <strong id="mentorTimeComplexity" class="mentor-stat-value">O(n)</strong>
@@ -857,35 +889,50 @@
                 <strong id="mentorSpaceComplexity" class="mentor-stat-value">O(n)</strong>
                 <span id="mentorSpaceExplain" class="mentor-stat-sub">Auxiliary hash table storing up to n elements</span>
               </div>
+              <div class="mentor-stat-card">
+                <span class="mentor-stat-label">Auxiliary Space</span>
+                <strong id="mentorAuxiliarySpace" class="mentor-stat-value">O(n)</strong>
+                <span id="mentorAuxiliaryExplain" class="mentor-stat-sub">Extra allocated memory excluding input array</span>
+              </div>
+              <div class="mentor-stat-card">
+                <span class="mentor-stat-label">Total Space</span>
+                <strong id="mentorTotalSpace" class="mentor-stat-value">O(n)</strong>
+                <span id="mentorTotalExplain" class="mentor-stat-sub">Input buffer plus auxiliary hash map</span>
+              </div>
             </div>
 
-            <!-- Approach Comparison Table -->
-            <div class="mentor-card mentor-table-card">
+            <!-- Approach Comparison Table (Module 4 & 5 - 3-Row Comparison) -->
+            <div id="mentorComparisonTableCard" class="mentor-card mentor-table-card">
               <div class="mentor-card-head">
-                <h4 class="mentor-card-subtitle">Approach Comparison</h4>
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">PARADIGM COMPARISON</span>
+                  <h4 class="mentor-card-subtitle">Brute Force vs Optimal Trade-Off</h4>
+                </div>
               </div>
               <div class="mentor-table-wrapper">
                 <table class="mentor-comparison-table">
                   <thead>
                     <tr>
-                      <th>Approach</th>
-                      <th>Time Complexity</th>
-                      <th>Space Complexity</th>
-                      <th>Efficiency</th>
+                      <th>Dimension</th>
+                      <th>Brute Force Approach</th>
+                      <th>Optimal Approach</th>
                     </tr>
                   </thead>
                   <tbody id="mentorComparisonTableBody">
                     <tr>
-                      <td><strong>Brute Force</strong> (Nested Loops)</td>
-                      <td><code>O(n&sup2;)</code></td>
-                      <td><code>O(1)</code></td>
-                      <td><span class="badge-status status-attempted">Slow on large inputs</span></td>
+                      <td><strong>Intuition &amp; Invariant</strong></td>
+                      <td id="mentorCompIntuitionBf">Exhaustively test every pair (i, j) with nested loops.</td>
+                      <td id="mentorCompIntuitionOpt">Look up complement (target - x) in O(1) time using hash map.</td>
                     </tr>
-                    <tr class="highlight-row">
-                      <td><strong>Hash Map</strong> (One-pass)</td>
-                      <td><code>O(n)</code></td>
-                      <td><code>O(n)</code></td>
-                      <td><span class="badge-status status-accepted">Optimal (Recommended)</span></td>
+                    <tr>
+                      <td><strong>Time Complexity</strong></td>
+                      <td><code id="mentorCompTimeBf">O(n²)</code> &mdash; quadratic comparisons</td>
+                      <td class="highlight-cell"><code id="mentorCompTimeOpt">O(n)</code> &mdash; single pass</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Space Complexity</strong></td>
+                      <td><code id="mentorCompSpaceBf">O(1)</code> &mdash; in-place traversal</td>
+                      <td class="highlight-cell"><code id="mentorCompSpaceOpt">O(n)</code> &mdash; hash table auxiliary buffer</td>
                     </tr>
                   </tbody>
                 </table>
@@ -893,7 +940,7 @@
             </div>
 
             <!-- Detailed Analysis Section -->
-            <div class="mentor-card mentor-analysis-card">
+            <div id="mentorAnalysisCard" class="mentor-card mentor-analysis-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">EDUCATIONAL ANALYSIS</span>
@@ -906,8 +953,39 @@
               </div>
             </div>
 
+            <!-- Brute Force Approach & Code (Module 4 & 5) -->
+            <div id="mentorBruteForceCard" class="mentor-card mentor-bruteforce-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">BASELINE BENCHMARK</span>
+                  <h4 class="mentor-card-subtitle" id="mentorBruteForceTitle">Brute Force Baseline (Nested Loops)</h4>
+                </div>
+                <div class="mentor-card-tools">
+                  <span id="mentorBruteForceTimeBadge" class="badge-tag">O(n²) Time</span>
+                  <span id="mentorBruteForceSpaceBadge" class="badge-tag">O(1) Space</span>
+                  <button id="mentorCopyBruteForceBtn" class="mentor-btn-icon" type="button" aria-label="Copy brute force code">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <p id="mentorBruteForceAlgorithm" class="mentor-bruteforce-desc">
+                Iterate through every element i, then iterate through all elements j > i to check if nums[i] + nums[j] == target. While easy to formulate, this scales quadratically and causes Time Limit Exceeded on large inputs.
+              </p>
+              <div class="mentor-code-block-wrap">
+                <pre class="mentor-code-block"><code id="mentorBruteForceCode">class Solution:
+    def twoSum(self, nums: list[int], target: int) -> list[int]:
+        n = len(nums)
+        for i in range(n):
+            for j in range(i + 1, n):
+                if nums[i] + nums[j] == target:
+                    return [i, j]
+        return []</code></pre>
+              </div>
+            </div>
+
             <!-- Optimized Solution Panel -->
-            <div class="mentor-card mentor-solution-card">
+            <div id="mentorSolutionCard" class="mentor-card mentor-solution-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">OPTIMAL SOLUTION</span>
@@ -931,6 +1009,54 @@
               </div>
             </div>
 
+            <!-- Edge Cases Section (Module 4 & 5) -->
+            <div id="mentorEdgeCasesCard" class="mentor-card mentor-edgecases-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">ROBUSTNESS CHECKLIST</span>
+                  <h4 class="mentor-card-subtitle">Edge Cases &amp; Boundary Conditions</h4>
+                </div>
+              </div>
+              <div class="mentor-table-wrapper">
+                <table class="mentor-comparison-table">
+                  <thead>
+                    <tr>
+                      <th>Scenario</th>
+                      <th>Input Example</th>
+                      <th>Expected Output</th>
+                      <th>How Optimal Algorithm Handles It</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mentorEdgeCasesTableBody">
+                    <tr>
+                      <td><strong>Identical Values</strong></td>
+                      <td><code>nums = [3, 3], target = 6</code></td>
+                      <td><code>[0, 1]</code></td>
+                      <td>Querying <code>seen</code> before inserting current index prevents self-pairing and safely pairs duplicate values.</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Negative Numbers</strong></td>
+                      <td><code>nums = [-1, -2, -3, -4], target = -7</code></td>
+                      <td><code>[2, 3]</code></td>
+                      <td>Algebraic difference <code>(-7) - (-4) = -3</code> handles negative numbers naturally in hash table lookup.</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Zero Values</strong></td>
+                      <td><code>nums = [0, 4, 3, 0], target = 0</code></td>
+                      <td><code>[0, 3]</code></td>
+                      <td>Zero complements are properly matched against stored zero indices.</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Large Coordinates</strong></td>
+                      <td><code>nums = [10⁹, -10⁹], target = 0</code></td>
+                      <td><code>[0, 1]</code></td>
+                      <td>64-bit integer arithmetic avoids overflow under maximum LeetCode constraint bounds.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <!-- Progressive Hint Card -->
             <div id="mentorHintCard" class="mentor-card mentor-hint-card" hidden>
               <div class="mentor-card-head">
@@ -950,7 +1076,7 @@
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">STEP-BY-STEP TRACE</span>
-                  <h4 class="mentor-card-subtitle">Execution Trace &amp; Variable Watch</h4>
+                  <h4 class="mentor-card-subtitle">Execution Trace &amp; Step Stepper</h4>
                 </div>
               </div>
               <div class="mentor-table-wrapper">
@@ -965,11 +1091,31 @@
               </div>
             </div>
 
-            <!-- Final Takeaways Card -->
-            <div class="mentor-card mentor-takeaways-card">
+            <!-- Live Variable Tracking Watch Card (Module 5) -->
+            <div id="mentorTrackVariablesCard" class="mentor-card mentor-vars-watch-card" hidden>
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
-                  <span class="mentor-card-kicker">KEY TAKEAWAYS</span>
+                  <span class="mentor-card-kicker">VARIABLE WATCH</span>
+                  <h4 class="mentor-card-subtitle">Live State &amp; Variable Mutation</h4>
+                </div>
+              </div>
+              <div class="mentor-table-wrapper">
+                <table class="mentor-comparison-table">
+                  <thead id="mentorTrackVarsThead">
+                    <tr><th>Step</th><th>Variable State</th><th>Evaluation</th><th>Memory Impact</th></tr>
+                  </thead>
+                  <tbody id="mentorTrackVarsTbody">
+                    <tr><td>Init</td><td><code>seen = {}</code></td><td>Ready</td><td>No heap allocation</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Final Takeaways Card -->
+            <div id="mentorTakeawaysCard" class="mentor-card mentor-takeaways-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">KEY TAKEAWAYS &amp; CONCEPTS</span>
                   <h4 class="mentor-card-subtitle">DSA Principles to Remember</h4>
                 </div>
               </div>
@@ -1028,13 +1174,31 @@
 
           <!-- Centered Interactive Visualization Area -->
           <div class="animatic-canvas-area" id="animaticCanvas">
-            <!-- Array Display -->
-            <div class="animatic-array-container">
-              <span class="animatic-section-label">Input Array (nums)</span>
+            <!-- 1. Array Display -->
+            <div class="animatic-array-container" id="animaticArrayContainer">
+              <span class="animatic-section-label" id="animaticArrayLabel">Input Array (nums)</span>
               <div class="animatic-array-row" id="animaticArrayRow">
                 <!-- Dynamically populated array blocks -->
               </div>
             </div>
+
+            <!-- 2. Sliding Window Frame Overlay / Container -->
+            <div class="animatic-window-container" id="animaticWindowContainer" hidden>
+              <div class="animatic-window-stat">Window Bounds: [<span id="animaticWinL">0</span>..<span id="animaticWinR">0</span>] | Window Value: <strong id="animaticWinVal">0</strong></div>
+            </div>
+
+            <!-- 3. Linked List Container -->
+            <div class="animatic-linkedlist-container" id="animaticLinkedListContainer" hidden>
+              <div class="animatic-linkedlist-row" id="animaticLinkedListRow"></div>
+            </div>
+
+            <!-- 4. Dynamic Programming Memoization Table -->
+            <div class="animatic-dp-container" id="animaticDpContainer" hidden>
+              <div class="animatic-dp-grid" id="animaticDpGrid"></div>
+            </div>
+
+            <!-- 5. Pillars / Heights Container -->
+            <div class="animatic-pillars-container" id="animaticPillarsContainer" hidden></div>
 
             <!-- Computational State / Equation -->
             <div class="animatic-equation-banner" id="animaticEquation">
@@ -1043,7 +1207,7 @@
             </div>
 
             <!-- Hash Table / Auxiliary Memory Display -->
-            <div class="animatic-memory-container">
+            <div class="animatic-memory-container" id="animaticMemoryContainer">
               <span class="animatic-section-label">Auxiliary Memory (seen hash map)</span>
               <div class="animatic-memory-grid" id="animaticMemoryGrid">
                 <!-- Dynamically populated hash map cells -->
@@ -1140,6 +1304,20 @@
                   <!-- Injected rows with current active highlight -->
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Synchronized Active Code Line Panel (Module 6) -->
+          <div class="mentor-card animatic-code-card" id="animaticCodeCard">
+            <div class="mentor-card-head">
+              <div class="mentor-card-title-wrap">
+                <span class="mentor-card-kicker">CODE EXECUTION SYNC</span>
+                <h4 class="mentor-card-subtitle">Active Line Highlighting</h4>
+              </div>
+              <span id="animaticLineNumberBadge" class="badge-tag">Line: 1</span>
+            </div>
+            <div class="mentor-code-block-wrap">
+              <pre class="mentor-code-block animatic-code-block"><code id="animaticSynchronizedCode"></code></pre>
             </div>
           </div>
         </div>

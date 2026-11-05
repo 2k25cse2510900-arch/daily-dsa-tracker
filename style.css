@@ -5668,3 +5668,209 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
   align-items: center;
 }
 
+/* ==========================================================================
+   AI CODE MENTOR - COMPLETE TRANSFORMATION EXTENDED STYLES (Modules 4, 5, 6)
+   ========================================================================== */
+
+/* Problem Understanding Card */
+.mentor-understanding-card {
+  margin-bottom: 14px;
+}
+.mentor-understanding-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.understanding-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.understanding-item strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.understanding-item p {
+  margin: 0;
+  color: #1e293b;
+}
+.understanding-item.highlight-observation {
+  grid-column: 1 / -1;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+.understanding-item.highlight-observation strong {
+  color: #7c3aed;
+}
+
+/* 4-Stat Metric Row */
+.mentor-complexity-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* Brute Force, Edge Cases & Variables Cards */
+.mentor-bruteforce-card,
+.mentor-edgecases-card,
+.mentor-vars-watch-card {
+  margin-bottom: 14px;
+}
+.mentor-bruteforce-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #475569;
+  margin: 0 0 10px 0;
+}
+.highlight-cell {
+  background: #f0fdf4 !important;
+  color: #166534 !important;
+  font-weight: 700;
+}
+
+/* Animatic Mode 3-Column Details Grid */
+.animatic-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1180px) {
+  .animatic-details-grid {
+    grid-template-columns: 1fr;
+  }
+  .mentor-complexity-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Animatic Synchronized Code Viewer */
+.animatic-code-card {
+  min-height: 220px;
+}
+.animatic-code-block {
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 0;
+}
+.anim-code-line {
+  display: block;
+  padding: 2px 14px;
+  transition: background 0.15s ease;
+}
+.anim-code-line.active-anim-line {
+  background: rgba(56, 189, 248, 0.25);
+  border-left: 3px solid #38bdf8;
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+/* Animatic Pattern Containers (Sliding Window, Linked List, DP Table) */
+.animatic-window-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px dashed #3b82f6;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+}
+.animatic-window-stat span {
+  font-family: monospace;
+}
+.animatic-cell.window-active {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+}
+
+.animatic-linkedlist-container {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+}
+.animatic-linkedlist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.animatic-ll-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  font-weight: 700;
+  font-size: 14px;
+  color: #1e293b;
+}
+.animatic-ll-node.active-node {
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+  color: #7c3aed;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+}
+.animatic-ll-arrow {
+  color: #94a3b8;
+  font-size: 16px;
+}
+
+.animatic-dp-container {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+}
+.animatic-dp-grid {
+  display: grid;
+  gap: 6px;
+  background: #f8fafc;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+.animatic-dp-cell {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #334155;
+  transition: all 0.2s ease;
+}
+.animatic-dp-cell.computed {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+}
+.animatic-dp-cell.current-dp {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #b45309;
+  transform: scale(1.08);
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.25);
+}
+

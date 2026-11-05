@@ -271,7 +271,7 @@ test("Provider: Gemini provider converts quota/rate-limit (429 / RESOURCE_EXHAUS
   };
 
   const provider = createGeminiMentorProvider({
-    env: { GEMINI_API_KEY: "test-gemini-key" },
+    env: { GEMINI_API_KEY: "test-gemini-key", AI_MENTOR_RETRY_BASE_MS: "10", AI_MENTOR_MAX_RETRIES: "2" },
     client: rateLimitedClient
   });
 
