@@ -6180,6 +6180,29 @@ async function openAiCodeMentorWorkspace(params) {
       if (resp && resp.sourceCode && resp.sourceCode.trim()) {
         resolvedCode = resp.sourceCode;
         if (resp.language) resolvedLang = normalizeLanguageKey(resp.language);
+        if (resp.verdict) {
+          params.status = resp.verdict;
+          currentMentorBuggyState = resp.verdict !== "Accepted";
+          if (statusBadge) {
+            statusBadge.textContent = resp.verdict;
+            statusBadge.className = `badge-status ${resp.verdict === "Accepted" ? "status-accepted" : "status-attempted"}`;
+          }
+        }
+        if (resp.difficulty && !params.difficulty) {
+          params.difficulty = resp.difficulty;
+          if (diffBadge) {
+            diffBadge.textContent = resp.difficulty;
+            diffBadge.className = `badge-difficulty badge-${resp.difficulty.toLowerCase()}`;
+          }
+        }
+        if (resp.problemTitle && (!params.title || params.title === "LeetCode Problem")) {
+          params.title = resp.problemTitle;
+          if (titleEl) titleEl.textContent = resp.problemTitle;
+          if (contextTitle) contextTitle.textContent = resp.problemTitle;
+        }
+        if (resp.submissionId && !params.submissionId) {
+          params.submissionId = resp.submissionId;
+        }
         if (resp.sourceProvenance === "manual_import") {
           resolvedSourceType = "Manually Imported";
         } else if (resp.sourceProvenance === "user_paste") {
@@ -6222,9 +6245,15 @@ async function openAiCodeMentorWorkspace(params) {
     if (sourceBadge) sourceBadge.textContent = `Source: ${resolvedSourceType}`;
     if (sourceNotice) {
       sourceNotice.hidden = false;
-      if (noticeTitle) noticeTitle.textContent = "Submitted Code Loaded";
+      if (noticeTitle) {
+        noticeTitle.textContent = resolvedSourceType.includes("Automatically")
+          ? "Synced LeetCode Submission Loaded"
+          : "Submitted Code Loaded";
+      }
       if (noticeBody) {
-        noticeBody.textContent = `Imported code loaded for this submission (${params.submissionId ? '#' + params.submissionId + ' · ' : ''}${formatLang(resolvedLang)}). You can edit the code above before analyzing.`;
+        noticeBody.textContent = resolvedSourceType.includes("Automatically")
+          ? `Your exact code submitted to LeetCode was automatically synchronized (${params.submissionId ? '#' + params.submissionId + ' · ' : ''}${formatLang(resolvedLang)}${params.status ? ' · ' + params.status : ''}). Ready for AI analysis!`
+          : `Imported code loaded for this submission (${params.submissionId ? '#' + params.submissionId + ' · ' : ''}${formatLang(resolvedLang)}). You can edit the code above before analyzing.`;
       }
       if (replaceBtn) replaceBtn.hidden = false;
       if (removeBtn) removeBtn.hidden = false;
