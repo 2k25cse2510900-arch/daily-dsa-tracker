@@ -327,7 +327,7 @@ function resolveProblemIdentity({ problemNumber, problemTitle, problemSlug, prob
     slug: dynamicSlug || "custom-problem",
     title: titleWithoutNum || (dynamicNum ? `Problem #${dynamicNum}` : "LeetCode Problem"),
     difficulty: "Medium",
-    url: problemUrl || (dynamicSlug ? `https://leetcode.com/problems/${dynamicSlug}/` : null),
+    url: problemUrl || (dynamicSlug && !dynamicSlug.startsWith("custom-") ? `https://leetcode.com/problems/${dynamicSlug}/` : null),
     description: (problemDescription && typeof problemDescription === "string" && problemDescription.trim())
       ? problemDescription.trim()
       : null,

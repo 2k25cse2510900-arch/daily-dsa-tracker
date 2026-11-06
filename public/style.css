@@ -4462,6 +4462,67 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
   background: #fbf9fd;
 }
 
+.mentor-context-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mentor-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mentor-input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid #dcd5e8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1e1b2e;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mentor-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.mentor-input-select {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #dcd5e8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1e1b2e;
+  cursor: pointer;
+}
+
+.mentor-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid #dcd5e8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1e1b2e;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  box-sizing: border-box;
+}
+
+.mentor-textarea:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
 .mentor-context-text {
   font-size: 13px;
   line-height: 1.6;

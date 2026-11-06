@@ -29,6 +29,7 @@
         <button class="nav-link" data-target="leaderboard"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20V12h4v8M10 20V5h4v15M16 20V9h4v11"/></svg><span>Leaderboard</span></button>
         <button class="nav-link" data-target="arena"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg><span>Race Arena</span></button>
         <button class="nav-link" data-target="report"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6zM14 3.5V8h4M9 12h6M9 16h6"/></svg><span>Weekly report</span></button>
+        <button class="nav-link" data-target="aimentor" id="navAiMentorBtn"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg><span>AI Code Mentor</span></button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -454,6 +455,7 @@
       <nav class="member-view-nav" aria-label="Member navigation">
         <button class="member-view-button" id="memberDashboardNav" type="button" aria-controls="memberPersonalDashboard" aria-pressed="true">My Profile</button>
         <button class="member-view-button" id="memberProgressNav" type="button" aria-controls="memberProgressView" aria-pressed="false">My Progress</button>
+        <button class="member-view-button" id="memberMentorNav" type="button">AI Code Mentor</button>
       </nav>
       <div class="member-session-actions"><span class="member-mode-indicator">Member Mode</span><button class="btn btn-light" id="memberLogoutBtn" type="button">Log out</button></div>
     </header>
@@ -774,15 +776,33 @@
               </div>
             </div>
 
-            <!-- Problem Context & Description Box -->
+            <!-- Problem Context & Description Box (Interactive & Standalone) -->
             <div class="mentor-card mentor-context-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
-                  <span class="mentor-card-kicker">PROBLEM STATEMENT</span>
-                  <h4 class="mentor-card-subtitle" id="mentorProblemContextTitle">Two Sum</h4>
+                  <span class="mentor-card-kicker">PROBLEM CONTEXT (OPTIONAL)</span>
+                  <h4 class="mentor-card-subtitle" id="mentorProblemContextTitle">Custom Problem Review</h4>
+                </div>
+                <div class="mentor-card-actions">
+                  <button id="mentorClearContextBtn" class="mentor-btn-sm" type="button" title="Clear problem context inputs">Clear</button>
                 </div>
               </div>
-              <p id="mentorProblemDescription" class="mentor-context-text">
+              <div class="mentor-context-inputs">
+                <div class="mentor-input-row">
+                  <input id="mentorProblemTitleInput" class="mentor-input" type="text" placeholder="Problem title (e.g. Two Sum) or leave blank for general review...">
+                  <select id="mentorVerdictSelect" class="mentor-input-select" aria-label="Submission Verdict">
+                    <option value="">Verdict: Unspecified</option>
+                    <option value="Accepted">Accepted</option>
+                    <option value="Wrong Answer">Wrong Answer</option>
+                    <option value="Time Limit Exceeded">Time Limit Exceeded</option>
+                    <option value="Runtime Error">Runtime Error</option>
+                    <option value="Compilation Error">Compilation Error</option>
+                  </select>
+                </div>
+                <input id="mentorProblemUrlInput" class="mentor-input" type="url" placeholder="Problem URL (optional, e.g. https://leetcode.com/problems/...)">
+                <textarea id="mentorProblemDescInput" class="mentor-textarea" rows="3" placeholder="Problem statement, examples, and constraints (optional). If omitted, a general code review will be performed."></textarea>
+              </div>
+              <p id="mentorProblemDescription" class="mentor-context-text" hidden>
                 Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice.
               </p>
             </div>

@@ -20,7 +20,8 @@ const PAGE_INFO = {
   members: { title: "Members", id: "membersPage" },
   arena: { title: "Race Arena", id: "arenaPage" },
   leaderboard: { title: "Leaderboard", id: "leaderboardPage" },
-  report: { title: "Weekly Report", id: "reportPage" }
+  report: { title: "Weekly Report", id: "reportPage" },
+  aimentor: { title: "AI Code Mentor", id: "aiMentorPage" }
 };
 
 let state = { members: [], weeks: {}, currentWeek: 1 };
@@ -513,6 +514,10 @@ function observePodiumVisibility() {
 }
 
 function showPage(pageName) {
+  if (pageName === "aimentor") {
+    openAiCodeMentorWorkspace({ isStandalone: true });
+    return;
+  }
   const info = PAGE_INFO[pageName];
   if (!info) return;
   activePage = pageName;
@@ -2526,6 +2531,12 @@ function showMemberProgressView() {
 function initializeMemberDashboardNavigation() {
   $("memberDashboardOpen").addEventListener("click", showMemberPersonalDashboard);
   $("memberDashboardNav").addEventListener("click", showMemberPersonalDashboard);
+  const memberMentorNav = $("memberMentorNav");
+  if (memberMentorNav) {
+    memberMentorNav.addEventListener("click", () => {
+      openAiCodeMentorWorkspace({ isStandalone: true });
+    });
+  }
   $("memberProgressNav").addEventListener("click", async () => {
     showMemberProgressView();
     try { await loadMemberProgress(memberWeek); } catch (error) { showToast(error.message, "error"); }
@@ -3203,6 +3214,10 @@ async function navigatePage(page) {
     }
     showPage("members");
     setRoleUI();
+    return true;
+  }
+  if (page === "aimentor") {
+    openAiCodeMentorWorkspace({ isStandalone: true });
     return true;
   }
   if (isAdmin) { showPage(page); return true; }
@@ -6085,8 +6100,16 @@ function stopAnimaticPlayback() {
   }
 }
 
-async function openAiCodeMentorWorkspace(params) {
-  currentMentorProblem = params;
+async function openAiCodeMentorWorkspace(params = {}) {
+  const isStandalone = Boolean(params.isStandalone || (!params.slug && !params.submissionId));
+  currentMentorProblem = {
+    ...params,
+    isStandalone,
+    title: params.title || (isStandalone ? "Custom Code Review" : "LeetCode Problem"),
+    difficulty: params.difficulty || "Medium",
+    status: params.status || (isStandalone ? "Unspecified" : "Accepted"),
+    language: params.language || "python3"
+  };
   currentMentorMode = "explain";
   currentMentorHintIndex = 0;
 
@@ -6152,9 +6175,29 @@ async function openAiCodeMentorWorkspace(params) {
 
   // Problem Context
   const contextTitle = $("mentorProblemContextTitle");
-  if (contextTitle) contextTitle.textContent = params.title || data.title;
   const contextDesc = $("mentorProblemDescription");
-  if (contextDesc) contextDesc.textContent = data.description;
+  const titleInput = $("mentorProblemTitleInput");
+  const verdictSelect = $("mentorVerdictSelect");
+  const urlInput = $("mentorProblemUrlInput");
+  const descInput = $("mentorProblemDescInput");
+
+  if (isStandalone) {
+    if (titleInput) titleInput.value = "";
+    if (verdictSelect) verdictSelect.value = "";
+    if (urlInput) urlInput.value = "";
+    if (descInput) descInput.value = "";
+    if (contextTitle) contextTitle.textContent = "Custom Problem Review";
+    if (titleEl) titleEl.textContent = "AI Code Mentor";
+    if (metaEl) metaEl.textContent = "Interactive DSA Code Learning & Review";
+    if (contextDesc) contextDesc.textContent = "";
+  } else {
+    if (titleInput) titleInput.value = params.title || "";
+    if (verdictSelect) verdictSelect.value = params.status || "Accepted";
+    if (urlInput) urlInput.value = params.url || (params.slug ? `https://leetcode.com/problems/${encodeURIComponent(params.slug)}/` : "");
+    if (descInput) descInput.value = "";
+    if (contextTitle) contextTitle.textContent = params.title || data.title;
+    if (contextDesc) contextDesc.textContent = data.description;
+  }
 
   // Code input & Source indication
   currentMentorBuggyState = status !== "Accepted";
@@ -6260,25 +6303,31 @@ async function openAiCodeMentorWorkspace(params) {
       if (noticeImportBtn) noticeImportBtn.hidden = true;
     }
   } else {
-    // Original submission code unavailable
-    if (data.hasLocalSolution && data.buggyCodeByLang) {
-      const templateCode = currentMentorBuggyState
-        ? (data.buggyCodeByLang?.[selectedLang] || data.buggyCode)
-        : (data.acceptedCodeByLang?.[selectedLang] || data.acceptedCode);
-      if (codeInput) codeInput.value = templateCode;
+    // Original submission code unavailable or standalone mode
+    if (isStandalone) {
+      if (codeInput && !params.code) codeInput.value = "";
+      if (sourceBadge) sourceBadge.textContent = "Source: Standalone Code Input";
+      if (sourceNotice) sourceNotice.hidden = true;
     } else {
-      if (codeInput) codeInput.value = "";
-    }
-    if (sourceBadge) sourceBadge.textContent = "Source: Original Source Unavailable"; // Source: Original Code Unavailable
-    if (sourceNotice) {
-      sourceNotice.hidden = false;
-      if (noticeTitle) noticeTitle.textContent = "Submitted Code Notice";
-      if (noticeBody) {
-        noticeBody.textContent = "Original LeetCode submission source is unavailable for this record. You can import your code or paste it directly into the editor.";
+      if (data.hasLocalSolution && data.buggyCodeByLang) {
+        const templateCode = currentMentorBuggyState
+          ? (data.buggyCodeByLang?.[selectedLang] || data.buggyCode)
+          : (data.acceptedCodeByLang?.[selectedLang] || data.acceptedCode);
+        if (codeInput) codeInput.value = templateCode;
+      } else {
+        if (codeInput) codeInput.value = "";
       }
-      if (replaceBtn) replaceBtn.hidden = true;
-      if (removeBtn) removeBtn.hidden = true;
-      if (noticeImportBtn) noticeImportBtn.hidden = false;
+      if (sourceBadge) sourceBadge.textContent = "Source: Original Source Unavailable"; // Source: Original Code Unavailable
+      if (sourceNotice) {
+        sourceNotice.hidden = false;
+        if (noticeTitle) noticeTitle.textContent = "Submitted Code Notice";
+        if (noticeBody) {
+          noticeBody.textContent = "Original LeetCode submission source is unavailable for this record. You can import your code or paste it directly into the editor.";
+        }
+        if (replaceBtn) replaceBtn.hidden = true;
+        if (removeBtn) removeBtn.hidden = true;
+        if (noticeImportBtn) noticeImportBtn.hidden = false;
+      }
     }
   }
   updateMentorLineNumbers();
@@ -6732,6 +6781,37 @@ function initializeAiCodeMentor() {
   }
 
   
+  // Problem Context Input & Clear Handlers
+  const problemTitleInput = $("mentorProblemTitleInput");
+  if (problemTitleInput && !problemTitleInput.dataset.bound) {
+    problemTitleInput.dataset.bound = "true";
+    problemTitleInput.addEventListener("input", () => {
+      const val = problemTitleInput.value.trim();
+      const contextTitle = $("mentorProblemContextTitle");
+      if (contextTitle) contextTitle.textContent = val || "Custom Problem Review";
+      const titleEl = $("mentorProblemTitle");
+      if (titleEl && (currentMentorProblem?.isStandalone || !currentMentorProblem?.slug)) {
+        titleEl.textContent = val || "AI Code Mentor";
+      }
+    });
+  }
+
+  const clearContextBtn = $("mentorClearContextBtn");
+  if (clearContextBtn && !clearContextBtn.dataset.bound) {
+    clearContextBtn.dataset.bound = "true";
+    clearContextBtn.addEventListener("click", () => {
+      if ($("mentorProblemTitleInput")) $("mentorProblemTitleInput").value = "";
+      if ($("mentorVerdictSelect")) $("mentorVerdictSelect").value = "";
+      if ($("mentorProblemUrlInput")) $("mentorProblemUrlInput").value = "";
+      if ($("mentorProblemDescInput")) $("mentorProblemDescInput").value = "";
+      if ($("mentorProblemContextTitle")) $("mentorProblemContextTitle").textContent = "Custom Problem Review";
+      if (currentMentorProblem?.isStandalone && $("mentorProblemTitle")) {
+        $("mentorProblemTitle").textContent = "AI Code Mentor";
+      }
+      showToast("Problem context cleared.");
+    });
+  }
+
   // Import Modal & Source Action Handlers
   const importCodeBtn = $("mentorImportCodeBtn");
   if (importCodeBtn && !importCodeBtn.dataset.bound) {
@@ -7038,15 +7118,28 @@ function normalizeMentorMode(rawMode) {
           return;
         }
 
+        const customTitle = $("mentorProblemTitleInput")?.value?.trim();
+        const customVerdict = $("mentorVerdictSelect")?.value;
+        const customUrl = $("mentorProblemUrlInput")?.value?.trim();
+        const customDesc = $("mentorProblemDescInput")?.value?.trim();
+
+        const isStandalone = Boolean(currentMentorProblem?.isStandalone);
+        const problemTitle = customTitle || (!isStandalone ? (currentMentorProblem?.title || data.title) : "Custom Code Review");
+        const problemSlug = customTitle ? null : (isStandalone ? null : (currentMentorProblem?.slug || data.slug || null));
+        const problemNumber = (!isStandalone && (currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number)) ? Number(currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number) : null;
+        const problemUrl = customUrl || (isStandalone ? null : (currentMentorProblem?.url || null));
+        const verdict = customVerdict || currentMentorProblem?.status || (currentMentorBuggyState ? "Wrong Answer" : "Accepted");
+
         const payload = {
           sourceCode: codeToAnalyze,
           language: selectedLang,
-          problemTitle: currentMentorProblem?.title || $("mentorProblemTitle")?.textContent || data.title || "LeetCode Problem",
-          problemSlug: currentMentorProblem?.slug || data.slug || null,
-          problemNumber: Number(currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number) || null,
-          problemUrl: currentMentorProblem?.url || null,
-          submissionId: currentMentorProblem?.submissionId || null,
-          verdict: currentMentorProblem?.status || (currentMentorBuggyState ? "Wrong Answer" : "Accepted"),
+          problemTitle,
+          problemSlug,
+          problemNumber,
+          problemUrl,
+          problemDescription: customDesc || null,
+          submissionId: isStandalone ? null : (currentMentorProblem?.submissionId || null),
+          verdict,
           mode: normalizeMentorMode(currentMentorMode),
           retainSource: Boolean($("mentorRetainSource")?.checked)
         };
