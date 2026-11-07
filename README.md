@@ -65,6 +65,16 @@ Finalization marks Done when stored or freshly fetched submissions prove an atte
 
 Vercel's activity cron runs at 00:00 UTC (05:30 IST) using `CRON_SECRET`. Its daily cron allowance does not support 15-minute collection, so a Vercel deployment cannot guarantee collection throughout the day. A sleeping or stopped Render process also cannot collect while offline; startup catch-up uses stored history and fresh public data and flags gaps it cannot verify.
 
+## AI Code Mentor (Standalone & LeetCode Workspaces)
+
+The AI Code Mentor provides structured algorithmic analysis, complexity breakdowns, dry-runs, and step-by-step visualizations:
+
+- **Standalone Access:** The AI Code Mentor workspace can be opened independently at any time directly from the dashboard sidebar or the member profile navigation without needing an active submission.
+- **Code Input & Language Selection:** Users can paste code directly into the editor or import a source file. Supported programming languages include Python, Java, C++, TypeScript, JavaScript, Go, Rust, and others.
+- **Optional Problem Context:** Problem title, description, URL, and submission verdict (Accepted, Wrong Answer, Time Limit Exceeded, Runtime Error, Compilation Error) are completely optional. When problem context is omitted, the mentor performs a general code quality and algorithmic analysis rather than fabricating problem constraints.
+- **No Mandatory Dependencies:** Reviews do not require a LeetCode submission ID. The companion LeetCode browser extension is optional for automatic submission sync and is never required to request an analysis.
+- **Server-Side AI Configuration:** Google Gemini connectivity (e.g. `gemini-3.1-flash-lite` or `gemini-2.5-flash`) is configured through server-side environment variables (`AI_MENTOR_PROVIDER`, `AI_MENTOR_GEMINI_MODEL`, `GEMINI_API_KEY`). If the upstream AI provider is temporarily unavailable, the system automatically falls back to the built-in local educational knowledge engine.
+
 ## Deployment
 
 Create a MongoDB database, restrict network access to the application host where practical, and use a database user scoped to this app. Configure MongoDB backups independently from dashboard JSON backups.
