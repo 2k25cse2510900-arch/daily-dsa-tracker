@@ -221,7 +221,13 @@ function createDailyWorkspaceService({ db, fetchProfile, fetchRecentSubmissions,
 
   async function submissionFor(user, submissionId) {
     if (typeof submissionId !== "string" || submissionId.length > 200) throw workspaceError("INVALID_SUBMISSION", "Submission not found.", 404);
-    const submission = await submissions.findOne({ _id: submissionId, userId: user.id });
+    let submission = await submissions.findOne({ _id: submissionId, userId: user.id });
+    if (!submission) {
+      submission = await submissions.findOne({ submissionId, userId: user.id });
+    }
+    if (!submission && Number.isFinite(Number(submissionId))) {
+      submission = await submissions.findOne({ submissionId: Number(submissionId), userId: user.id });
+    }
     if (!submission) throw workspaceError("SUBMISSION_NOT_FOUND", "Submission not found.", 404);
     return publicWorkspace({ activityDate: submission.activityDate, status: "ready", submissionCount: 1 }, [submission]).submissions[0];
   }

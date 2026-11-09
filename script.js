@@ -6767,6 +6767,10 @@ async function openAiCodeMentorWorkspace(params = {}) {
   const urlInput = $("mentorProblemUrlInput");
   const descInput = $("mentorProblemDescInput");
 
+  try {
+    sessionStorage.setItem("dsaverse_mentor_workspace", JSON.stringify(currentMentorProblem));
+  } catch {}
+
   if (isStandalone) {
     if (titleInput) titleInput.value = "";
     if (verdictSelect) verdictSelect.value = "";
@@ -6855,6 +6859,13 @@ async function openAiCodeMentorWorkspace(params = {}) {
         resolvedCode = locallySaved;
         resolvedSourceType = "User Pasted"; // Provenance alias: "Previously Saved"
       }
+    }
+    const langKey = params.submissionId
+      ? `dsaverse_mentor_lang_sub_${params.submissionId}`
+      : `dsaverse_mentor_lang_${params.slug || params.title}`;
+    const locallySavedLang = localStorage.getItem(langKey);
+    if (locallySavedLang && !params.language) {
+      resolvedLang = normalizeLanguageKey(locallySavedLang);
     }
   }
 
@@ -7177,6 +7188,15 @@ async function saveImportedSourceCode() {
         ? `dsaverse_mentor_code_sub_${currentMentorProblem.submissionId}`
         : `dsaverse_mentor_code_${currentMentorProblem?.slug || currentMentorProblem?.title}`;
       localStorage.setItem(storageKey, text);
+
+      const langKey = currentMentorProblem?.submissionId
+        ? `dsaverse_mentor_lang_sub_${currentMentorProblem.submissionId}`
+        : `dsaverse_mentor_lang_${currentMentorProblem?.slug || currentMentorProblem?.title}`;
+      localStorage.setItem(langKey, selectedLang);
+
+      try {
+        sessionStorage.setItem("dsaverse_mentor_workspace", JSON.stringify(currentMentorProblem));
+      } catch {}
 
       // 5. Update Daily Question Card badge on profile page if present
       updateCardBadgeForProblem(currentMentorProblem?.submissionId, currentMentorProblem?.slug, true);
@@ -7805,10 +7825,20 @@ function normalizeMentorMode(rawMode) {
       } catch (err) {
         console.error("[AI MENTOR CLIENT ERROR]:", err);
         if (configNotice) configNotice.hidden = false;
-        if (configText) {
-          configText.innerHTML = `<strong>AI Analysis Notice:</strong> ${escapeHTML(err.message || "Failed to generate AI analysis.")}`;
+        let actionableMsg = err.message || "Failed to generate AI analysis.";
+        if (err.status === 404 || /not found/i.test(err.message)) {
+          actionableMsg = "Selected submission record was not found. You can paste or import your code to run a review.";
+        } else if (err.status === 403 || /permission|forbidden/i.test(err.message)) {
+          actionableMsg = "You do not have permission to access this submission. Please select your own submission or use Standalone mode.";
+        } else if (/unavailable|paste or import/i.test(err.message)) {
+          actionableMsg = "Original source code is unavailable for this submission. Please paste or import your code using the editor above.";
+          const input = $("mentorCodeInput");
+          if (input) input.focus();
         }
-        showToast(err.message || "Failed to generate AI analysis.", "error");
+        if (configText) {
+          configText.innerHTML = `<strong>AI Analysis Notice:</strong> ${escapeHTML(actionableMsg)}`;
+        }
+        showToast(actionableMsg, err.status === 403 ? "warning" : "error");
         renderNormalModeAnalysis(data, currentMentorBuggyState);
       } finally {
         analyzeBtn.disabled = false;
@@ -7942,6 +7972,19 @@ function normalizeMentorMode(rawMode) {
       }
     });
   }
+
+  // 13. Restore mentor workspace on refresh if previous session was in AI Mentor
+  try {
+    const savedWs = sessionStorage.getItem("dsaverse_mentor_workspace");
+    if (savedWs) {
+      const parsedWs = JSON.parse(savedWs);
+      if (parsedWs && (parsedWs.submissionId || parsedWs.slug || parsedWs.title)) {
+        if (location.pathname.includes("mentor") || location.hash.includes("mentor") || activePage === "aimentor") {
+          openAiCodeMentorWorkspace(parsedWs);
+        }
+      }
+    }
+  } catch {}
 }
 
 initializeAiCodeMentor();

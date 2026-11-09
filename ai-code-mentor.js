@@ -70,9 +70,26 @@ function validateRequest(body, { maxSourceChars = 40_000, maxDescriptionChars = 
     }
   }
   
-  if (!sourceCode) throw mentorError("SOURCE_REQUIRED", "Paste source code to request a review.");
-  if (!LANGUAGES.includes(body.language)) throw mentorError("INVALID_LANGUAGE", "Choose a supported programming language.");
-  if (!MODES.includes(body.mode)) throw mentorError("INVALID_MODE", "Choose a supported learning mode.");
+  const subIdRaw = body.submissionId !== undefined && body.submissionId !== null ? String(body.submissionId).trim() : null;
+  if (subIdRaw && subIdRaw.length > 200) {
+    throw mentorError("INVALID_SUBMISSION", "Submission selection is invalid.");
+  }
+  const submissionId = subIdRaw || null;
+
+  if (!sourceCode && !submissionId) {
+    throw mentorError("SOURCE_REQUIRED", "Paste source code to request a review.");
+  }
+
+  const rawLang = body.language ? String(body.language).toLowerCase().trim() : (submissionId ? null : "python3");
+  const langKey = rawLang === "python" ? "python3" : rawLang;
+  if (langKey && !LANGUAGES.includes(langKey)) {
+    throw mentorError("INVALID_LANGUAGE", "Choose a supported programming language.");
+  }
+
+  const mode = String(body.mode || "explain").toLowerCase().trim();
+  if (!MODES.includes(mode)) {
+    throw mentorError("INVALID_MODE", "Choose a supported learning mode.");
+  }
 
   let problemUrl = null;
   if (body.problemUrl) {
@@ -85,27 +102,24 @@ function validateRequest(body, { maxSourceChars = 40_000, maxDescriptionChars = 
     }
   }
 
-  if (body.submissionId !== undefined && body.submissionId !== null && (typeof body.submissionId !== "string" || body.submissionId.length > 200)) {
-    throw mentorError("INVALID_SUBMISSION", "Submission selection is invalid.");
-  }
   if (body.retainSource !== undefined && typeof body.retainSource !== "boolean") {
     throw mentorError("INVALID_RETENTION", "Source retention selection is invalid.");
   }
 
-  const resolvedTitle = problemTitle || (problemSlug ? problemSlug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "Custom Code Review");
+  const resolvedTitle = problemTitle || (problemSlug ? problemSlug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : (submissionId ? null : "Custom Code Review"));
 
   return {
-    sourceCode,
-    language: body.language,
+    sourceCode: sourceCode || "",
+    language: langKey || (submissionId ? null : "python3"),
     problemTitle: resolvedTitle,
     problemSlug: problemSlug || null,
     problemNumber: problemNumber || null,
     problemUrl,
     problemDescription,
-    mode: body.mode,
-    submissionId: body.submissionId || null,
+    mode,
+    submissionId,
     retainSource: body.retainSource === true,
-    verdict: safeText(body.verdict || body.submissionStatus, 100) || "Accepted"
+    verdict: safeText(body.verdict || body.submissionStatus, 100) || null
   };
 }
 
@@ -129,80 +143,81 @@ function validateAnalysis(value) {
 
   // Synthesize standard sections if universal output was provided without sections array
   if (sections.length === 0) {
-    if (value.studentApproach) {
+    const unavailableIds = new Set(unavailableSections.map(u => u.id));
+    if (!unavailableIds.has("student-approach") && value.studentApproach) {
       sections.push({ id: "student-approach", title: "Student Approach", content: String(value.studentApproach).slice(0, 5000) });
     }
-    if (value.optimalApproach?.algorithm || value.optimalApproach?.title) {
+    if (!unavailableIds.has("optimal-approach") && (value.optimalApproach?.algorithm || value.optimalApproach?.title)) {
       sections.push({
         id: "optimal-approach",
         title: value.optimalApproach?.title || "Optimal Approach",
         content: String(value.optimalApproach?.algorithm || value.optimalApproach?.whyItWorks || "").slice(0, 5000)
       });
     }
-    if (value.optimalComplexity?.timeComplexity) {
+    if (!unavailableIds.has("time-complexity") && value.optimalComplexity?.timeComplexity) {
       sections.push({
         id: "time-complexity",
         title: "Time Complexity",
         content: String(value.optimalComplexity?.timeComplexity + " - " + (value.optimalComplexity?.explanation || "")).slice(0, 5000)
       });
     }
-    if (value.optimalComplexity?.spaceComplexity) {
+    if (!unavailableIds.has("space-complexity") && value.optimalComplexity?.spaceComplexity) {
       sections.push({
         id: "space-complexity",
         title: "Space Complexity",
         content: String(value.optimalComplexity?.spaceComplexity + " - " + (value.optimalComplexity?.explanation || "")).slice(0, 5000)
       });
     }
-    if (value.mistakeDiagnosis?.hasMistake && value.mistakeDiagnosis?.detail) {
+    if (!unavailableIds.has("mistake-analysis") && value.mistakeDiagnosis?.hasMistake && value.mistakeDiagnosis?.detail) {
       sections.push({
         id: "mistake-analysis",
         title: value.mistakeDiagnosis?.title || "Mistake Analysis",
         content: String(value.mistakeDiagnosis?.detail + (value.mistakeDiagnosis?.suggestedFix ? "\nFix: " + value.mistakeDiagnosis.suggestedFix : "")).slice(0, 5000)
       });
     }
-    if (Array.isArray(value.coreObservations) && value.coreObservations.length) {
+    if (!unavailableIds.has("core-observations") && Array.isArray(value.coreObservations) && value.coreObservations.length) {
       sections.push({
         id: "core-observations",
         title: "Core Algorithmic Observations",
         content: value.coreObservations.join("\n• ")
       });
     }
-    if (value.improvedApproach?.title) {
+    if (!unavailableIds.has("improved-approach") && value.improvedApproach?.title) {
       sections.push({
         id: "improved-approach",
         title: value.improvedApproach.title,
         content: String(value.improvedApproach.algorithm || value.improvedApproach.explanation || "").slice(0, 5000)
       });
     }
-    if (value.correctnessReasoning?.explanation) {
+    if (!unavailableIds.has("correctness-reasoning") && value.correctnessReasoning?.explanation) {
       sections.push({
         id: "correctness-reasoning",
         title: `Correctness Reasoning (${value.correctnessReasoning.method || "Invariant Proof"})`,
         content: String(value.correctnessReasoning.explanation + (value.correctnessReasoning.keyInvariant ? `\nKey Invariant: ${value.correctnessReasoning.keyInvariant}` : "")).slice(0, 5000)
       });
     }
-    if (Array.isArray(value.keyTakeaways) && value.keyTakeaways.length) {
+    if (!unavailableIds.has("key-takeaways") && Array.isArray(value.keyTakeaways) && value.keyTakeaways.length) {
       sections.push({
         id: "key-takeaways",
         title: "Key Takeaways",
         content: value.keyTakeaways.join("\n• ")
       });
     }
-    if (Array.isArray(value.lineByLineExplanation) && value.lineByLineExplanation.length) {
+    if (!unavailableIds.has("line-by-line-walkthrough") && Array.isArray(value.lineByLineExplanation) && value.lineByLineExplanation.length) {
       sections.push({
         id: "line-by-line-walkthrough",
         title: "Line-by-Line Code Walkthrough",
         content: value.lineByLineExplanation.map(w => `Line ${w.line}: ${w.code}\n  ↳ ${w.explanation}`).join("\n\n").slice(0, 5000)
       });
     }
-    if (Array.isArray(value.evidenceBasedFindings) && value.evidenceBasedFindings.length) {
+    if (!unavailableIds.has("evidence-findings") && Array.isArray(value.evidenceBasedFindings) && value.evidenceBasedFindings.length) {
       sections.push({
         id: "evidence-findings",
         title: "Evidence-Based Code Findings",
         content: value.evidenceBasedFindings.map(f => `[${(f.severity || "info").toUpperCase()}] ${f.title} (Line ${f.line || "N/A"})\n  ${f.explanation}\n  Evidence: ${f.evidence || "Verified in source"}`).join("\n\n").slice(0, 5000)
       });
     }
-    if (sections.length === 0) {
+    if (sections.length === 0 && !unavailableIds.has("problem-understanding")) {
       sections.push({ id: "problem-understanding", title: "Analysis", content: summary });
     }
   }
@@ -409,6 +424,9 @@ function createAiCodeMentorService({
   const usage = db.collection("aiMentorUsage");
   const submissions = db.collection("dailySubmissionsV2");
   const userSavedSources = db.collection("aiUserSavedSources");
+  const leetcodeSubmissions = (db && typeof db.collection === "function")
+    ? db.collection("leetcodeSubmissions")
+    : null;
 
   const cache = externalCache || new AiMentorCache({ db, now });
 
@@ -435,20 +453,217 @@ function createAiCodeMentorService({
     }
   }
 
+  /**
+   * Resolves a submission record robustly across MongoDB document _id, LeetCode submissionId (string or number),
+   * and all relevant persistent collections (dailySubmissionsV2, leetcodeSubmissions, aiUserSavedSources),
+   * while strictly enforcing user ownership.
+   */
+  async function resolveSubmissionRecord(user, submissionId) {
+    if (!submissionId) return null;
+    const cleanId = String(submissionId).trim();
+    if (!cleanId) return null;
+    const numId = Number(cleanId);
+    const isNum = Number.isFinite(numId);
+
+    const findInCol = async (col, extraUserFilter = { userId: user.id }) => {
+      if (!col || typeof col.findOne !== "function") return null;
+      let doc = await col.findOne({ _id: cleanId, ...extraUserFilter });
+      if (!doc) doc = await col.findOne({ submissionId: cleanId, ...extraUserFilter });
+      if (!doc && isNum) doc = await col.findOne({ submissionId: numId, ...extraUserFilter });
+      return doc;
+    };
+
+    // 1. Check dailySubmissionsV2 for this user
+    let dailyDoc = await findInCol(submissions, { userId: user.id });
+    if (dailyDoc) {
+      return {
+        source: "dailySubmissionsV2",
+        submission: {
+          _id: dailyDoc._id,
+          submissionId: dailyDoc.submissionId || (cleanId !== String(dailyDoc._id) ? cleanId : null),
+          userId: user.id,
+          problemTitle: dailyDoc.problemTitle || dailyDoc.title,
+          problemSlug: dailyDoc.problemSlug || dailyDoc.titleSlug,
+          problemUrl: dailyDoc.problemUrl || null,
+          language: dailyDoc.language || dailyDoc.lang || null,
+          verdict: dailyDoc.verdict || dailyDoc.statusDisplay || "Accepted",
+          sourceCode: dailyDoc.sourceCode || null,
+          sourceProvenance: dailyDoc.sourceProvenance || null,
+          runtime: dailyDoc.runtime || null,
+          memory: dailyDoc.memory || null,
+          difficulty: dailyDoc.difficulty || null,
+          questionFrontendId: dailyDoc.questionFrontendId || null,
+          diagnosticContext: dailyDoc.diagnosticContext || null,
+          submittedAt: dailyDoc.submittedAt || dailyDoc.createdAt || null
+        }
+      };
+    }
+
+    // 2. Check leetcodeSubmissions for this user
+    if (leetcodeSubmissions) {
+      let lcDoc = await findInCol(leetcodeSubmissions, { memberId: user.id });
+      if (!lcDoc) lcDoc = await findInCol(leetcodeSubmissions, { userId: user.id });
+      if (lcDoc) {
+        return {
+          source: "leetcodeSubmissions",
+          submission: {
+            _id: lcDoc._id,
+            submissionId: lcDoc.submissionId || cleanId,
+            userId: user.id,
+            problemTitle: lcDoc.title || lcDoc.problemTitle,
+            problemSlug: lcDoc.problemIdentifier || lcDoc.titleSlug || lcDoc.problemSlug,
+            problemUrl: lcDoc.problemUrl || null,
+            language: lcDoc.language || lcDoc.lang || null,
+            verdict: lcDoc.verdict || lcDoc.statusDisplay || "Accepted",
+            sourceCode: lcDoc.sourceCode || null,
+            sourceProvenance: lcDoc.sourceProvenance || null,
+            runtime: lcDoc.runtime || null,
+            memory: lcDoc.memory || null,
+            difficulty: lcDoc.difficulty || null,
+            questionFrontendId: lcDoc.questionFrontendId || null,
+            diagnosticContext: lcDoc.diagnosticContext || null,
+            submittedAt: lcDoc.submittedAt || null
+          }
+        };
+      }
+    }
+
+    // 3. Check aiUserSavedSources for this user
+    if (userSavedSources) {
+      let savedDoc = await userSavedSources.findOne({ _id: `src:${user.id}:sub:${cleanId}`, userId: user.id });
+      if (!savedDoc) savedDoc = await findInCol(userSavedSources, { userId: user.id });
+      if (savedDoc) {
+        return {
+          source: "aiUserSavedSources",
+          submission: {
+            _id: savedDoc._id,
+            submissionId: savedDoc.submissionId || cleanId,
+            userId: user.id,
+            problemTitle: savedDoc.problemTitle,
+            problemSlug: savedDoc.problemSlug,
+            problemUrl: savedDoc.problemUrl || null,
+            language: savedDoc.language || null,
+            verdict: savedDoc.verdict || "Accepted",
+            sourceCode: savedDoc.sourceCode || null,
+            sourceProvenance: savedDoc.sourceProvenance || null,
+            runtime: savedDoc.runtime || null,
+            memory: savedDoc.memory || null,
+            difficulty: savedDoc.difficulty || null,
+            questionFrontendId: savedDoc.questionFrontendId || null,
+            diagnosticContext: savedDoc.diagnosticContext || null,
+            submittedAt: savedDoc.updatedAt || savedDoc.importedAt || null
+          }
+        };
+      }
+    }
+
+    // 4. Ownership verification: does this submissionId exist for ANOTHER user?
+    const findAnywhere = async (col) => {
+      if (!col || typeof col.findOne !== "function") return null;
+      let doc = await col.findOne({ _id: cleanId });
+      if (!doc) doc = await col.findOne({ submissionId: cleanId });
+      if (!doc && isNum) doc = await col.findOne({ submissionId: numId });
+      return doc;
+    };
+
+    const otherDaily = await findAnywhere(submissions);
+    if (otherDaily && otherDaily.userId && otherDaily.userId !== user.id) {
+      throw mentorError("SUBMISSION_FORBIDDEN", "You do not have permission to access this submission.", 403);
+    }
+
+    if (leetcodeSubmissions) {
+      const otherLc = await findAnywhere(leetcodeSubmissions);
+      if (otherLc) {
+        const owner = otherLc.memberId || otherLc.userId;
+        if (owner && owner !== user.id) {
+          throw mentorError("SUBMISSION_FORBIDDEN", "You do not have permission to access this submission.", 403);
+        }
+      }
+    }
+
+    if (userSavedSources) {
+      const otherSaved = await findAnywhere(userSavedSources);
+      if (otherSaved && otherSaved.userId && otherSaved.userId !== user.id) {
+        throw mentorError("SUBMISSION_FORBIDDEN", "You do not have permission to access this submission.", 403);
+      }
+    }
+
+    return null;
+  }
+
   async function createReview(user, body) {
     if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
     const input = validateRequest(body, { maxSourceChars, maxDescriptionChars });
 
     let submission = null;
     if (input.submissionId) {
-      submission = await submissions.findOne({ _id: input.submissionId, userId: user.id });
-      if (!submission) throw mentorError("SUBMISSION_NOT_FOUND", "Selected submission was not found.", 404);
-      input.problemTitle = submission.problemTitle;
-      input.problemUrl = submission.problemUrl || null;
-      input.problemSlug = submission.problemSlug || null;
-      input.language = LANGUAGES.includes(String(submission.language || "").toLowerCase())
-        ? String(submission.language).toLowerCase()
-        : input.language;
+      const match = await resolveSubmissionRecord(user, input.submissionId);
+      if (match?.submission) {
+        submission = match.submission;
+        input.problemTitle = submission.problemTitle || input.problemTitle;
+        input.problemUrl = submission.problemUrl || input.problemUrl;
+        input.problemSlug = submission.problemSlug || input.problemSlug;
+        if (submission.language && LANGUAGES.includes(String(submission.language).toLowerCase())) {
+          input.language = String(submission.language).toLowerCase();
+        }
+        if (!input.sourceCode && submission.sourceCode) {
+          input.sourceCode = submission.sourceCode;
+        }
+        if (!input.verdict && submission.verdict) {
+          input.verdict = submission.verdict;
+        }
+      } else {
+        // Submission was NOT found for the current user and does not belong to any other user.
+        // If the user did NOT supply source code, this is a genuine 404 for the requested submission.
+        if (!input.sourceCode || !input.sourceCode.trim()) {
+          throw mentorError("SUBMISSION_NOT_FOUND", "Selected submission was not found.", 404);
+        }
+        // If the student provided source code (e.g. manually imported or pasted for this problem),
+        // we honor Requirement 4.B: do not reject it merely because an optional LeetCode submission lookup failed.
+      }
+    }
+
+    // If sourceCode is still missing, also check userSavedSources by submissionId or problemSlug
+    if ((!input.sourceCode || !input.sourceCode.trim()) && userSavedSources) {
+      if (input.submissionId) {
+        let saved = await userSavedSources.findOne({ userId: user.id, submissionId: input.submissionId });
+        if (!saved && typeof input.submissionId === "number") {
+          saved = await userSavedSources.findOne({ userId: user.id, submissionId: String(input.submissionId) });
+        }
+        if (!saved && typeof input.submissionId === "string") {
+          saved = await userSavedSources.findOne({ userId: user.id, _id: `src:${user.id}:sub:${input.submissionId}` });
+        }
+        if (saved?.sourceCode) {
+          input.sourceCode = saved.sourceCode;
+          if (!input.language && saved.language) input.language = saved.language;
+          if (!input.problemTitle && saved.problemTitle) input.problemTitle = saved.problemTitle;
+          if (!input.problemSlug && saved.problemSlug) input.problemSlug = saved.problemSlug;
+        }
+      }
+      if ((!input.sourceCode || !input.sourceCode.trim()) && input.problemSlug) {
+        const saved = await userSavedSources.findOne(
+          { userId: user.id, problemSlug: input.problemSlug },
+          { sort: { updatedAt: -1 } }
+        );
+        if (saved?.sourceCode) {
+          input.sourceCode = saved.sourceCode;
+          if (!input.language && saved.language) input.language = saved.language;
+          if (!input.problemTitle && saved.problemTitle) input.problemTitle = saved.problemTitle;
+        }
+      }
+    }
+
+    input.problemTitle = input.problemTitle || "LeetCode Submission";
+    input.verdict = input.verdict || "Accepted";
+    input.language = input.language || "python3";
+
+    // Verify source code is provided
+    if (!input.sourceCode || !input.sourceCode.trim()) {
+      throw mentorError(
+        "SOURCE_CODE_REQUIRED",
+        "Original source code is unavailable for this submission. Please paste or import your solution.",
+        400
+      );
     }
 
     // Problem Intelligence Layer: resolve canonical or dynamic problem
@@ -572,7 +787,7 @@ function createAiCodeMentorService({
         inputHash: isFallback ? null : inputHash,
         isFallback,
         submissionId: submission?._id || null,
-        problemTitle: input.submissionId ? input.problemTitle : (problem.title || input.problemTitle),
+        problemTitle: submission?.problemTitle || problem.title || input.problemTitle || "LeetCode Submission",
         problemSlug: problem.slug || null,
         problemNumber: problem.number || null,
         problemUrl: problem.url || input.problemUrl,
@@ -820,7 +1035,7 @@ function createAiCodeMentorService({
       memory,
       sourceCode,
       diagnosticContext,
-      sourceProvenance: "authorized_extension",
+      sourceProvenance: body.sourceProvenance || "authorized_extension",
       importedAt: at,
       updatedAt: at
     };
@@ -862,7 +1077,8 @@ function createAiCodeMentorService({
           runtime,
           memory,
           sourceCode,
-          sourceProvenance: "authorized_extension",
+          diagnosticContext,
+          sourceProvenance: body.sourceProvenance || "authorized_extension",
           submittedAt,
           timestamp: activityTimestampSeconds,
           updatedAt: at
@@ -904,7 +1120,7 @@ function createAiCodeMentorService({
       problemTitle,
       verdict,
       language,
-      sourceProvenance: "authorized_extension",
+      sourceProvenance: body.sourceProvenance || "authorized_extension",
       updatedAt: at
     };
   }
@@ -917,39 +1133,45 @@ function createAiCodeMentorService({
 
     // 1. Check exact submission ID first!
     if (cleanSubId) {
-      const saved = await userSavedSources.findOne({ userId: user.id, submissionId: cleanSubId });
-      if (saved && saved.sourceCode) {
-        return {
-          sourceCode: saved.sourceCode,
-          source: "previously_saved",
-          language: saved.language || "python3",
-          submissionId: saved.submissionId || cleanSubId,
-          sourceProvenance: saved.sourceProvenance || "manual_import",
-          verdict: saved.verdict || null,
-          runtime: saved.runtime || null,
-          memory: saved.memory || null,
-          problemTitle: saved.problemTitle || null,
-          difficulty: saved.difficulty || null,
-          questionFrontendId: saved.questionFrontendId || null,
-          diagnosticContext: saved.diagnosticContext || null,
-          updatedAt: saved.updatedAt || saved.importedAt || null
-        };
+      let match = null;
+      try {
+        match = await resolveSubmissionRecord(user, cleanSubId);
+      } catch (err) {
+        if (err.code === "SUBMISSION_FORBIDDEN") {
+          return {
+            sourceCode: null,
+            source: "none",
+            language: "python3",
+            submissionId: cleanSubId,
+            sourceProvenance: "none",
+            verdict: null,
+            runtime: null,
+            memory: null,
+            problemTitle: null,
+            difficulty: null,
+            questionFrontendId: null,
+            diagnosticContext: null,
+            updatedAt: null
+          };
+        }
+        throw err;
       }
-      const submission = await submissions.findOne({ _id: cleanSubId, userId: user.id });
-      if (submission && typeof submission.sourceCode === "string" && submission.sourceCode.trim()) {
+      if (match?.submission?.sourceCode) {
+        const sub = match.submission;
         return {
-          sourceCode: submission.sourceCode,
-          source: "verified_submission",
-          language: submission.language || "python3",
-          submissionId: cleanSubId,
-          sourceProvenance: "verified_submission",
-          verdict: submission.verdict || null,
-          runtime: submission.runtime || null,
-          memory: submission.memory || null,
-          problemTitle: submission.title || null,
-          difficulty: submission.difficulty || null,
-          questionFrontendId: submission.questionFrontendId || null,
-          updatedAt: submission.submittedAt || submission.createdAt || null
+          sourceCode: sub.sourceCode,
+          source: match.source === "aiUserSavedSources" ? "previously_saved" : "verified_submission",
+          language: sub.language || "python3",
+          submissionId: sub.submissionId || cleanSubId,
+          sourceProvenance: sub.sourceProvenance || (match.source === "aiUserSavedSources" ? "manual_import" : "verified_submission"),
+          verdict: sub.verdict || null,
+          runtime: sub.runtime || null,
+          memory: sub.memory || null,
+          problemTitle: sub.problemTitle || null,
+          difficulty: sub.difficulty || null,
+          questionFrontendId: sub.questionFrontendId || null,
+          diagnosticContext: sub.diagnosticContext || null,
+          updatedAt: sub.submittedAt || sub.updatedAt || null
         };
       }
     }
@@ -1029,7 +1251,10 @@ function createAiCodeMentorService({
     const query = { userId: user.id };
     const orClauses = [];
     if (Array.isArray(submissionIds) && submissionIds.length) {
-      orClauses.push({ submissionId: { $in: submissionIds.filter(Boolean) } });
+      const cleanIds = submissionIds.filter(Boolean).map(String);
+      const numIds = cleanIds.map(Number).filter(Number.isFinite);
+      orClauses.push({ submissionId: { $in: [...cleanIds, ...numIds] } });
+      orClauses.push({ _id: { $in: cleanIds.map(id => `src:${user.id}:sub:${id}`) } });
     }
     if (Array.isArray(problemSlugs) && problemSlugs.length) {
       orClauses.push({ problemSlug: { $in: problemSlugs.filter(Boolean) } });

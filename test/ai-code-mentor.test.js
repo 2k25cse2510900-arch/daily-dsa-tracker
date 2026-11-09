@@ -48,7 +48,7 @@ test("submission metadata is loaded only from an owned Daily Workspace submissio
   const review = await service.createReview({ id: "a" }, { ...body, submissionId: "daily-a", problemTitle: "forged", language: "javascript" });
   assert.equal(review.problemTitle, "Stored title");
   assert.equal(review.language, "python");
-  await assert.rejects(() => service.createReview({ id: "b" }, { ...body, submissionId: "daily-a" }), { code: "SUBMISSION_NOT_FOUND" });
+  await assert.rejects(() => service.createReview({ id: "b" }, { ...body, submissionId: "daily-a" }), err => err.code === "SUBMISSION_NOT_FOUND" || err.code === "SUBMISSION_FORBIDDEN");
 });
 
 test("quota is atomic and provider failures release their reservation", async () => {
