@@ -780,7 +780,10 @@
             <div class="mentor-card mentor-context-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
-                  <span class="mentor-card-kicker">PROBLEM CONTEXT (OPTIONAL)</span>
+                  <div class="mentor-context-kicker-row">
+                    <span class="mentor-card-kicker">PROBLEM CONTEXT (OPTIONAL)</span>
+                    <span id="mentorContextStatusBadge" class="badge-context-status status-context-unavailable">General Code Review</span>
+                  </div>
                   <h4 class="mentor-card-subtitle" id="mentorProblemContextTitle">Custom Problem Review</h4>
                 </div>
                 <div class="mentor-card-actions">
@@ -801,6 +804,7 @@
                 </div>
                 <input id="mentorProblemUrlInput" class="mentor-input" type="url" placeholder="Problem URL (optional, e.g. https://leetcode.com/problems/...)">
                 <textarea id="mentorProblemDescInput" class="mentor-textarea" rows="3" placeholder="Problem statement, examples, and constraints (optional). If omitted, a general code review will be performed."></textarea>
+                <div id="mentorContextGuidance" class="mentor-context-guidance">No external problem statement supplied. The AI Mentor will review code syntax, potential bugs, time/space complexity, and clean code principles.</div>
               </div>
               <p id="mentorProblemDescription" class="mentor-context-text" hidden>
                 Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice.

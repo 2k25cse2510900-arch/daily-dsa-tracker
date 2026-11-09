@@ -5088,6 +5088,393 @@ public:
         }
       ]
     }
+  },
+  "is-subsequence": {
+    title: "Is Subsequence",
+    number: "392",
+    difficulty: "Easy",
+    description: "Given two strings s and t, return true if s is a subsequence of t, or false otherwise. A subsequence of a string is a new string formed from the original string by deleting some (can be none) of the characters without disturbing the relative positions of the remaining characters.",
+    acceptedCode: `class Solution:
+    def isSubsequence(self, s: str, t: str) -> bool:
+        i, j = 0, 0
+        while i < len(s) and j < len(t):
+            if s[i] == t[j]:
+                i += 1
+            j += 1
+        return i == len(s)`,
+    acceptedCodeByLang: {
+      java: `class Solution {
+    public boolean isSubsequence(String s, String t) {
+        int i = 0, j = 0;
+        while (i < s.length() && j < t.length()) {
+            if (s.charAt(i) == t.charAt(j)) {
+                i++;
+            }
+            j++;
+        }
+        return i == s.length();
+    }
+}`,
+      python3: `class Solution:
+    def isSubsequence(self, s: str, t: str) -> bool:
+        i, j = 0, 0
+        while i < len(s) and j < len(t):
+            if s[i] == t[j]:
+                i += 1
+            j += 1
+        return i == len(s)`,
+      cpp: `class Solution {
+public:
+    bool isSubsequence(string s, string t) {
+        int i = 0, j = 0;
+        while (i < s.length() && j < t.length()) {
+            if (s[i] == t[j]) i++;
+            j++;
+        }
+        return i == s.length();
+    }
+};`,
+      javascript: `var isSubsequence = function(s, t) {
+    let i = 0, j = 0;
+    while (i < s.length && j < t.length) {
+        if (s[i] === t[j]) i++;
+        j++;
+    }
+    return i === s.length;
+};`,
+      typescript: `function isSubsequence(s: string, t: string): boolean {
+    let i = 0, j = 0;
+    while (i < s.length && j < t.length) {
+        if (s[i] === t[j]) i++;
+        j++;
+    }
+    return i === s.length;
+};`,
+      go: `func isSubsequence(s string, t string) bool {
+    i, j := 0, 0
+    for i < len(s) && j < len(t) {
+        if s[i] == t[j] { i++ }
+        j++
+    }
+    return i == len(s)
+}`,
+      rust: `impl Solution {
+    pub fn is_subsequence(s: String, t: String) -> bool {
+        let (s_bytes, t_bytes) = (s.as_bytes(), t.as_bytes());
+        let (mut i, mut j) = (0, 0);
+        while i < s_bytes.len() && j < t_bytes.len() {
+            if s_bytes[i] == t_bytes[j] { i += 1; }
+            j += 1;
+        }
+        i == s_bytes.len()
+    }
+}`
+    },
+    buggyCode: `class Solution:
+    def isSubsequence(self, s: str, t: str) -> bool:
+        # Buggy: fails to preserve character order or skips advance
+        return all(c in t for c in s) # Fails on duplicate characters & ordering!`,
+    buggyCodeByLang: {
+      java: `class Solution {
+    public boolean isSubsequence(String s, String t) {
+        // Buggy: indexOf without tracking prior index fails order
+        int lastIdx = -1;
+        for (char c : s.toCharArray()) {
+            int idx = t.indexOf(c); // Fails: does not search after lastIdx!
+            if (idx == -1) return false;
+        }
+        return true;
+    }
+}`,
+      python3: `class Solution:
+    def isSubsequence(self, s: str, t: str) -> bool:
+        return all(c in t for c in s)`
+    },
+    timeComplexity: "O(n)",
+    spaceComplexity: "O(1)",
+    timeExplain: "Linear scan through target string t of length n",
+    spaceExplain: "Uses two integer index pointers (i, j)",
+    bruteForceTitle: "Subsequence Generation",
+    bruteForceTime: "O(2^n)",
+    bruteForceSpace: "O(n)",
+    bruteForceExplain: "Recursively generates all 2^n subsequences of t and checks for s.",
+    optimalTitle: "Two Pointers Greedy Match",
+    optimalTime: "O(n)",
+    optimalSpace: "O(1)",
+    optimalExplain: "Scans t greedily matching characters of s in order. Preserves relative order with constant auxiliary space.",
+    mistakeTitle: "Set / Unordered Lookup Error",
+    mistakeDetail: "Checking whether all characters in s exist in t using sets or indexOf(c) without starting after previous matches ignores relative character ordering and duplicate frequencies (e.g. s = 'acb', t = 'ahbgdc').",
+    mistakeFix: "Use two pointers i and j. Advance i only when s[i] == t[j], and advance j on every step.",
+    takeaways: [
+      "Character Order Preservation: Subsequence requires maintaining relative order; set membership checks fail.",
+      "Greedy Choice: Matching the earliest possible occurrence of s[i] in t is always optimal.",
+      "Follow-up: For multiple queries s1..sk on fixed t, precompute next-character lookup tables using binary search or trie/state-machine."
+    ],
+    hints: [
+      "Hint 1: Can you check characters of s in order while moving through t?",
+      "Hint 2: Maintain two pointers i for string s and j for string t.",
+      "Hint 3: When s[i] matches t[j], advance both pointers; otherwise advance only j."
+    ],
+    dryRun: {
+      headers: ["Step", "i (s)", "j (t)", "s[i]", "t[j]", "Action"],
+      rows: [
+        ["1", "0", "0", "'a'", "'a'", "Match! Advance i to 1, j to 1"],
+        ["2", "1", "1", "'b'", "'h'", "No match. Advance j to 2"],
+        ["3", "1", "2", "'b'", "'b'", "Match! Advance i to 2, j to 3"],
+        ["4", "2", "3", "'c'", "'g'", "No match. Advance j to 4"],
+        ["5", "2", "4", "'c'", "'d'", "No match. Advance j to 5"],
+        ["6", "2", "5", "'c'", "'c'", "Match! Advance i to 3, j to 6"],
+        ["Result", "3", "6", "-", "-", "i == len(s) => True!"]
+      ]
+    },
+    animatic: {
+      type: "two-pointers",
+      target: "abc",
+      s: "abc",
+      t: "ahbgdc",
+      steps: [
+        {
+          step: 1,
+          i: 0,
+          j: 0,
+          reaction: "match",
+          formula: "s[0]='a' == t[0]='a' (Match!)",
+          speech: "Matching character 'a' at t[0]. Advance both pointers.",
+          action: "Match found: s[0] == t[0]."
+        },
+        {
+          step: 2,
+          i: 1,
+          j: 2,
+          reaction: "match",
+          formula: "s[1]='b' == t[2]='b' (Match!)",
+          speech: "Skipped 'h'. Matched 'b' at t[2]. Advance i to 2.",
+          action: "Match found: s[1] == t[2]."
+        },
+        {
+          step: 3,
+          i: 2,
+          j: 5,
+          reaction: "optimal",
+          formula: "s[2]='c' == t[5]='c' => Subsequence Confirmed!",
+          speech: "Matched all characters of 'abc' in relative order! Return true.",
+          action: "All characters matched. Result: true."
+        }
+      ]
+    }
+  },
+  "string-compression": {
+    title: "String Compression",
+    number: "443",
+    difficulty: "Medium",
+    description: "Given an array of characters chars, compress it in-place: for each group of consecutive repeating characters, append the character followed by the group's length (if > 1). Return the new length of the modified array.",
+    acceptedCode: `class Solution:
+    def compress(self, chars: list[str]) -> int:
+        write = 0
+        read = 0
+        n = len(chars)
+        while read < n:
+            ch = chars[read]
+            count = 0
+            while read < n and chars[read] == ch:
+                read += 1
+                count += 1
+            chars[write] = ch
+            write += 1
+            if count > 1:
+                for digit in str(count):
+                    chars[write] = digit
+                    write += 1
+        return write`,
+    acceptedCodeByLang: {
+      java: `class Solution {
+    public int compress(char[] chars) {
+        int write = 0, read = 0, n = chars.length;
+        while (read < n) {
+            char ch = chars[read];
+            int count = 0;
+            while (read < n && chars[read] == ch) {
+                read++;
+                count++;
+            }
+            chars[write++] = ch;
+            if (count > 1) {
+                for (char c : Integer.toString(count).toCharArray()) {
+                    chars[write++] = c;
+                }
+            }
+        }
+        return write;
+    }
+}`,
+      python3: `class Solution:
+    def compress(self, chars: list[str]) -> int:
+        write, read, n = 0, 0, len(chars)
+        while read < n:
+            ch = chars[read]
+            count = 0
+            while read < n and chars[read] == ch:
+                read += 1
+                count += 1
+            chars[write] = ch
+            write += 1
+            if count > 1:
+                for digit in str(count):
+                    chars[write] = digit
+                    write += 1
+        return write`,
+      cpp: `class Solution {
+public:
+    int compress(vector<char>& chars) {
+        int write = 0, read = 0, n = chars.size();
+        while (read < n) {
+            char ch = chars[read];
+            int count = 0;
+            while (read < n && chars[read] == ch) {
+                read++;
+                count++;
+            }
+            chars[write++] = ch;
+            if (count > 1) {
+                string s = to_string(count);
+                for (char c : s) chars[write++] = c;
+            }
+        }
+        return write;
+    }
+};`,
+      javascript: `var compress = function(chars) {
+    let write = 0, read = 0, n = chars.length;
+    while (read < n) {
+        let ch = chars[read], count = 0;
+        while (read < n && chars[read] === ch) {
+            read++;
+            count++;
+        }
+        chars[write++] = ch;
+        if (count > 1) {
+            for (let digit of String(count)) {
+                chars[write++] = digit;
+            }
+        }
+    }
+    return write;
+};`
+    },
+    timeComplexity: "O(n)",
+    spaceComplexity: "O(1)",
+    timeExplain: "Each character is inspected once by the read pointer and written at most twice (character and count digits)",
+    spaceExplain: "Modifies input chars array in-place using write and read pointers with constant auxiliary space",
+    bruteForceTitle: "Auxiliary String Buffer",
+    bruteForceTime: "O(n)",
+    bruteForceSpace: "O(n)",
+    bruteForceExplain: "Builds a compressed string in a separate buffer then copies back into chars.",
+    optimalTitle: "Two Pointers In-Place Write Head",
+    optimalTime: "O(n)",
+    optimalSpace: "O(1)",
+    optimalExplain: "Maintains read head and write head in-place. Write head never overtakes read head because compressed group length <= uncompressed group length.",
+    mistakeTitle: "Multi-digit Count Omission or External Allocation",
+    mistakeDetail: "Failing to split multi-digit counts >= 10 into individual character digits ('1', '2') or allocating a new array violates the O(1) space constraint.",
+    mistakeFix: "Iterate over string representation of count and write each digit individually to chars[write++].",
+    takeaways: [
+      "In-Place Invariant: write <= read is always true, so writing never overwrites unread elements.",
+      "Multi-digit Splitting: Counts like 12 must be written as '1' and '2'.",
+      "Single Character Count: When count is 1, do NOT append '1'."
+    ]
+  },
+  "max-number-of-k-sum-pairs": {
+    title: "Max Number of K-Sum Pairs",
+    number: "1679",
+    difficulty: "Medium",
+    description: "You are given an integer array nums and an integer k. In one operation, you can pick two numbers from the array whose sum equals k and remove them. Return the maximum number of operations.",
+    acceptedCode: `class Solution:
+    def maxOperations(self, nums: list[int], k: int) -> int:
+        freq = {}
+        ops = 0
+        for x in nums:
+            comp = k - x
+            if freq.get(comp, 0) > 0:
+                ops += 1
+                freq[comp] -= 1
+            else:
+                freq[x] = freq.get(x, 0) + 1
+        return ops`,
+    acceptedCodeByLang: {
+      java: `class Solution {
+    public int maxOperations(int[] nums, int k) {
+        Map<Integer, Integer> freq = new HashMap<>();
+        int ops = 0;
+        for (int x : nums) {
+            int comp = k - x;
+            if (freq.getOrDefault(comp, 0) > 0) {
+                ops++;
+                freq.put(comp, freq.get(comp) - 1);
+            } else {
+                freq.put(x, freq.getOrDefault(x, 0) + 1);
+            }
+        }
+        return ops;
+    }
+}`,
+      python3: `class Solution:
+    def maxOperations(self, nums: list[int], k: int) -> int:
+        freq = {}
+        ops = 0
+        for x in nums:
+            comp = k - x
+            if freq.get(comp, 0) > 0:
+                ops += 1
+                freq[comp] -= 1
+            else:
+                freq[x] = freq.get(x, 0) + 1
+        return ops`,
+      cpp: `class Solution {
+public:
+    int maxOperations(vector<int>& nums, int k) {
+        unordered_map<int, int> freq;
+        int ops = 0;
+        for (int x : nums) {
+            int comp = k - x;
+            if (freq[comp] > 0) {
+                ops++;
+                freq[comp]--;
+            } else {
+                freq[x]++;
+            }
+        }
+        return ops;
+    }
+};`,
+      javascript: `var maxOperations = function(nums, k) {
+    const freq = new Map();
+    let ops = 0;
+    for (const x of nums) {
+        const comp = k - x;
+        if ((freq.get(comp) || 0) > 0) {
+            ops++;
+            freq.set(comp, freq.get(comp) - 1);
+        } else {
+            freq.set(x, (freq.get(x) || 0) + 1);
+        }
+    }
+    return ops;
+};`
+    },
+    timeComplexity: "O(n)",
+    spaceComplexity: "O(n)",
+    timeExplain: "Single pass through array nums of length n with O(1) hash map operations",
+    spaceExplain: "Hash map storing frequency counts for up to n unique elements",
+    bruteForceTitle: "Exhaustive Pair Matching",
+    bruteForceTime: "O(n²)",
+    bruteForceSpace: "O(n)",
+    bruteForceExplain: "Scans all pairs with nested loops, marking used indices in a boolean array.",
+    optimalTitle: "Hash Map Frequency Counting",
+    optimalTime: "O(n)",
+    optimalSpace: "O(n)",
+    optimalExplain: "Uses hash map to pair each element with its complement (k - x) in a single pass.",
+    mistakeTitle: "Double Counting Pairs",
+    mistakeDetail: "Counting all pairs that sum to k without tracking frequency decrements double counts elements or reuses the same element multiple times.",
+    mistakeFix: "Decrement the complement's frequency count immediately upon finding a pair."
   }
 };
 
@@ -5218,22 +5605,31 @@ function getEducationalDataFor(slug, title) {
   if (normSlug && PROBLEM_EDUCATIONAL_DATA[normSlug]) {
     return { ...PROBLEM_EDUCATIONAL_DATA[normSlug], isVerified: true, hasLocalSolution: true };
   }
-  if (normSlug === "453" || normSlug.includes("minimum-moves") || normSlug.includes("equal-array")) {
+  if (normSlug === "392" || normSlug === "is-subsequence") {
+    return { ...PROBLEM_EDUCATIONAL_DATA["is-subsequence"], isVerified: true, hasLocalSolution: true };
+  }
+  if (normSlug === "443" || normSlug === "string-compression") {
+    return { ...PROBLEM_EDUCATIONAL_DATA["string-compression"], isVerified: true, hasLocalSolution: true };
+  }
+  if (normSlug === "1679" || normSlug === "max-number-of-k-sum-pairs") {
+    return { ...PROBLEM_EDUCATIONAL_DATA["max-number-of-k-sum-pairs"], isVerified: true, hasLocalSolution: true };
+  }
+  if (normSlug === "453" || normSlug === "minimum-moves-to-equal-array-elements") {
     return { ...PROBLEM_EDUCATIONAL_DATA["minimum-moves-to-equal-array-elements"], isVerified: true, hasLocalSolution: true };
   }
-  if (normSlug === "287" || normSlug.includes("duplicate")) {
+  if (normSlug === "287" || normSlug === "find-the-duplicate-number") {
     return { ...PROBLEM_EDUCATIONAL_DATA["find-the-duplicate-number"], isVerified: true, hasLocalSolution: true };
   }
-  if (normSlug === "1" || normSlug.includes("two-sum")) {
+  if (normSlug === "1" || normSlug === "two-sum") {
     return { ...PROBLEM_EDUCATIONAL_DATA["two-sum"], isVerified: true, hasLocalSolution: true };
   }
-  if (normSlug === "1877" || normSlug.includes("pair-sum")) {
+  if (normSlug === "1877" || normSlug === "minimize-maximum-pair-sum-in-array") {
     return { ...PROBLEM_EDUCATIONAL_DATA["minimize-maximum-pair-sum-in-array"], isVerified: true, hasLocalSolution: true };
   }
-  if (normSlug === "704" || normSlug.includes("binary-search")) {
+  if (normSlug === "704" || normSlug === "binary-search") {
     return { ...PROBLEM_EDUCATIONAL_DATA["binary-search"], isVerified: true, hasLocalSolution: true };
   }
-  if (normSlug.includes("bubble")) {
+  if (normSlug === "bubble-sort" || normSlug === "bubble") {
     return { ...PROBLEM_EDUCATIONAL_DATA["bubble-sort"], isVerified: true, hasLocalSolution: true };
   }
 
@@ -6100,6 +6496,43 @@ function stopAnimaticPlayback() {
   }
 }
 
+function updateMentorContextStatusUI(dataOverride = null) {
+  const badge = $("mentorContextStatusBadge");
+  const guidance = $("mentorContextGuidance");
+  if (!badge) return;
+
+  const titleVal = $("mentorProblemTitleInput")?.value?.trim() || currentMentorProblem?.title || "";
+  const descVal = $("mentorProblemDescInput")?.value?.trim() || currentMentorProblem?.description || "";
+  const isVerified = Boolean(currentMentorProblem?.isCanonical || (dataOverride && dataOverride.isVerified) || (!currentMentorProblem?.isStandalone && currentMentorProblem?.slug));
+
+  if (isVerified && titleVal && titleVal !== "Custom Code Review") {
+    badge.textContent = "Verified Problem Context";
+    badge.className = "badge-context-status status-context-verified";
+    if (guidance) {
+      const probNum = currentMentorProblem?.number || currentMentorProblem?.frontendId || (dataOverride && dataOverride.number) || "";
+      guidance.textContent = `Verified official problem specification (${probNum ? '#' + probNum + ' · ' : ''}${titleVal}).`;
+    }
+  } else if (descVal && descVal.length > 20) {
+    badge.textContent = "User-Provided Problem Statement";
+    badge.className = "badge-context-status status-context-user";
+    if (guidance) {
+      guidance.textContent = "Custom problem context supplied by user. AI Mentor will evaluate logic against provided requirements.";
+    }
+  } else if (titleVal && titleVal !== "Custom Code Review" && titleVal !== "AI Code Mentor") {
+    badge.textContent = "Partial Problem Information";
+    badge.className = "badge-context-status status-context-partial";
+    if (guidance) {
+      guidance.textContent = "Title supplied without constraints or examples. Provide problem statement for problem-specific boundary testing.";
+    }
+  } else {
+    badge.textContent = "General Code Review";
+    badge.className = "badge-context-status status-context-unavailable";
+    if (guidance) {
+      guidance.textContent = "No external problem statement supplied. The AI Mentor will review code syntax, potential bugs, time/space complexity, and clean code principles.";
+    }
+  }
+}
+
 async function openAiCodeMentorWorkspace(params = {}) {
   const isStandalone = Boolean(params.isStandalone || (!params.slug && !params.submissionId));
   currentMentorProblem = {
@@ -6198,6 +6631,7 @@ async function openAiCodeMentorWorkspace(params = {}) {
     if (contextTitle) contextTitle.textContent = params.title || data.title;
     if (contextDesc) contextDesc.textContent = data.description;
   }
+  updateMentorContextStatusUI(data);
 
   // Code input & Source indication
   currentMentorBuggyState = status !== "Accepted";
@@ -6793,6 +7227,15 @@ function initializeAiCodeMentor() {
       if (titleEl && (currentMentorProblem?.isStandalone || !currentMentorProblem?.slug)) {
         titleEl.textContent = val || "AI Code Mentor";
       }
+      updateMentorContextStatusUI();
+    });
+  }
+
+  const problemDescInput = $("mentorProblemDescInput");
+  if (problemDescInput && !problemDescInput.dataset.bound) {
+    problemDescInput.dataset.bound = "true";
+    problemDescInput.addEventListener("input", () => {
+      updateMentorContextStatusUI();
     });
   }
 
@@ -6808,6 +7251,7 @@ function initializeAiCodeMentor() {
       if (currentMentorProblem?.isStandalone && $("mentorProblemTitle")) {
         $("mentorProblemTitle").textContent = "AI Code Mentor";
       }
+      updateMentorContextStatusUI();
       showToast("Problem context cleared.");
     });
   }

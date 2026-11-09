@@ -29,10 +29,13 @@ class AiMentorCache {
     return crypto.createHash("sha256").update(String(sourceCode || "")).digest("hex").slice(0, 32);
   }
 
-  buildProblemCacheKey(problemSlug, language, model) {
+  buildProblemCacheKey(problemSlug, language, model, statementHash = null) {
     const slug = String(problemSlug || "unknown").toLowerCase();
     const lang = String(language || "python3").toLowerCase();
     const mdl = String(model || "default").toLowerCase();
+    if (statementHash) {
+      return `optimal:${slug}:${statementHash}:${lang}:${mdl}`;
+    }
     return `optimal:${slug}:${lang}:${mdl}`;
   }
 
@@ -43,8 +46,8 @@ class AiMentorCache {
       .digest("hex");
   }
 
-  async getProblemOptimal(problemSlug, language, model) {
-    const key = this.buildProblemCacheKey(problemSlug, language, model);
+  async getProblemOptimal(problemSlug, language, model, statementHash = null) {
+    const key = this.buildProblemCacheKey(problemSlug, language, model, statementHash);
     // 1. Check memory
     if (this.memoryProblemCache.has(key)) {
       const entry = this.memoryProblemCache.get(key);
@@ -65,8 +68,8 @@ class AiMentorCache {
     return null;
   }
 
-  async saveProblemOptimal(problemSlug, language, model, data, { ttlMs = this.defaultTtlMs } = {}) {
-    const key = this.buildProblemCacheKey(problemSlug, language, model);
+  async saveProblemOptimal(problemSlug, language, model, data, { ttlMs = this.defaultTtlMs, statementHash = null } = {}) {
+    const key = this.buildProblemCacheKey(problemSlug, language, model, statementHash);
     const expiresAt = new Date(this.now().getTime() + ttlMs);
     // 1. Save memory
     this.memoryProblemCache.set(key, { data, expiresAt });

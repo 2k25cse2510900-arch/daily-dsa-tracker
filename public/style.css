@@ -4469,6 +4469,61 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
   margin-top: 10px;
 }
 
+.mentor-context-kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.badge-context-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+}
+.status-context-verified {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #10b981;
+}
+.status-context-user {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.4);
+  color: #a78bfa;
+}
+.status-context-partial {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+.status-context-unavailable {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+}
+.status-context-ambiguous {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+.mentor-context-guidance {
+  font-size: 0.78rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.45;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0 4px 4px 0;
+}
+
 .mentor-input-row {
   display: flex;
   gap: 8px;
