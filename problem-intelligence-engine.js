@@ -1066,7 +1066,14 @@ function buildGeminiPromptContext(problem, language) {
     - Stage 5 (Optimal Approach): Detail the optimal algorithm, its core invariant, and step-by-step logic with complete optimal code.
     - Stage 6 (Correctness Reasoning): Prove why the algorithm works using loop invariants, greedy choice property, induction, or monotonic pointer arguments in correctnessReasoning.
     - Stage 7 (Complexity Reasoning): Derive time and auxiliary space from actual pointer steps and allocations in complexityAnalysis. Distinguish auxiliary memory from total memory.
-    - Stage 8 (Edge Cases & Constraints): Include boundary cases, empty inputs, single elements, duplicates, and extreme constraints directly from problem specs. Populate codeComparison and keyTakeaways.`;
+    - Stage 8 (Edge Cases & Constraints): Include boundary cases, empty inputs, single elements, duplicates, and extreme constraints directly from problem specs. Populate codeComparison and keyTakeaways.
+11. STUDENT CODE INTELLIGENCE DIRECTIVE (MODULE 3):
+    - Ground your code review directly in the student's actual source code.
+    - Reference exact 1-based source lines. NEVER fabricate line numbers or code statements that do not exist in the submission.
+    - If the submission verdict is "Accepted", acknowledge that the solution is logically correct and passed all test cases. Do not invent false logic bugs, runtime errors, or off-by-one flaws.
+    - If the submission verdict is "Wrong Answer" or "Time Limit Exceeded", pinpoint the exact line and invariant that failed.
+    - Distinguish auxiliary space from input parameters and recursion call stack cleanly.
+    - If student code is unavailable or empty, state that source-level diagnosis is unavailable while providing problem-level guidance.`;
 
   return context;
 }

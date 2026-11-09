@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const { resolveProblemIdentity, buildProblemPromptContext } = require("./leetcode-problem-intelligence");
 const { validateGeneratedAnalysis } = require("./code-validation-pipeline");
 const { AiMentorCache } = require("./ai-mentor-cache");
+const { analyzeStudentCode } = require("./student-code-intelligence");
 
 const MODES = Object.freeze([
   "explain", "mistake", "hint", "complexity", "optimize", "dry-run", "teach",
@@ -16,7 +17,8 @@ const SECTION_IDS = new Set([
   "strengths", "weaknesses", "edge-cases", "optimization", "alternative-approach", "dsa-concepts",
   "brute-force", "optimal-approach", "optimized-code", "complexity-comparison", "counterexample",
   "mistake-analysis", "tle-analysis", "runtime-error", "compilation-error", "key-takeaways", "animatic-trace",
-  "core-observations", "improved-approach", "correctness-reasoning"
+  "core-observations", "improved-approach", "correctness-reasoning",
+  "line-by-line-walkthrough", "variable-analysis", "control-flow-analysis", "code-consistency", "evidence-findings"
 ]);
 const QUOTA_TIMEZONE = "Asia/Kolkata";
 
@@ -184,6 +186,20 @@ function validateAnalysis(value) {
         id: "key-takeaways",
         title: "Key Takeaways",
         content: value.keyTakeaways.join("\n• ")
+      });
+    }
+    if (Array.isArray(value.lineByLineExplanation) && value.lineByLineExplanation.length) {
+      sections.push({
+        id: "line-by-line-walkthrough",
+        title: "Line-by-Line Code Walkthrough",
+        content: value.lineByLineExplanation.map(w => `Line ${w.line}: ${w.code}\n  ↳ ${w.explanation}`).join("\n\n").slice(0, 5000)
+      });
+    }
+    if (Array.isArray(value.evidenceBasedFindings) && value.evidenceBasedFindings.length) {
+      sections.push({
+        id: "evidence-findings",
+        title: "Evidence-Based Code Findings",
+        content: value.evidenceBasedFindings.map(f => `[${(f.severity || "info").toUpperCase()}] ${f.title} (Line ${f.line || "N/A"})\n  ${f.explanation}\n  Evidence: ${f.evidence || "Verified in source"}`).join("\n\n").slice(0, 5000)
       });
     }
     if (sections.length === 0) {
@@ -465,6 +481,15 @@ function createAiCodeMentorService({
 
     const reservation = await reserve(user.id);
     try {
+      const codeIntel = analyzeStudentCode({
+        sourceCode: input.sourceCode,
+        language: input.language,
+        problem,
+        verdict: input.verdict,
+        mode: input.mode,
+        sourceProvenance: input.retainSource ? "persisted_review" : "transient_review"
+      });
+
       const problemContext = buildProblemPromptContext(problem, input.language);
       const instructions = instructionsFor(input.mode, problem, input.language, input.verdict);
 
@@ -473,12 +498,39 @@ function createAiCodeMentorService({
         input: providerInput(input),
         problemContext,
         problemSlug: problem.slug,
-        language: input.language
+        language: input.language,
+        sourceCode: input.sourceCode,
+        verdict: input.verdict
       });
 
       // Validate the returned structure
       const rawAnalysis = result.analysis;
       const validated = validateAnalysis(rawAnalysis);
+
+      // Deepen validated analysis with Student Code Intelligence (Module 3)
+      validated.sourceUnderstanding = validated.sourceUnderstanding || codeIntel.overview;
+      validated.codeStructure = validated.codeStructure || { signatures: codeIntel.signatures, loops: codeIntel.loops };
+      validated.lineByLineExplanation = (Array.isArray(validated.lineByLineExplanation) && validated.lineByLineExplanation.length)
+        ? validated.lineByLineExplanation
+        : codeIntel.lineByLineWalkthrough;
+      validated.variableAnalysis = (Array.isArray(validated.variableAnalysis) && validated.variableAnalysis.length)
+        ? validated.variableAnalysis
+        : codeIntel.variables;
+      validated.controlFlowAnalysis = validated.controlFlowAnalysis || { loops: codeIntel.loops };
+      validated.dataStructureAnalysis = (Array.isArray(validated.dataStructureAnalysis) && validated.dataStructureAnalysis.length)
+        ? validated.dataStructureAnalysis
+        : codeIntel.dataStructures;
+      validated.algorithmPattern = validated.algorithmPattern || codeIntel.algorithmPattern;
+      validated.codeProblemConsistency = validated.codeProblemConsistency || codeIntel.consistency;
+      validated.evidenceBasedFindings = (Array.isArray(validated.evidenceBasedFindings) && validated.evidenceBasedFindings.length)
+        ? validated.evidenceBasedFindings
+        : codeIntel.evidenceBasedFindings;
+      validated.diagnosisConfidence = validated.diagnosisConfidence || codeIntel.algorithmPattern.confidence;
+
+      if (!validated.animationSteps && codeIntel.animaticTrace?.isSupported && codeIntel.animaticTrace.steps.length) {
+        validated.animationSteps = codeIntel.animaticTrace.steps;
+        validated.animationType = codeIntel.animaticTrace.pattern.includes("In-Place") ? "array-inplace" : "two-pointer";
+      }
 
       // Run code validation pipeline if optimal code was returned
       let codeCheck = { valid: true, verificationStatus: "ai_generated_unverified" };

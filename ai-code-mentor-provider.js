@@ -3,6 +3,7 @@
 const { GoogleGenAI } = require("@google/genai");
 const OpenAI = require("openai");
 const { CANONICAL_PROBLEMS, retrieveProblem } = require("./problem-intelligence-engine");
+const { analyzeStudentCode } = require("./student-code-intelligence");
 
 const ANALYSIS_SCHEMA = Object.freeze({
   type: "object",
@@ -264,6 +265,75 @@ const UNIVERSAL_ANALYSIS_SCHEMA = Object.freeze({
         confidence: { type: "string" }
       }
     },
+    sourceUnderstanding: { type: "string" },
+    codeStructure: { type: "object" },
+    lineByLineExplanation: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          line: { type: "integer" },
+          code: { type: "string" },
+          explanation: { type: "string" },
+          significance: { type: "string" }
+        }
+      }
+    },
+    variableAnalysis: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          type: { type: "string" },
+          role: { type: "string" },
+          initialValue: { type: "string" },
+          purpose: { type: "string" }
+        }
+      }
+    },
+    controlFlowAnalysis: { type: "object" },
+    dataStructureAnalysis: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          type: { type: "string" },
+          purpose: { type: "string" }
+        }
+      }
+    },
+    algorithmPattern: {
+      type: "object",
+      properties: {
+        pattern: { type: "string" },
+        confidence: { type: "string" },
+        explanation: { type: "string" }
+      }
+    },
+    codeProblemConsistency: {
+      type: "object",
+      properties: {
+        isConsistent: { type: "boolean" },
+        confidence: { type: "string" }
+      }
+    },
+    evidenceBasedFindings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          severity: { type: "string" },
+          line: { type: ["integer", "null"] },
+          codeSnippet: { type: "string" },
+          explanation: { type: "string" },
+          evidence: { type: "string" },
+          confidence: { type: "string" }
+        }
+      }
+    },
+    diagnosisConfidence: { type: "string" },
     sections: {
       type: "array",
       items: {
@@ -276,7 +346,8 @@ const UNIVERSAL_ANALYSIS_SCHEMA = Object.freeze({
               "strengths", "weaknesses", "edge-cases", "optimization", "alternative-approach", "dsa-concepts",
               "brute-force", "optimal-approach", "optimized-code", "complexity-comparison", "counterexample",
               "mistake-analysis", "tle-analysis", "runtime-error", "compilation-error", "key-takeaways", "animatic-trace",
-              "core-observations", "improved-approach", "correctness-reasoning"
+              "core-observations", "improved-approach", "correctness-reasoning",
+              "line-by-line-walkthrough", "variable-analysis", "control-flow-analysis", "code-consistency", "evidence-findings"
             ]
           },
           title: { type: "string" },
@@ -719,11 +790,20 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
   return {
     providerName: "local",
     model: "local-curriculum-v1",
-    async analyze({ input, problemContext, problemSlug, language }) {
+    async analyze({ input, problemContext, problemSlug, language, sourceCode, verdict }) {
       const slug = String(problemSlug || "").toLowerCase();
       const lang = String(language || "python3").toLowerCase();
       const verified = knowledgeBase[slug] || retrieveProblem({ problemSlug: slug });
       const isVerified = Boolean(verified && (verified.isVerified || verified.metadataVerificationStatus === "VERIFIED" || knowledgeBase[slug]));
+
+      const rawCode = typeof sourceCode === "string" ? sourceCode : (typeof input === "string" && !input.startsWith("MODE:") ? input : "");
+      const codeIntel = analyzeStudentCode({
+        sourceCode: rawCode,
+        language: lang,
+        problem: verified,
+        verdict: verdict || "Accepted",
+        sourceProvenance: "local_curriculum"
+      });
 
       if (isVerified) {
         return {
@@ -734,20 +814,45 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
             model: "local-curriculum-v1",
             problemTitle: verified.title || "Curriculum Problem",
             language: lang,
-            studentApproach: verified.studentApproach || `Local curriculum reference analysis for ${verified.title}`,
-            correctnessStatus: "Accepted",
+            studentApproach: codeIntel.overview || verified.studentApproach || `Local curriculum reference analysis for ${verified.title}`,
+            correctnessStatus: codeIntel.diagnosis?.verdict || "Accepted",
             mistakeDiagnosis: {
-              hasMistake: false,
-              title: null,
-              detail: null,
-              counterExample: null,
-              suggestedFix: null
+              hasMistake: codeIntel.diagnosis?.hasMistake || false,
+              title: codeIntel.diagnosis?.title || null,
+              detail: codeIntel.diagnosis?.explanation || null,
+              counterExample: codeIntel.diagnosis?.counterExample || null,
+              suggestedFix: codeIntel.diagnosis?.recommendation || codeIntel.diagnosis?.defensiveGuard || null
             },
-            studentComplexity: verified.studentComplexity || {
+            studentComplexity: (codeIntel.complexity && codeIntel.complexity.timeComplexity !== "O(n)") ? {
+              timeComplexity: codeIntel.complexity.timeComplexity,
+              spaceComplexity: codeIntel.complexity.auxiliarySpace,
+              explanation: codeIntel.complexity.timeDerivation
+            } : (verified.studentComplexity || (codeIntel.complexity ? {
+              timeComplexity: codeIntel.complexity.timeComplexity,
+              spaceComplexity: codeIntel.complexity.auxiliarySpace,
+              explanation: codeIntel.complexity.timeDerivation
+            } : {
               timeComplexity: verified.timeComplexity || "O(n)",
               spaceComplexity: verified.spaceComplexity || "O(1)",
               explanation: verified.timeExplain || "Linear sequence traversal."
+            })),
+            sourceUnderstanding: codeIntel.overview,
+            codeStructure: {
+              signatures: codeIntel.signatures,
+              loops: codeIntel.loops
             },
+            lineByLineExplanation: codeIntel.lineByLineWalkthrough,
+            variableAnalysis: codeIntel.variables,
+            controlFlowAnalysis: {
+              loops: codeIntel.loops
+            },
+            dataStructureAnalysis: codeIntel.dataStructures,
+            algorithmPattern: codeIntel.algorithmPattern,
+            codeProblemConsistency: codeIntel.consistency,
+            evidenceBasedFindings: codeIntel.evidenceBasedFindings,
+            diagnosisConfidence: codeIntel.algorithmPattern.confidence,
+            animationSteps: codeIntel.animaticTrace?.isSupported ? codeIntel.animaticTrace.steps : null,
+            animationType: codeIntel.animaticTrace?.pattern?.includes("In-Place") ? "array-inplace" : "two-pointer",
             bruteForce: {
               title: verified.bruteForceTitle || "Exhaustive Search",
               algorithm: verified.bruteForceExplain || "Checks all combinations.",

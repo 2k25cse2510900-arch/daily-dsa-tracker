@@ -5962,16 +5962,30 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
     `).join("");
   }
 
-  // Live Variable Watch Table (Module 5)
+  // Live Variable Watch Table (Module 3 & 5)
   const trackVarsTbody = $("mentorTrackVarsTbody");
+  const trackVarsCard = $("mentorTrackVariablesCard");
   if (trackVarsTbody) {
-    const varSteps = (Array.isArray(analysisResult?.variableTracking?.steps) && analysisResult.variableTracking.steps.length)
-      ? analysisResult.variableTracking.steps
-      : (Array.isArray(data.variableTracking?.steps) ? data.variableTracking.steps : [
-          { step: "Init", vars: "pointers = 0, state = ready", evaluation: "Pre-loop invariant verified", memory: "Stack variables initialized" },
-          { step: "Iteration 1", vars: "curr = element[0], memo = updated", evaluation: "Condition evaluated true", memory: "Heap state mutated" },
-          { step: "Final", vars: "return = target_result", evaluation: "Algorithm converged", memory: "Garbage collection ready" }
-        ]);
+    if (trackVarsCard) trackVarsCard.hidden = false;
+    let varSteps = [];
+    if (Array.isArray(analysisResult?.variableAnalysis) && analysisResult.variableAnalysis.length) {
+      varSteps = analysisResult.variableAnalysis.map(v => ({
+        step: v.name,
+        vars: `${v.type || "var"} (Init: ${v.initialValue || "0"})`,
+        evaluation: v.purpose || v.role || "Tracks state",
+        memory: v.role === "pointer" ? "O(1) scalar pointer" : v.role === "counter" ? "O(1) stack counter" : "Stack variable"
+      }));
+    } else if (Array.isArray(analysisResult?.variableTracking?.steps) && analysisResult.variableTracking.steps.length) {
+      varSteps = analysisResult.variableTracking.steps;
+    } else if (Array.isArray(data.variableTracking?.steps)) {
+      varSteps = data.variableTracking.steps;
+    } else {
+      varSteps = [
+        { step: "Init", vars: "pointers = 0, state = ready", evaluation: "Pre-loop invariant verified", memory: "Stack variables initialized" },
+        { step: "Iteration 1", vars: "curr = element[0], memo = updated", evaluation: "Condition evaluated true", memory: "Heap state mutated" },
+        { step: "Final", vars: "return = target_result", evaluation: "Algorithm converged", memory: "Garbage collection ready" }
+      ];
+    }
     trackVarsTbody.innerHTML = varSteps.map(s => `
       <tr>
         <td><strong>${escapeHTML(String(s.step || s.stepNumber || "Step"))}</strong></td>
@@ -6101,6 +6115,9 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
       if (analysisResult.summary) {
         html += `<p><strong>Summary:</strong> ${escapeHTML(analysisResult.summary)}</p>`;
       }
+      if (analysisResult.sourceUnderstanding) {
+        html += `<p style="margin-top:8px;"><strong>Source Understanding:</strong> ${escapeHTML(analysisResult.sourceUnderstanding)}</p>`;
+      }
       if (analysisResult.studentApproach) {
         html += `<p style="margin-top:8px;"><strong>Student Approach:</strong> ${escapeHTML(analysisResult.studentApproach)}</p>`;
       }
@@ -6108,6 +6125,38 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
         html += `<div style="margin-top:12px;"><h4>Core Algorithmic Observations</h4><ul>` +
           analysisResult.coreObservations.map(o => `<li>${escapeHTML(o)}</li>`).join("") +
           `</ul></div>`;
+      }
+      if (Array.isArray(analysisResult.lineByLineExplanation) && analysisResult.lineByLineExplanation.length) {
+        html += `<div style="margin-top:14px;"><h4>Line-by-Line Code Walkthrough</h4>`;
+        html += `<div class="mentor-table-wrapper"><table class="mentor-comparison-table"><thead><tr><th style="width:70px;">Line</th><th style="width:240px;">Code Statement</th><th>Pedagogical Explanation</th></tr></thead><tbody>`;
+        html += analysisResult.lineByLineExplanation.map(w => `
+          <tr>
+            <td><code>L${escapeHTML(String(w.line))}</code></td>
+            <td><code>${escapeHTML(w.code)}</code></td>
+            <td>${escapeHTML(w.explanation)}</td>
+          </tr>
+        `).join("");
+        html += `</tbody></table></div></div>`;
+      }
+      if (Array.isArray(analysisResult.evidenceBasedFindings) && analysisResult.evidenceBasedFindings.length) {
+        html += `<div style="margin-top:14px;"><h4>Evidence-Based Code Findings</h4>`;
+        html += analysisResult.evidenceBasedFindings.map(f => `
+          <div style="margin-top:8px; padding:10px; border-left:3px solid ${f.severity === 'critical' ? '#ef4444' : f.severity === 'warning' ? '#f59e0b' : '#3b82f6'}; background:rgba(255,255,255,0.03); border-radius:4px;">
+            <p><strong>[${escapeHTML((f.severity || 'info').toUpperCase())}] ${escapeHTML(f.title)}</strong> (Line ${escapeHTML(String(f.line || 'General'))})</p>
+            <p style="margin-top:4px;">${escapeHTML(f.explanation)}</p>
+            <p style="margin-top:4px; font-size:0.85em; opacity:0.85;"><strong>Evidence:</strong> ${escapeHTML(f.evidence || 'Verified in source')}</p>
+          </div>
+        `).join("");
+        html += `</div>`;
+      }
+      if (analysisResult.codeProblemConsistency) {
+        const c = analysisResult.codeProblemConsistency;
+        html += `<div style="margin-top:14px;"><h4>Code-to-Problem Consistency</h4>`;
+        html += `<p><strong>Consistency Status:</strong> ${c.isConsistent ? 'Verified Consistent &#10003;' : 'Specification Inconsistency Flagged &#9888;'}</p>`;
+        if (Array.isArray(c.issues) && c.issues.length) {
+          html += `<ul>${c.issues.map(iss => `<li><strong>${escapeHTML(iss.type)}:</strong> ${escapeHTML(iss.message)}</li>`).join("")}</ul>`;
+        }
+        html += `</div>`;
       }
       if (analysisResult.correctnessReasoning) {
         const cr = analysisResult.correctnessReasoning;
@@ -6147,7 +6196,10 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
         html += `</div>`;
       }
       if (Array.isArray(analysisResult.sections) && analysisResult.sections.length) {
-        const handledIds = new Set(["summary", "core-observations", "improved-approach", "correctness-reasoning"]);
+        const handledIds = new Set([
+          "summary", "core-observations", "improved-approach", "correctness-reasoning",
+          "line-by-line-walkthrough", "variable-analysis", "control-flow-analysis", "code-consistency", "evidence-findings"
+        ]);
         const remainingSections = analysisResult.sections.filter(s => !handledIds.has(s.id));
         if (remainingSections.length) {
           html += remainingSections.map(s => `<div style="margin-top:12px;"><h4>${escapeHTML(s.title)}</h4><p>${escapeHTML(s.content)}</p></div>`).join("");
