@@ -61,7 +61,31 @@ const CANONICAL_PROBLEMS = {
     methodName: {
       java: "isSubsequence", python3: "isSubsequence", cpp: "isSubsequence", javascript: "isSubsequence", typescript: "isSubsequence", go: "isSubsequence", rust: "is_subsequence"
     },
-    topics: ["Two Pointers", "String", "Dynamic Programming"]
+    topics: ["Two Pointers", "String", "Dynamic Programming"],
+    bruteForceTitle: "Exhaustive Subsequence Generation",
+    bruteForceExplain: "Recursively generates all 2^|t| possible subsequences of string t and checks if string s equals any generated subsequence.",
+    bruteForceTime: "O(2^|t|)",
+    bruteForceSpace: "O(|t|)",
+    optimalTitle: "Two Pointers Greedy Match",
+    optimalExplain: "Scans string t with a pointer, greedily matching characters of s in order. Preserves relative order with constant auxiliary space.",
+    optimalTime: "O(|s| + |t|)",
+    optimalSpace: "O(1)",
+    timeComplexity: "O(|s| + |t|)",
+    spaceComplexity: "O(1)",
+    auxiliarySpace: "O(1)",
+    totalSpace: "O(|s| + |t|)",
+    timeExplain: "Inner pointer index advances through t at most once across all outer loop iterations because index is never reset. Total comparisons are bounded by |s| + |t|.",
+    spaceExplain: "Uses only constant integer pointer variables (i, index, c), resulting in O(1) auxiliary space.",
+    whatItAsks: "Determine whether string s is a subsequence of string t by checking whether all characters of s appear in t in the exact relative order.",
+    inputOutput: "Input: two strings s and t consisting of lowercase English letters. Output: boolean (true if s is subsequence of t, false otherwise).",
+    keyObservation: "The inner pointer advances monotonically through t and is never reset across outer iterations. Thus the nested loops execute at most |s| + |t| steps in total, proving linear O(|s| + |t|) time rather than quadratic.",
+    edgeCases: [
+      { caseName: "Empty s (Empty Subsequence)", input: "s = \"\", t = \"abc\"", expected: "true", explanation: "An empty string is trivially a valid subsequence of any target string.", handledBy: "Loop condition / count comparison" },
+      { caseName: "Empty t with Non-Empty s", input: "s = \"abc\", t = \"\"", expected: "false", explanation: "A non-empty string cannot be formed from an empty target string.", handledBy: "Loop boundary check" },
+      { caseName: "Order-Preserved Subsequence", input: "s = \"abc\", t = \"ahbgdc\"", expected: "true", explanation: "Characters 'a', 'b', 'c' appear in matching relative order.", handledBy: "Two-pointer forward traversal" },
+      { caseName: "Missing / Mismatched Character", input: "s = \"axc\", t = \"ahbgdc\"", expected: "false", explanation: "Character 'x' is not present in t.", handledBy: "Pointer exhaust" },
+      { caseName: "Repeated Characters with Order Constraint", input: "s = \"aaaa\", t = \"bbaaa\"", expected: "false", explanation: "Only three 'a' characters exist in t, so four cannot be matched.", handledBy: "Match count verification" }
+    ]
   },
   "string-compression": {
     number: 443,
@@ -93,7 +117,29 @@ const CANONICAL_PROBLEMS = {
     methodName: {
       java: "compress", python3: "compress", cpp: "compress", javascript: "compress", typescript: "compress", go: "compress", rust: "compress"
     },
-    topics: ["Two Pointers", "String"]
+    topics: ["Two Pointers", "String"],
+    bruteForceTitle: "Auxiliary Buffer Compression",
+    bruteForceExplain: "Constructs the compressed string into an external buffer or list, then copies characters back to chars array.",
+    bruteForceTime: "O(n)",
+    bruteForceSpace: "O(n)",
+    optimalTitle: "In-Place Two Pointers Run-Length Encoding",
+    optimalExplain: "Maintains read and write pointers in chars, compressing groups in-place with O(1) auxiliary space.",
+    optimalTime: "O(n)",
+    optimalSpace: "O(1)",
+    timeComplexity: "O(n)",
+    spaceComplexity: "O(1)",
+    auxiliarySpace: "O(1)",
+    totalSpace: "O(n)",
+    timeExplain: "Read pointer traverses the chars array once in O(n) total steps.",
+    spaceExplain: "Modifies array strictly in-place; uses only write and read pointers in O(1) auxiliary space.",
+    whatItAsks: "Compress repeating consecutive characters in chars in-place and return the new length of the compressed array.",
+    inputOutput: "Input: character array chars. Output: integer new length. Modifies chars array in-place.",
+    keyObservation: "The write pointer never overtakes the read pointer because every compressed group representation is equal to or shorter than the raw consecutive sequence.",
+    edgeCases: [
+      { caseName: "Single Character Group", input: "chars = [\"a\"]", expected: "1 (chars = [\"a\"])", explanation: "Groups of length 1 append only the character with no count digit.", handledBy: "Group length check" },
+      { caseName: "Multi-Digit Group Count", input: "chars = [\"a\"] * 12", expected: "3 (chars = [\"a\",\"1\",\"2\"])", explanation: "Group lengths >= 10 are split into individual digit characters.", handledBy: "Digit formatting" },
+      { caseName: "All Distinct Characters", input: "chars = [\"a\",\"b\",\"c\"]", expected: "3 (chars = [\"a\",\"b\",\"c\"])", explanation: "Every character is unique; output length equals input length.", handledBy: "In-place write" }
+    ]
   },
   "max-number-of-k-sum-pairs": {
     number: 1679,
@@ -124,7 +170,29 @@ const CANONICAL_PROBLEMS = {
     methodName: {
       java: "maxOperations", python3: "maxOperations", cpp: "maxOperations", javascript: "maxOperations", typescript: "maxOperations", go: "maxOperations", rust: "max_operations"
     },
-    topics: ["Array", "Hash Table", "Two Pointers", "Sorting"]
+    topics: ["Array", "Hash Table", "Two Pointers", "Sorting"],
+    bruteForceTitle: "Exhaustive Nested Search & Removal",
+    bruteForceExplain: "Scans all (i, j) pairs with nested loops, marks matched elements as used, and counts pairs.",
+    bruteForceTime: "O(n²)",
+    bruteForceSpace: "O(n)",
+    optimalTitle: "Hash Map Frequencies / Sort + Two Pointers",
+    optimalExplain: "Counts complement frequencies using a hash map in O(n) time, or sorts and pairs opposite ends in O(n log n) time.",
+    optimalTime: "O(n)",
+    optimalSpace: "O(n)",
+    timeComplexity: "O(n)",
+    spaceComplexity: "O(n)",
+    auxiliarySpace: "O(n)",
+    totalSpace: "O(n)",
+    timeExplain: "Single pass hash table lookup or O(n log n) two-pointer sort traversal.",
+    spaceExplain: "Hash table stores element frequencies for up to n numbers.",
+    whatItAsks: "Find the maximum number of operations where two numbers summing to k are picked and removed.",
+    inputOutput: "Input: integer array nums, integer k. Output: integer maximum paired operations.",
+    keyObservation: "Each element can participate in at most one removal. Greedy pairing of complements target - num gives the optimal maximum operations count.",
+    edgeCases: [
+      { caseName: "No Matching Pairs", input: "nums = [1,2,3], k = 10", expected: "0", explanation: "No two elements sum up to target k.", handledBy: "Zero operation count" },
+      { caseName: "All Duplicate Pairs", input: "nums = [2,2,2,2], k = 4", expected: "2", explanation: "Four 2s produce exactly two disjoint pairs.", handledBy: "Frequency decrement" },
+      { caseName: "Odd Frequency of Half-k", input: "nums = [3,3,3], k = 6", expected: "1", explanation: "Three 3s form one valid pair; the third 3 remains unpaired.", handledBy: "Integer division" }
+    ]
   },
   "two-sum": {
     number: 1,
@@ -613,7 +681,25 @@ function createCanonicalProblemModel(data = {}) {
     reason: data.reason || data.ambiguityReason || null,
     clarificationNeeded: Boolean(data.clarificationNeeded || status === VERIFICATION_STATUSES.AMBIGUOUS),
     isCanonical: Boolean(data.isCanonical),
-    confidence: data.confidence || (status === VERIFICATION_STATUSES.AMBIGUOUS ? "ambiguous" : (status === VERIFICATION_STATUSES.VERIFIED ? "high" : (status === VERIFICATION_STATUSES.PARTIALLY_VERIFIED || status === VERIFICATION_STATUSES.USER_PROVIDED ? "medium" : "low")))
+    confidence: data.confidence || (status === VERIFICATION_STATUSES.AMBIGUOUS ? "ambiguous" : (status === VERIFICATION_STATUSES.VERIFIED ? "high" : (status === VERIFICATION_STATUSES.PARTIALLY_VERIFIED || status === VERIFICATION_STATUSES.USER_PROVIDED ? "medium" : "low"))),
+    timeComplexity: data.timeComplexity || null,
+    spaceComplexity: data.spaceComplexity || null,
+    auxiliarySpace: data.auxiliarySpace || null,
+    totalSpace: data.totalSpace || null,
+    timeExplain: data.timeExplain || null,
+    spaceExplain: data.spaceExplain || null,
+    bruteForceTitle: data.bruteForceTitle || null,
+    bruteForceExplain: data.bruteForceExplain || null,
+    bruteForceTime: data.bruteForceTime || null,
+    bruteForceSpace: data.bruteForceSpace || null,
+    optimalTitle: data.optimalTitle || null,
+    optimalExplain: data.optimalExplain || null,
+    optimalTime: data.optimalTime || null,
+    optimalSpace: data.optimalSpace || null,
+    whatItAsks: data.whatItAsks || null,
+    inputOutput: data.inputOutput || null,
+    keyObservation: data.keyObservation || null,
+    edgeCases: Array.isArray(data.edgeCases) ? data.edgeCases : []
   };
 }
 
@@ -828,7 +914,13 @@ function buildGeminiPromptContext(problem, language) {
 5. Use only the supplied constraints. Never invent unstated official examples or constraints.
 6. Clearly distinguish verified facts from inferences.
 7. If the context is insufficient to verify problem-specific correctness, explain exactly what information is missing.
-8. Do not fabricate LeetCode URLs or pretend code was executed in a sandbox unless execution results are provided.`;
+8. Do not fabricate LeetCode URLs or pretend code was executed in a sandbox unless execution results are provided.
+9. ALGORITHMIC & COMPLEXITY FIDELITY:
+   - Carefully trace loop variable advancement. If an inner loop pointer is initialized outside and never reset (e.g., advancing monotonically through a string or array), the total steps are bounded by the input sequence lengths: O(|s| + |t|) or O(n). DO NOT automatically classify nested loops as quadratic O(n²).
+   - Auxiliary space must reflect only extra allocated memory beyond inputs: integer variables or pointers count as O(1) auxiliary space.
+   - For brute-force analysis, describe a genuine valid baseline algorithm with its true complexity (e.g. for Subsequence, generating all 2^|t| subsequences in O(2^|t|) time). Never label a broken partial check as brute force.
+   - When student code has already achieved optimal asymptotic bounds, acknowledge that honestly in the comparison: do not claim an asymptotic speedup (e.g. from O(n²) or O(2^n) to O(n)) unless the student's code actually exhibits that baseline bottleneck.
+   - Edge cases must match the actual problem input types and domain (e.g., empty string, single character, mismatched order, duplicate counts). Never output unrelated array examples for string problems.`;
 
   return context;
 }

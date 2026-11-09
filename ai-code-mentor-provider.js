@@ -2,6 +2,7 @@
 
 const { GoogleGenAI } = require("@google/genai");
 const OpenAI = require("openai");
+const { CANONICAL_PROBLEMS, retrieveProblem } = require("./problem-intelligence-engine");
 
 const ANALYSIS_SCHEMA = Object.freeze({
   type: "object",
@@ -642,16 +643,17 @@ function createOpenAIMentorProvider({ env = process.env, client } = {}) {
  * Creates Local Knowledge Provider
  * 100% offline, zero network required. Uses verified educational curriculum.
  */
-function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
+function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {}) {
   return {
     providerName: "local",
     model: "local-curriculum-v1",
     async analyze({ input, problemContext, problemSlug, language }) {
       const slug = String(problemSlug || "").toLowerCase();
       const lang = String(language || "python3").toLowerCase();
-      const verified = knowledgeBase[slug];
+      const verified = knowledgeBase[slug] || retrieveProblem({ problemSlug: slug });
+      const isVerified = Boolean(verified && (verified.isVerified || verified.metadataVerificationStatus === "VERIFIED" || knowledgeBase[slug]));
 
-      if (verified && verified.isVerified) {
+      if (isVerified) {
         return {
           provider: "local",
           model: "local-curriculum-v1",
@@ -660,7 +662,7 @@ function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
             model: "local-curriculum-v1",
             problemTitle: verified.title || "Curriculum Problem",
             language: lang,
-            studentApproach: "Local curriculum reference analysis",
+            studentApproach: verified.studentApproach || `Local curriculum reference analysis for ${verified.title}`,
             correctnessStatus: "Accepted",
             mistakeDiagnosis: {
               hasMistake: false,
@@ -668,6 +670,11 @@ function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
               detail: null,
               counterExample: null,
               suggestedFix: null
+            },
+            studentComplexity: verified.studentComplexity || {
+              timeComplexity: verified.timeComplexity || "O(n)",
+              spaceComplexity: verified.spaceComplexity || "O(1)",
+              explanation: verified.timeExplain || "Linear sequence traversal."
             },
             bruteForce: {
               title: verified.bruteForceTitle || "Exhaustive Search",
@@ -680,21 +687,26 @@ function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
             optimalApproach: {
               title: verified.optimalTitle || "Optimal Solution",
               algorithm: verified.optimalExplain || "Linear or sublinear traversal.",
-              whyItWorks: "Eliminates redundant operations using algorithmic invariants.",
+              whyItWorks: verified.keyObservation || "Eliminates redundant operations using algorithmic invariants.",
               keyInvariants: "Problem invariants preserved."
             },
             optimalCode: verified.acceptedCodeByLang?.[lang] || verified.optimalCode || verified.acceptedCode || "// Code available in curriculum",
             optimalComplexity: {
               timeComplexity: verified.optimalTime || verified.timeComplexity || "O(n)",
               spaceComplexity: verified.optimalSpace || verified.spaceComplexity || "O(1)",
-              auxiliarySpace: verified.optimalSpace || "O(1)",
-              totalSpace: "O(n)",
+              auxiliarySpace: verified.auxiliarySpace || verified.optimalSpace || "O(1)",
+              totalSpace: verified.totalSpace || "O(n)",
               explanation: verified.timeExplain || "Optimized time bounds."
             },
+            comparison: [
+              { approach: "Brute Force", timeComplexity: verified.bruteForceTime || "O(n²)", spaceComplexity: verified.bruteForceSpace || "O(1)", verdict: "Valid baseline" },
+              { approach: "Student Solution", timeComplexity: verified.timeComplexity || "O(n)", spaceComplexity: verified.spaceComplexity || "O(1)", verdict: "Accepted logic" },
+              { approach: verified.optimalTitle || "Optimal Solution", timeComplexity: verified.optimalTime || verified.timeComplexity || "O(n)", spaceComplexity: verified.optimalSpace || "O(1)", verdict: "Optimal template" }
+            ],
             summary: `Educational curriculum analysis for ${verified.title}.`,
             problemUnderstanding: {
               whatItAsks: verified.whatItAsks || `Find the optimal solution for ${verified.title}.`,
-              inputOutput: verified.inputOutput || "Valid array or sequence inputs to optimal output.",
+              inputOutput: verified.inputOutput || (verified.expectedInputType ? `Input: ${verified.expectedInputType}. Output: ${verified.expectedOutputType}.` : "Valid inputs to target output."),
               constraints: verified.constraints || "Standard curriculum bounds.",
               keyObservation: verified.keyObservation || verified.optimalExplain || "Maintain core algorithmic invariants."
             },
@@ -710,7 +722,7 @@ function createLocalKnowledgeProvider({ knowledgeBase = {} } = {}) {
               ]
             },
             sections: [
-              { id: "problem-understanding", title: "Problem Overview", content: verified.description || "" },
+              { id: "problem-understanding", title: "Problem Overview", content: verified.statement || verified.description || "" },
               { id: "optimal-approach", title: "Optimal Strategy", content: verified.optimalExplain || "" }
             ],
             unavailableSections: []
@@ -781,7 +793,7 @@ function createUnifiedMentorProvider({
   env = process.env,
   geminiClient,
   openAiClient,
-  localKnowledgeBase = {}
+  localKnowledgeBase = CANONICAL_PROBLEMS
 } = {}) {
   const preferredProvider = String(env.AI_MENTOR_PROVIDER || "gemini").toLowerCase().trim();
 

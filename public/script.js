@@ -5190,18 +5190,27 @@ public:
     def isSubsequence(self, s: str, t: str) -> bool:
         return all(c in t for c in s)`
     },
-    timeComplexity: "O(n)",
+    timeComplexity: "O(|s| + |t|)",
     spaceComplexity: "O(1)",
-    timeExplain: "Linear scan through target string t of length n",
-    spaceExplain: "Uses two integer index pointers (i, j)",
-    bruteForceTitle: "Subsequence Generation",
-    bruteForceTime: "O(2^n)",
-    bruteForceSpace: "O(n)",
-    bruteForceExplain: "Recursively generates all 2^n subsequences of t and checks for s.",
+    auxiliarySpace: "O(1)",
+    totalSpace: "O(|s| + |t|)",
+    timeExplain: "Inner pointer index advances through t at most once across all outer iterations because index is never reset. Total comparisons are bounded by |s| + |t| (linear), NOT quadratic.",
+    spaceExplain: "Uses only constant integer pointer variables (i, index, c) with O(1) auxiliary space.",
+    bruteForceTitle: "Exhaustive Subsequence Generation",
+    bruteForceTime: "O(2^|t|)",
+    bruteForceSpace: "O(|t|)",
+    bruteForceExplain: "Recursively generates all 2^|t| possible subsequences of string t and checks if string s equals any generated subsequence.",
     optimalTitle: "Two Pointers Greedy Match",
-    optimalTime: "O(n)",
+    optimalTime: "O(|s| + |t|)",
     optimalSpace: "O(1)",
-    optimalExplain: "Scans t greedily matching characters of s in order. Preserves relative order with constant auxiliary space.",
+    optimalExplain: "Traverses string t with two pointers, greedily matching characters of s in order. Both student's solution and canonical solution share the same O(|s| + |t|) time and O(1) auxiliary space.",
+    edgeCases: [
+      { caseName: "Empty s (Empty Subsequence)", input: 's = "", t = "abc"', expected: "true", explanation: "An empty string is trivially a valid subsequence of any target string.", handledBy: "Loop condition / count comparison" },
+      { caseName: "Empty t with Non-Empty s", input: 's = "abc", t = ""', expected: "false", explanation: "A non-empty string cannot be formed from an empty target string.", handledBy: "Loop boundary check" },
+      { caseName: "Order-Preserved Subsequence", input: 's = "abc", t = "ahbgdc"', expected: "true", explanation: "Characters 'a', 'b', 'c' appear in matching relative order.", handledBy: "Two-pointer forward traversal" },
+      { caseName: "Missing / Mismatched Character", input: 's = "axc", t = "ahbgdc"', expected: "false", explanation: "Character 'x' is not present in t.", handledBy: "Pointer exhaust" },
+      { caseName: "Repeated Characters with Order Constraint", input: 's = "aaaa", t = "bbaaa"', expected: "false", explanation: "Only three 'a' characters exist in t, so four cannot be matched.", handledBy: "Match count verification" }
+    ],
     mistakeTitle: "Set / Unordered Lookup Error",
     mistakeDetail: "Checking whether all characters in s exist in t using sets or indexOf(c) without starting after previous matches ignores relative character ordering and duplicate frequencies (e.g. s = 'acb', t = 'ahbgdc').",
     mistakeFix: "Use two pointers i and j. Advance i only when s[i] == t[j], and advance j on every step.",
@@ -5380,6 +5389,11 @@ public:
       "In-Place Invariant: write <= read is always true, so writing never overwrites unread elements.",
       "Multi-digit Splitting: Counts like 12 must be written as '1' and '2'.",
       "Single Character Count: When count is 1, do NOT append '1'."
+    ],
+    edgeCases: [
+      { caseName: "Single Character Group", input: "chars = [\"a\"]", expected: "1 (chars = [\"a\"])", explanation: "Groups of length 1 append only the character with no count digit.", handledBy: "Group length check" },
+      { caseName: "Multi-Digit Group Count", input: "chars = [\"a\"] * 12", expected: "3 (chars = [\"a\",\"1\",\"2\"])", explanation: "Group lengths >= 10 are split into individual digit characters.", handledBy: "Digit formatting" },
+      { caseName: "All Distinct Characters", input: "chars = [\"a\",\"b\",\"c\"]", expected: "3 (chars = [\"a\",\"b\",\"c\"])", explanation: "Every character is unique; output length equals input length.", handledBy: "In-place write" }
     ]
   },
   "max-number-of-k-sum-pairs": {
@@ -5474,7 +5488,12 @@ public:
     optimalExplain: "Uses hash map to pair each element with its complement (k - x) in a single pass.",
     mistakeTitle: "Double Counting Pairs",
     mistakeDetail: "Counting all pairs that sum to k without tracking frequency decrements double counts elements or reuses the same element multiple times.",
-    mistakeFix: "Decrement the complement's frequency count immediately upon finding a pair."
+    mistakeFix: "Decrement the complement's frequency count immediately upon finding a pair.",
+    edgeCases: [
+      { caseName: "No Matching Pairs", input: "nums = [1,2,3], k = 10", expected: "0", explanation: "No pair sums to target k.", handledBy: "Zero operation count" },
+      { caseName: "All Duplicate Pairs", input: "nums = [2,2,2,2], k = 4", expected: "2", explanation: "Four 2s produce exactly two disjoint pairs.", handledBy: "Frequency decrement" },
+      { caseName: "Odd Frequency of Half-k", input: "nums = [3,3,3], k = 6", expected: "1", explanation: "Three 3s form one valid pair; the third 3 remains unpaired.", handledBy: "Integer division" }
+    ]
   }
 };
 
@@ -5766,12 +5785,12 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
         providerBadgeEl.textContent = "Provider: Local Educational Knowledge Engine";
         providerBadgeEl.className = "badge-provider provider-local";
       }
+    } else if (window._aiMentorConfigured || window._aiMentorProvider === "gemini") {
+      providerBadgeEl.textContent = "Provider: Gemini AI Mentor (Configured)";
+      providerBadgeEl.className = "badge-provider provider-gemini";
     } else if (data.hasLocalSolution !== false) {
       providerBadgeEl.textContent = "Provider: Local Educational Knowledge Engine";
       providerBadgeEl.className = "badge-provider provider-local";
-    } else if (window._aiMentorConfigured) {
-      providerBadgeEl.textContent = "Provider: Gemini AI Mentor";
-      providerBadgeEl.className = "badge-provider provider-gemini";
     } else {
       providerBadgeEl.textContent = "Provider: Local Engine (Unverified Problem)";
       providerBadgeEl.className = "badge-provider provider-unverified";
@@ -5797,15 +5816,13 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
     }
   }
 
-  // Complexity Values (Module 4 - Never blank dashes)
-  const derivedTime = analysisResult?.optimalComplexity?.timeComplexity ||
-                      (data.hasLocalSolution !== false ? (data.optimalTime || data.timeComplexity || "O(n)") : "O(n) [Standard Linear Bounds]");
-  const derivedSpace = analysisResult?.optimalComplexity?.spaceComplexity ||
-                       (data.hasLocalSolution !== false ? (data.optimalSpace || data.spaceComplexity || "O(n)") : "O(n) [Standard Memory Bounds]");
-  const derivedAux = analysisResult?.optimalComplexity?.auxiliarySpace ||
-                     (data.hasLocalSolution !== false ? (data.auxiliarySpace || "O(1)") : "O(1) [Auxiliary Memory]");
-  const derivedTotal = analysisResult?.optimalComplexity?.totalSpace ||
-                       (data.hasLocalSolution !== false ? (data.totalSpace || "O(n)") : "O(n) [Input + State Buffer]");
+  // Complexity Values (Module 4 - Grounded, never blank dashes)
+  const studentTime = analysisResult?.studentComplexity?.timeComplexity || analysisResult?.optimalComplexity?.timeComplexity;
+  const derivedTime = studentTime || (data.hasLocalSolution !== false ? (data.timeComplexity || data.optimalTime || "O(n)") : "O(n)");
+  const studentSpace = analysisResult?.studentComplexity?.spaceComplexity || analysisResult?.optimalComplexity?.spaceComplexity;
+  const derivedSpace = studentSpace || (data.hasLocalSolution !== false ? (data.spaceComplexity || data.optimalSpace || "O(1)") : "O(1)");
+  const derivedAux = analysisResult?.optimalComplexity?.auxiliarySpace || (data.hasLocalSolution !== false ? (data.auxiliarySpace || "O(1)") : "O(1)");
+  const derivedTotal = analysisResult?.optimalComplexity?.totalSpace || (data.hasLocalSolution !== false ? (data.totalSpace || derivedTime) : derivedTime);
 
   if (timeComplexityEl) timeComplexityEl.textContent = derivedTime;
   if (spaceComplexityEl) spaceComplexityEl.textContent = derivedSpace;
@@ -5814,8 +5831,8 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
   if (auxEl) auxEl.textContent = derivedAux;
   if (totalEl) totalEl.textContent = derivedTotal;
 
-  if (timeExplainEl) timeExplainEl.textContent = analysisResult?.optimalComplexity?.timeExplanation || analysisResult?.optimalComplexity?.explanation || data.timeExplain || "Optimal algorithmic traversal";
-  if (spaceExplainEl) spaceExplainEl.textContent = analysisResult?.optimalComplexity?.spaceExplanation || data.spaceExplain || "Auxiliary memory footprint";
+  if (timeExplainEl) timeExplainEl.textContent = analysisResult?.studentComplexity?.explanation || analysisResult?.optimalComplexity?.timeExplanation || analysisResult?.optimalComplexity?.explanation || data.timeExplain || "Optimal algorithmic traversal";
+  if (spaceExplainEl) spaceExplainEl.textContent = analysisResult?.studentComplexity?.spaceExplanation || analysisResult?.optimalComplexity?.spaceExplanation || data.spaceExplain || "Auxiliary memory footprint";
   const auxExplainEl = $("mentorAuxiliaryExplain");
   const totalExplainEl = $("mentorTotalExplain");
   if (auxExplainEl) auxExplainEl.textContent = analysisResult?.optimalComplexity?.auxiliaryExplanation || "Memory allocated beyond input parameters";
@@ -5911,14 +5928,30 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
   // Edge Cases Table (Module 4 & 5)
   const edgeCasesTbody = $("mentorEdgeCasesTableBody");
   if (edgeCasesTbody) {
-    const cases = (Array.isArray(analysisResult?.edgeCases) && analysisResult.edgeCases.length)
+    let cases = (Array.isArray(analysisResult?.edgeCases) && analysisResult.edgeCases.length)
       ? analysisResult.edgeCases
-      : (Array.isArray(data.edgeCases) ? data.edgeCases : [
-          { caseName: "Empty / Single Element", input: "nums = [1]", expected: "Handled gracefully", explanation: "Boundary length checks", handledBy: "Guard clause" },
-          { caseName: "Negative Values", input: "nums = [-5, -2, -1]", expected: "Correct arithmetic", explanation: "Signed math handles negatives", handledBy: "Invariant math" },
-          { caseName: "Duplicate Elements", input: "nums = [2, 2, 2]", expected: "Correct count/match", explanation: "Proper frequency handling", handledBy: "Hash table / frequency tracking" },
-          { caseName: "Large Scale Limits", input: "nums.length = 10⁵", expected: "Executes under 100ms", explanation: "Linear or sublinear runtime", handledBy: "O(n) / O(log n) algorithm" }
-        ]);
+      : (Array.isArray(data.edgeCases) && data.edgeCases.length ? data.edgeCases : null);
+
+    if (!cases) {
+      const isStringProblem = Boolean(
+        (data.topics && data.topics.includes("String")) ||
+        (data.slug && (data.slug.includes("subsequence") || data.slug.includes("string") || data.slug.includes("parentheses")))
+      );
+      if (isStringProblem) {
+        cases = [
+          { caseName: "Empty s (Empty Subsequence)", input: 's = "", t = "abc"', expected: "true", explanation: "An empty string is trivially a valid subsequence of any target string.", handledBy: "Loop condition / count comparison" },
+          { caseName: "Empty t with Non-Empty s", input: 's = "abc", t = ""', expected: "false", explanation: "A non-empty string cannot be formed from an empty target string.", handledBy: "Loop boundary check" },
+          { caseName: "Order-Preserved Subsequence", input: 's = "abc", t = "ahbgdc"', expected: "true", explanation: "Characters 'a', 'b', 'c' appear in matching relative order.", handledBy: "Two-pointer forward traversal" },
+          { caseName: "Missing / Mismatched Character", input: 's = "axc", t = "ahbgdc"', expected: "false", explanation: "Character 'x' is not present in t.", handledBy: "Pointer exhaust" },
+          { caseName: "Repeated Characters with Order Constraint", input: 's = "aaaa", t = "bbaaa"', expected: "false", explanation: "Only three 'a' characters exist in t, so four cannot be matched.", handledBy: "Match count verification" }
+        ];
+      } else {
+        cases = [
+          { caseName: "Minimal Scale Input", input: "Minimal constraints", expected: "Base case result", explanation: "Boundary checks", handledBy: "Guard clause" },
+          { caseName: "Large Scale Limits", input: "10^5 elements", expected: "Under execution budget", explanation: "Linear or sublinear runtime", handledBy: "Optimal algorithm" }
+        ];
+      }
+    }
     edgeCasesTbody.innerHTML = cases.map(c => `
       <tr>
         <td><strong>${escapeHTML(c.caseName || c.title || "Edge Case")}</strong></td>
@@ -5980,7 +6013,15 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
         if (data.hasLocalSolution === false && !analysisResult) {
           acceptedFixEl.innerHTML = "<strong>Performance Analysis:</strong> Your algorithm is correct. Generating deep algorithmic trade-off analysis with Gemini AI Mentor.";
         } else {
-          acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your algorithm is correct. Compare with the <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below to see if asymptotic speed can be enhanced from ${escapeHTML(analysisResult?.bruteForce?.timeComplexity || data.bruteForceTime || 'O(n²)')} to ${escapeHTML(analysisResult?.optimalComplexity?.timeComplexity || data.timeComplexity || 'O(n)')}.`;
+          const sTime = analysisResult?.studentComplexity?.timeComplexity || data.timeComplexity || "O(n)";
+          const oTime = analysisResult?.optimalComplexity?.timeComplexity || data.optimalTime || sTime;
+          const sSpace = analysisResult?.studentComplexity?.spaceComplexity || data.spaceComplexity || "O(1)";
+          const oSpace = analysisResult?.optimalComplexity?.spaceComplexity || data.optimalSpace || sSpace;
+          if (sTime === oTime && sSpace === oSpace) {
+            acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your solution is logically correct and achieves optimal asymptotic bounds (<strong>${escapeHTML(sTime)}</strong> time, <strong>${escapeHTML(sSpace)}</strong> auxiliary space). Compare with the canonical <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below for cleaner reference formatting.`;
+          } else {
+            acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your solution is logically correct. Compare with the <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below (time: <strong>${escapeHTML(oTime)}</strong>, space: <strong>${escapeHTML(oSpace)}</strong>).`;
+          }
         }
       }
     }
@@ -6048,11 +6089,20 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
   }
 
   // Structured Analysis or Mode-Specific Guidance
-  if (analysisResult && Array.isArray(analysisResult.sections)) {
+  if (analysisResult && (analysisResult.summary || (Array.isArray(analysisResult.sections) && analysisResult.sections.length))) {
     if (analysisHeadingEl) analysisHeadingEl.textContent = "AI Code Review Analysis";
     if (analysisBodyEl) {
-      analysisBodyEl.innerHTML = `<p><strong>Summary:</strong> ${escapeHTML(analysisResult.summary || '')}</p>` +
-        analysisResult.sections.map(s => `<div style="margin-top:12px;"><h4>${escapeHTML(s.title)}</h4><p>${escapeHTML(s.content)}</p></div>`).join("");
+      let html = "";
+      if (analysisResult.summary) {
+        html += `<p><strong>Summary:</strong> ${escapeHTML(analysisResult.summary)}</p>`;
+      }
+      if (analysisResult.studentApproach) {
+        html += `<p style="margin-top:8px;"><strong>Student Approach:</strong> ${escapeHTML(analysisResult.studentApproach)}</p>`;
+      }
+      if (Array.isArray(analysisResult.sections) && analysisResult.sections.length) {
+        html += analysisResult.sections.map(s => `<div style="margin-top:12px;"><h4>${escapeHTML(s.title)}</h4><p>${escapeHTML(s.content)}</p></div>`).join("");
+      }
+      analysisBodyEl.innerHTML = html;
     }
   } else {
     const modeTitles = {
@@ -6799,7 +6849,7 @@ async function openAiCodeMentorWorkspace(params = {}) {
 async function fetchOptimalSolutionForMentor(params, selectedLang, data) {
   const providerBadge = $("mentorProviderBadge");
   if (providerBadge) {
-    providerBadge.textContent = "Provider: Google Gemini AI Mentor";
+    providerBadge.textContent = "Provider: Gemini AI Mentor";
     providerBadge.className = "badge-provider provider-gemini";
   }
   const optimalTitleEl = $("mentorOptimalTitle");
@@ -6830,7 +6880,7 @@ async function fetchOptimalSolutionForMentor(params, selectedLang, data) {
       }
       if (providerBadge) {
         if (sol.provider === "gemini") {
-          providerBadge.textContent = "Provider: Google Gemini AI Mentor";
+          providerBadge.textContent = "Provider: Gemini AI Mentor";
           providerBadge.className = "badge-provider provider-gemini";
         } else if (sol.provider === "openai") {
           providerBadge.textContent = "Provider: OpenAI Live AI Mentor";
@@ -7568,9 +7618,16 @@ function normalizeMentorMode(rawMode) {
         const customDesc = $("mentorProblemDescInput")?.value?.trim();
 
         const isStandalone = Boolean(currentMentorProblem?.isStandalone);
-        const problemTitle = customTitle || (!isStandalone ? (currentMentorProblem?.title || data.title) : "Custom Code Review");
-        const problemSlug = customTitle ? null : (isStandalone ? null : (currentMentorProblem?.slug || data.slug || null));
-        const problemNumber = (!isStandalone && (currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number)) ? Number(currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number) : null;
+        const canonicalTitle = currentMentorProblem?.title || data.title || "";
+        const canonicalSlug = currentMentorProblem?.slug || data.slug || null;
+
+        const problemTitle = customTitle || (!isStandalone ? canonicalTitle : "Custom Code Review");
+        const problemSlug = (!isStandalone && canonicalSlug && (!customTitle || customTitle.toLowerCase() === canonicalTitle.toLowerCase()))
+          ? canonicalSlug
+          : (customTitle ? null : (isStandalone ? null : canonicalSlug));
+        const problemNumber = (!isStandalone && (currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number))
+          ? Number(currentMentorProblem?.number || currentMentorProblem?.frontendId || data.number)
+          : null;
         const problemUrl = customUrl || (isStandalone ? null : (currentMentorProblem?.url || null));
         const verdict = customVerdict || currentMentorProblem?.status || (currentMentorBuggyState ? "Wrong Answer" : "Accepted");
 
@@ -7581,7 +7638,7 @@ function normalizeMentorMode(rawMode) {
           problemSlug,
           problemNumber,
           problemUrl,
-          problemDescription: customDesc || null,
+          ...(customDesc ? { problemDescription: customDesc } : {}),
           submissionId: isStandalone ? null : (currentMentorProblem?.submissionId || null),
           verdict,
           mode: normalizeMentorMode(currentMentorMode),
@@ -7599,7 +7656,7 @@ function normalizeMentorMode(rawMode) {
 
           if (providerBadge) {
             if (rev.provider === "gemini") {
-              providerBadge.textContent = "Provider: Google Gemini AI Mentor";
+              providerBadge.textContent = "Provider: Gemini AI Mentor";
               providerBadge.className = "badge-provider provider-gemini";
             } else if (rev.provider === "openai") {
               providerBadge.textContent = "Provider: OpenAI Live AI Mentor";
