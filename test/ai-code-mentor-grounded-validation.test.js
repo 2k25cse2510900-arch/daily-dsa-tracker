@@ -251,7 +251,7 @@ test("Unified Provider selects Gemini when configured, and falls back to Local w
   });
 
   assert.equal(geminiResult.provider, "gemini");
-  assert.equal(geminiResult.model, "gemini-3.1-flash-lite");
+  assert.equal(geminiResult.model, "gemini-3.5-flash-lite");
   assert.equal(geminiResult.analysis.studentComplexity.timeComplexity, "O(|s| + |t|)");
 
   // Scenario 2: Gemini fails -> falls back to local knowledge provider

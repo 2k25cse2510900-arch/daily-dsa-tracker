@@ -349,7 +349,7 @@ function parseRetryAfterMs(error) {
  */
 function createGeminiMentorProvider({ env = process.env, client } = {}) {
   const apiKey = env.GEMINI_API_KEY;
-  const model = env.AI_MENTOR_GEMINI_MODEL || "gemini-3.1-flash-lite";
+  const model = env.AI_MENTOR_GEMINI_MODEL || "gemini-3.5-flash-lite";
   const timeoutMs = numberSetting(env.AI_MENTOR_TIMEOUT_MS, 45_000, 10, 120_000);
   const maxRetries = numberSetting(env.AI_MENTOR_MAX_RETRIES, 3, 0, 5);
   const baseDelayMs = numberSetting(env.AI_MENTOR_RETRY_BASE_MS, 1200, 100, 5000);
