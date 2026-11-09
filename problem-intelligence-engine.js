@@ -79,6 +79,49 @@ const CANONICAL_PROBLEMS = {
     whatItAsks: "Determine whether string s is a subsequence of string t by checking whether all characters of s appear in t in the exact relative order.",
     inputOutput: "Input: two strings s and t consisting of lowercase English letters. Output: boolean (true if s is subsequence of t, false otherwise).",
     keyObservation: "The inner pointer advances monotonically through t and is never reset across outer iterations. Thus the nested loops execute at most |s| + |t| steps in total, proving linear O(|s| + |t|) time rather than quadratic.",
+    coreObservations: [
+      "Subsequence characters in s must appear in t in the identical relative order (order is non-commutative).",
+      "Greedy matching the earliest occurrence of s[i] in t is always optimal because delaying a match never improves the ability to match subsequent characters.",
+      "A monotonic pointer through t ensures each character in t is scanned at most once without backtracking."
+    ],
+    improvedApproach: {
+      title: "Binary Search on Precomputed Index Lists (Multi-Query Stream)",
+      intuition: "Map each character in t to a sorted list of its positions. For each char in s, binary search for the smallest index greater than the previous match.",
+      algorithm: "1. Precompute a map from character to sorted list of indices in t. 2. For each character c in s, use binary search to find the first index > prevIndex. 3. If no valid index exists, return false. 4. Update prevIndex and continue.",
+      timeComplexity: "O(|t| + |s| log |t|)",
+      spaceComplexity: "O(|t|)",
+      tradeOff: "Requires O(|t|) extra memory and index preprocessing, but enables fast O(|s| log |t|) lookups when checking multiple query strings against static t."
+    },
+    correctnessReasoning: {
+      method: "Greedy Choice Property & Pointer Monotonicity",
+      explanation: "Matching the first possible occurrence of s[i] in t preserves the maximum remaining suffix of t for the subsequent characters s[i+1...]. Monotonic forward pointer advancement guarantees character ordering is preserved without backtracking.",
+      keyInvariant: "All characters s[0...c-1] have been found in t[0...index-1] in strict relative order.",
+      invariants: [
+        "All characters s[0...c-1] have been found in t[0...index-1] in strict relative order.",
+        "The index pointer in t advances strictly monotonically and is never reset across outer iterations."
+      ],
+      proofSketch: "By mathematical induction, matching earliest character preserves maximal freedom for subsequent characters without backtracking."
+    },
+    complexityAnalysis: {
+      timeComplexity: "O(|s| + |t|)",
+      spaceComplexity: "O(1)",
+      auxiliarySpace: "O(1)",
+      totalSpace: "O(|s| + |t|)",
+      derivation: "Outer loop runs at most |s| times. Inner pointer index increments at most |t| times across the entire algorithm because index is initialized once outside all loops and never reset. Total loop iterations are bounded by |s| + |t|.",
+      pointerMovement: "Monotonic forward traversal without backtracking.",
+      timeDerivation: "Outer loop runs at most |s| times. Inner pointer index increments at most |t| times across the entire algorithm because index is initialized once outside all loops and never reset. Total loop iterations are bounded by |s| + |t|.",
+      spaceDerivation: "O(1) auxiliary space: only two scalar pointer variables (i, index) are allocated."
+    },
+    codeComparison: [
+      { approach: "Brute Force (Subsequence Generation)", intuition: "Generate all 2^|t| subsequences and search for s.", timeComplexity: "O(2^|t|)", auxiliarySpace: "O(|t|)", verdict: "Exponential / TLE on large t", tradeOffs: "Exhaustive combinatorial overhead; infeasible for |t| > 25." },
+      { approach: "Student's Solution", intuition: "Two pointers with nested while loop advancing inner pointer monotonically.", timeComplexity: "O(|s| + |t|)", auxiliarySpace: "O(1)", verdict: "Accepted / Asymptotically Optimal", tradeOffs: "Optimal linear complexity; can be simplified to a single while loop." },
+      { approach: "Two Pointers Greedy Match", intuition: "Single while loop advancing pointers through s and t.", timeComplexity: "O(|s| + |t|)", auxiliarySpace: "O(1)", verdict: "Canonical Optimal Reference", tradeOffs: "Optimal asymptotic bounds with clean idiomatic pointer logic." }
+    ],
+    keyTakeaways: [
+      "Nested loops do not imply quadratic complexity if the inner index is never reset between outer iterations.",
+      "Greedy matching for subsequence verification is globally optimal due to the greedy choice property.",
+      "Subsequence checks preserve character ordering and handle duplicate occurrences automatically."
+    ],
     edgeCases: [
       { caseName: "Empty s (Empty Subsequence)", input: "s = \"\", t = \"abc\"", expected: "true", explanation: "An empty string is trivially a valid subsequence of any target string.", handledBy: "Loop condition / count comparison" },
       { caseName: "Empty t with Non-Empty s", input: "s = \"abc\", t = \"\"", expected: "false", explanation: "A non-empty string cannot be formed from an empty target string.", handledBy: "Loop boundary check" },
@@ -135,6 +178,48 @@ const CANONICAL_PROBLEMS = {
     whatItAsks: "Compress repeating consecutive characters in chars in-place and return the new length of the compressed array.",
     inputOutput: "Input: character array chars. Output: integer new length. Modifies chars array in-place.",
     keyObservation: "The write pointer never overtakes the read pointer because every compressed group representation is equal to or shorter than the raw consecutive sequence.",
+    coreObservations: [
+      "Consecutive identical characters form contiguous runs, allowing single-pass read and write pointers.",
+      "The write pointer never overtakes the read pointer because every compressed run length representation is equal to or shorter than the raw character group.",
+      "Single-character groups do not append a count digit, whereas counts >= 10 must be split into multiple ASCII digit characters."
+    ],
+    improvedApproach: {
+      title: "Auxiliary Buffer Copy",
+      intuition: "Accumulate character runs and formatted digit counts into an auxiliary dynamic buffer, then copy back.",
+      algorithm: "1. Iterate through array counting consecutive duplicates. 2. Append character and count (> 1) to dynamic buffer. 3. Copy buffer contents back into chars array and return buffer length.",
+      timeComplexity: "O(n)",
+      spaceComplexity: "O(n)",
+      tradeOff: "Eliminates complex in-place overwrite indexing, but allocates O(n) auxiliary memory violating the constant O(1) space requirement."
+    },
+    correctnessReasoning: {
+      method: "In-Place Array Compaction Invariant",
+      explanation: "Since every compressed group of size L >= 1 occupies at most 1 + floor(log10(L)) slots in chars (which is <= L for all positive integers), write <= read holds at every iteration, guaranteeing that uncompressed characters are never overwritten prematurely.",
+      keyInvariant: "chars[0...write-1] contains the valid in-place compressed representation of all groups fully traversed by read pointer.",
+      invariants: [
+        "write <= read holds at every iteration, guaranteeing that uncompressed characters are never overwritten prematurely.",
+        "chars[0...write-1] contains the valid in-place compressed representation of all groups fully traversed by read pointer."
+      ],
+      proofSketch: "Since every compressed group of size L >= 1 occupies at most 1 + floor(log10(L)) slots in chars (which is <= L for all positive integers), write <= read holds at every iteration, guaranteeing that uncompressed characters are never overwritten prematurely."
+    },
+    complexityAnalysis: {
+      timeComplexity: "O(n)",
+      spaceComplexity: "O(1)",
+      auxiliarySpace: "O(1)",
+      totalSpace: "O(n)",
+      derivation: "Read pointer scans each character in chars exactly once. Write pointer writes each compressed character and digit at most once. Total operations scale linearly with n.",
+      pointerMovement: "Forward two-pointer compaction where write <= read.",
+      timeDerivation: "Read pointer scans each character in chars exactly once. Write pointer writes each compressed character and digit at most once. Total operations scale linearly with n.",
+      spaceDerivation: "Modifies array strictly in-place; uses only write and read pointers in O(1) auxiliary space."
+    },
+    codeComparison: [
+      { approach: "Auxiliary Buffer Copy", intuition: "Build compressed representation in an external StringBuilder or list, then copy back.", timeComplexity: "O(n)", auxiliarySpace: "O(n)", verdict: "Valid but violates constant space constraint", tradeOffs: "Simple logic but allocates O(n) extra memory." },
+      { approach: "Two Pointers In-Place Run-Length Encoding", intuition: "Maintain read and write pointers, writing character and formatted digits directly in chars.", timeComplexity: "O(n)", auxiliarySpace: "O(1)", verdict: "Canonical Optimal Reference", tradeOffs: "Satisfies in-place O(1) auxiliary space constraint with single-pass speed." }
+    ],
+    keyTakeaways: [
+      "When modifying an array in-place, mathematically verify that write <= read to prevent clobbering unread data.",
+      "Count values >= 10 must be converted to individual character digits in chars.",
+      "Two pointers allow in-place run-length compaction with O(1) auxiliary memory."
+    ],
     edgeCases: [
       { caseName: "Single Character Group", input: "chars = [\"a\"]", expected: "1 (chars = [\"a\"])", explanation: "Groups of length 1 append only the character with no count digit.", handledBy: "Group length check" },
       { caseName: "Multi-Digit Group Count", input: "chars = [\"a\"] * 12", expected: "3 (chars = [\"a\",\"1\",\"2\"])", explanation: "Group lengths >= 10 are split into individual digit characters.", handledBy: "Digit formatting" },
@@ -188,6 +273,52 @@ const CANONICAL_PROBLEMS = {
     whatItAsks: "Find the maximum number of operations where two numbers summing to k are picked and removed.",
     inputOutput: "Input: integer array nums, integer k. Output: integer maximum paired operations.",
     keyObservation: "Each element can participate in at most one removal. Greedy pairing of complements target - num gives the optimal maximum operations count.",
+    coreObservations: [
+      "Each element can participate in at most one removal operation.",
+      "The complement required for any element x to sum to k is exactly k - x.",
+      "A hash frequency map allows O(1) complement checks, reducing pairwise searches from O(n²) to O(n).",
+      "Alternatively, sorting the array enables a two-pointer approach converging from opposite ends with O(1) auxiliary space."
+    ],
+    improvedApproach: {
+      title: "Sort and Two Pointers",
+      intuition: "Sorting array allows converging two pointers from both ends to find pairs summing to k without auxiliary frequency tracking.",
+      algorithm: "Sort the array in ascending order. Place left pointer at 0 and right pointer at n - 1. If sum == k, increment count, left++, right--. If sum < k, left++. If sum > k, right--.",
+      limitationAddressed: "Eliminates the O(n) auxiliary memory overhead of the frequency hash table.",
+      timeComplexity: "O(n log n)",
+      spaceComplexity: "O(1)",
+      explanation: "Trades logarithmic time for constant auxiliary space.",
+      tradeOff: "Trades O(n log n) sorting time for constant O(1) auxiliary space."
+    },
+    correctnessReasoning: {
+      method: "Disjoint Greedy Pair Consumption",
+      explanation: "Greedily matching available complements target - x as early as possible yields the maximum number of disjoint pairs. Consuming a pair removes both numbers from future operations, ensuring no number is counted twice.",
+      keyInvariant: "Every counted pair sums to k, and all participating elements are strictly disjoint.",
+      invariants: [
+        "Every counted pair sums to k, and all participating elements are strictly disjoint.",
+        "Each element in nums is consumed in at most one pair."
+      ],
+      proofSketch: "Greedily matching available complements target - x as early as possible yields the maximum number of disjoint pairs. Consuming a pair removes both numbers from future operations, ensuring no number is counted twice."
+    },
+    complexityAnalysis: {
+      timeComplexity: "O(n)",
+      spaceComplexity: "O(n)",
+      auxiliarySpace: "O(n)",
+      totalSpace: "O(n)",
+      derivation: "A single linear pass traverses nums to look up and decrement complement counts in O(1) average time per element.",
+      pointerMovement: "Single pass hash table scan or opposite-end two-pointer convergence.",
+      timeDerivation: "A single linear pass traverses nums to look up and decrement complement counts in O(1) average time per element.",
+      spaceDerivation: "Hash table stores element frequencies for up to n numbers: O(n) auxiliary space."
+    },
+    codeComparison: [
+      { approach: "Brute Force (Nested Search)", intuition: "Compare all (i, j) pairs with nested loops and mark elements used.", timeComplexity: "O(n²)", auxiliarySpace: "O(n)", verdict: "TLE on large n (10^5 elements)", tradeOffs: "Exhaustive pair checks require up to 10^10 operations." },
+      { approach: "Sort + Two Pointers (Improved)", intuition: "Sort array and converge pointers from opposite ends.", timeComplexity: "O(n log n)", auxiliarySpace: "O(1)", verdict: "Accepted / Memory Efficient", tradeOffs: "Requires O(n log n) sorting time but uses only O(1) auxiliary memory." },
+      { approach: "Hash Map Frequencies (Optimal)", intuition: "Track available frequencies and greedily pair with complement k - x.", timeComplexity: "O(n)", auxiliarySpace: "O(n)", verdict: "Canonical Optimal Reference", tradeOffs: "Achieves optimal O(n) linear execution time using O(n) hash table space." }
+    ],
+    keyTakeaways: [
+      "Complement lookup k - x reduces pairwise combinatorial search to linear frequency aggregation.",
+      "Sorting enables two-pointer convergence when memory is constrained to O(1) auxiliary space.",
+      "Each element must be removed or marked upon forming a pair to prevent reuse."
+    ],
     edgeCases: [
       { caseName: "No Matching Pairs", input: "nums = [1,2,3], k = 10", expected: "0", explanation: "No two elements sum up to target k.", handledBy: "Zero operation count" },
       { caseName: "All Duplicate Pairs", input: "nums = [2,2,2,2], k = 4", expected: "2", explanation: "Four 2s produce exactly two disjoint pairs.", handledBy: "Frequency decrement" },
@@ -699,7 +830,13 @@ function createCanonicalProblemModel(data = {}) {
     whatItAsks: data.whatItAsks || null,
     inputOutput: data.inputOutput || null,
     keyObservation: data.keyObservation || null,
-    edgeCases: Array.isArray(data.edgeCases) ? data.edgeCases : []
+    edgeCases: Array.isArray(data.edgeCases) ? data.edgeCases : [],
+    coreObservations: Array.isArray(data.coreObservations) ? data.coreObservations : (data.keyObservation ? [data.keyObservation] : []),
+    improvedApproach: data.improvedApproach || null,
+    correctnessReasoning: data.correctnessReasoning || null,
+    complexityAnalysis: data.complexityAnalysis || null,
+    codeComparison: Array.isArray(data.codeComparison) ? data.codeComparison : (Array.isArray(data.comparison) ? data.comparison : []),
+    keyTakeaways: Array.isArray(data.keyTakeaways) ? data.keyTakeaways : []
   };
 }
 
@@ -920,7 +1057,16 @@ function buildGeminiPromptContext(problem, language) {
    - Auxiliary space must reflect only extra allocated memory beyond inputs: integer variables or pointers count as O(1) auxiliary space.
    - For brute-force analysis, describe a genuine valid baseline algorithm with its true complexity (e.g. for Subsequence, generating all 2^|t| subsequences in O(2^|t|) time). Never label a broken partial check as brute force.
    - When student code has already achieved optimal asymptotic bounds, acknowledge that honestly in the comparison: do not claim an asymptotic speedup (e.g. from O(n²) or O(2^n) to O(n)) unless the student's code actually exhibits that baseline bottleneck.
-   - Edge cases must match the actual problem input types and domain (e.g., empty string, single character, mismatched order, duplicate counts). Never output unrelated array examples for string problems.`;
+   - Edge cases must match the actual problem input types and domain (e.g., empty string, single character, mismatched order, duplicate counts). Never output unrelated array examples for string problems.
+10. STAGED AI REASONING PIPELINE (MODULE 2):
+    - Stage 1 (Problem Understanding): State what must be returned, exact input/output types, and core requirements in plain English.
+    - Stage 2 (Core Observations): Identify mathematical or sequence properties, monotonicity, invariants, ordering, or frequency constraints that govern the problem. Populate coreObservations array.
+    - Stage 3 (Brute Force Reasoning): Describe a genuine baseline approach with its asymptotic complexity and why it falls short on upper constraints.
+    - Stage 4 (Improved Approach): If a meaningful intermediate strategy exists (e.g., sorting vs hash table), explain the tradeoff in improvedApproach; if redundant or none, set to null.
+    - Stage 5 (Optimal Approach): Detail the optimal algorithm, its core invariant, and step-by-step logic with complete optimal code.
+    - Stage 6 (Correctness Reasoning): Prove why the algorithm works using loop invariants, greedy choice property, induction, or monotonic pointer arguments in correctnessReasoning.
+    - Stage 7 (Complexity Reasoning): Derive time and auxiliary space from actual pointer steps and allocations in complexityAnalysis. Distinguish auxiliary memory from total memory.
+    - Stage 8 (Edge Cases & Constraints): Include boundary cases, empty inputs, single elements, duplicates, and extreme constraints directly from problem specs. Populate codeComparison and keyTakeaways.`;
 
   return context;
 }

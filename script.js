@@ -5831,8 +5831,8 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
   if (auxEl) auxEl.textContent = derivedAux;
   if (totalEl) totalEl.textContent = derivedTotal;
 
-  if (timeExplainEl) timeExplainEl.textContent = analysisResult?.studentComplexity?.explanation || analysisResult?.optimalComplexity?.timeExplanation || analysisResult?.optimalComplexity?.explanation || data.timeExplain || "Optimal algorithmic traversal";
-  if (spaceExplainEl) spaceExplainEl.textContent = analysisResult?.studentComplexity?.spaceExplanation || analysisResult?.optimalComplexity?.spaceExplanation || data.spaceExplain || "Auxiliary memory footprint";
+  if (timeExplainEl) timeExplainEl.textContent = analysisResult?.complexityAnalysis?.timeDerivation || analysisResult?.studentComplexity?.explanation || analysisResult?.optimalComplexity?.timeExplanation || analysisResult?.optimalComplexity?.explanation || data.timeExplain || "Optimal algorithmic traversal";
+  if (spaceExplainEl) spaceExplainEl.textContent = analysisResult?.complexityAnalysis?.spaceDerivation || analysisResult?.studentComplexity?.spaceExplanation || analysisResult?.optimalComplexity?.spaceExplanation || data.spaceExplain || "Auxiliary memory footprint";
   const auxExplainEl = $("mentorAuxiliaryExplain");
   const totalExplainEl = $("mentorTotalExplain");
   if (auxExplainEl) auxExplainEl.textContent = analysisResult?.optimalComplexity?.auxiliaryExplanation || "Memory allocated beyond input parameters";
@@ -5854,7 +5854,7 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
     constraintsEl.textContent = analysisResult?.problemUnderstanding?.constraints || data.constraints || "1 <= N <= 10^5, fits in standard 32/64-bit integer limits.";
   }
   if (keyObsEl) {
-    keyObsEl.textContent = analysisResult?.problemUnderstanding?.keyObservation || data.keyObservation || "Invariants allow reducing search space or trading memory for linear speed.";
+    keyObsEl.textContent = analysisResult?.problemUnderstanding?.keyObservation || (Array.isArray(analysisResult?.coreObservations) && analysisResult.coreObservations[0]) || data.keyObservation || (Array.isArray(data.coreObservations) && data.coreObservations[0]) || "Invariants allow reducing search space or trading memory for linear speed.";
   }
 
   // Problem Description Context
@@ -5984,9 +5984,13 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
 
   // Takeaways
   if (takeawaysListEl) {
-    const takeaways = (Array.isArray(analysisResult?.takeaways) && analysisResult.takeaways.length)
-      ? analysisResult.takeaways
-      : (Array.isArray(data.takeaways) ? data.takeaways : []);
+    const takeaways = (Array.isArray(analysisResult?.keyTakeaways) && analysisResult.keyTakeaways.length)
+      ? analysisResult.keyTakeaways
+      : ((Array.isArray(analysisResult?.takeaways) && analysisResult.takeaways.length)
+        ? analysisResult.takeaways
+        : (Array.isArray(data.keyTakeaways) && data.keyTakeaways.length
+          ? data.keyTakeaways
+          : (Array.isArray(data.takeaways) ? data.takeaways : [])));
     if (takeaways.length) {
       takeawaysListEl.innerHTML = takeaways.map(t => `<li><span class="takeaway-bullet">&#10003;</span> ${escapeHTML(t)}</li>`).join("");
     }
@@ -6017,10 +6021,11 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
           const oTime = analysisResult?.optimalComplexity?.timeComplexity || data.optimalTime || sTime;
           const sSpace = analysisResult?.studentComplexity?.spaceComplexity || data.spaceComplexity || "O(1)";
           const oSpace = analysisResult?.optimalComplexity?.spaceComplexity || data.optimalSpace || sSpace;
+          const recText = analysisResult?.codeComparison?.pedagogicalRecommendation ? ` ${escapeHTML(analysisResult.codeComparison.pedagogicalRecommendation)}` : "";
           if (sTime === oTime && sSpace === oSpace) {
-            acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your solution is logically correct and achieves optimal asymptotic bounds (<strong>${escapeHTML(sTime)}</strong> time, <strong>${escapeHTML(sSpace)}</strong> auxiliary space). Compare with the canonical <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below for cleaner reference formatting.`;
+            acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your solution is logically correct and achieves optimal asymptotic bounds (<strong>${escapeHTML(sTime)}</strong> time, <strong>${escapeHTML(sSpace)}</strong> auxiliary space). Compare with the canonical <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below for cleaner reference formatting.${recText}`;
           } else {
-            acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your solution is logically correct. Compare with the <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below (time: <strong>${escapeHTML(oTime)}</strong>, space: <strong>${escapeHTML(oSpace)}</strong>).`;
+            acceptedFixEl.innerHTML = `<strong>Performance Analysis:</strong> Your solution is logically correct. Compare with the <strong>${escapeHTML(analysisResult?.optimalApproach?.title || data.optimalTitle || "Optimal Solution")}</strong> below (time: <strong>${escapeHTML(oTime)}</strong>, space: <strong>${escapeHTML(oSpace)}</strong>).${recText}`;
           }
         }
       }
@@ -6089,7 +6094,7 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
   }
 
   // Structured Analysis or Mode-Specific Guidance
-  if (analysisResult && (analysisResult.summary || (Array.isArray(analysisResult.sections) && analysisResult.sections.length))) {
+  if (analysisResult && (analysisResult.summary || (Array.isArray(analysisResult.sections) && analysisResult.sections.length) || analysisResult.coreObservations || analysisResult.correctnessReasoning)) {
     if (analysisHeadingEl) analysisHeadingEl.textContent = "AI Code Review Analysis";
     if (analysisBodyEl) {
       let html = "";
@@ -6099,8 +6104,54 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
       if (analysisResult.studentApproach) {
         html += `<p style="margin-top:8px;"><strong>Student Approach:</strong> ${escapeHTML(analysisResult.studentApproach)}</p>`;
       }
+      if (Array.isArray(analysisResult.coreObservations) && analysisResult.coreObservations.length) {
+        html += `<div style="margin-top:12px;"><h4>Core Algorithmic Observations</h4><ul>` +
+          analysisResult.coreObservations.map(o => `<li>${escapeHTML(o)}</li>`).join("") +
+          `</ul></div>`;
+      }
+      if (analysisResult.correctnessReasoning) {
+        const cr = analysisResult.correctnessReasoning;
+        html += `<div style="margin-top:12px;"><h4>Correctness &amp; Invariant Reasoning</h4>`;
+        if (cr.proofSketch) html += `<p>${escapeHTML(cr.proofSketch)}</p>`;
+        if (Array.isArray(cr.invariants) && cr.invariants.length) {
+          html += `<ul>${cr.invariants.map(inv => `<li><code>${escapeHTML(inv)}</code></li>`).join("")}</ul>`;
+        }
+        html += `</div>`;
+      }
+      if (analysisResult.improvedApproach) {
+        const imp = analysisResult.improvedApproach;
+        html += `<div style="margin-top:12px;"><h4>Improved / Intermediate Approach: ${escapeHTML(imp.title || "Alternative Strategy")}</h4>`;
+        if (imp.intuition) html += `<p><strong>Intuition:</strong> ${escapeHTML(imp.intuition)}</p>`;
+        if (imp.algorithm) html += `<p><strong>Algorithm:</strong> ${escapeHTML(imp.algorithm)}</p>`;
+        if (imp.timeComplexity || imp.spaceComplexity) {
+          html += `<p><strong>Complexity:</strong> <code>${escapeHTML(imp.timeComplexity || "")}</code> time, <code>${escapeHTML(imp.spaceComplexity || "")}</code> space</p>`;
+        }
+        if (imp.tradeOff) html += `<p><strong>Trade-Off:</strong> ${escapeHTML(imp.tradeOff)}</p>`;
+        html += `</div>`;
+      }
+      if (analysisResult.codeComparison) {
+        const cc = analysisResult.codeComparison;
+        html += `<div style="margin-top:12px;"><h4>Code Comparison &amp; Paradigm Analysis</h4>`;
+        if (cc.asymptoticEquivalence !== undefined) {
+          html += `<p><strong>Asymptotically Equivalent:</strong> ${cc.asymptoticEquivalence ? "Yes (Matches Canonical Class)" : "No (Asymptotic Gap Exists)"}</p>`;
+        }
+        if (Array.isArray(cc.similarities) && cc.similarities.length) {
+          html += `<p style="margin-top:4px;"><strong>Algorithmic Similarities:</strong></p><ul>${cc.similarities.map(s => `<li>${escapeHTML(s)}</li>`).join("")}</ul>`;
+        }
+        if (Array.isArray(cc.differences) && cc.differences.length) {
+          html += `<p style="margin-top:4px;"><strong>Key Differences:</strong></p><ul>${cc.differences.map(d => `<li>${escapeHTML(d)}</li>`).join("")}</ul>`;
+        }
+        if (cc.pedagogicalRecommendation) {
+          html += `<p style="margin-top:4px;"><strong>Pedagogical Advice:</strong> ${escapeHTML(cc.pedagogicalRecommendation)}</p>`;
+        }
+        html += `</div>`;
+      }
       if (Array.isArray(analysisResult.sections) && analysisResult.sections.length) {
-        html += analysisResult.sections.map(s => `<div style="margin-top:12px;"><h4>${escapeHTML(s.title)}</h4><p>${escapeHTML(s.content)}</p></div>`).join("");
+        const handledIds = new Set(["summary", "core-observations", "improved-approach", "correctness-reasoning"]);
+        const remainingSections = analysisResult.sections.filter(s => !handledIds.has(s.id));
+        if (remainingSections.length) {
+          html += remainingSections.map(s => `<div style="margin-top:12px;"><h4>${escapeHTML(s.title)}</h4><p>${escapeHTML(s.content)}</p></div>`).join("");
+        }
       }
       analysisBodyEl.innerHTML = html;
     }

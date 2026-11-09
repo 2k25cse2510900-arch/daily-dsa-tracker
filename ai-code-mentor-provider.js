@@ -202,6 +202,68 @@ const UNIVERSAL_ANALYSIS_SCHEMA = Object.freeze({
     },
     limitations: { type: ["string", "null"] },
     summary: { type: "string" },
+    coreObservations: {
+      type: "array",
+      items: { type: "string" }
+    },
+    improvedApproach: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        algorithm: { type: "string" },
+        limitationAddressed: { type: "string" },
+        timeComplexity: { type: "string" },
+        spaceComplexity: { type: "string" },
+        explanation: { type: "string" }
+      }
+    },
+    correctnessReasoning: {
+      type: "object",
+      properties: {
+        method: { type: "string" },
+        explanation: { type: "string" },
+        keyInvariant: { type: "string" }
+      }
+    },
+    complexityAnalysis: {
+      type: "object",
+      properties: {
+        timeComplexity: { type: "string" },
+        spaceComplexity: { type: "string" },
+        auxiliarySpace: { type: "string" },
+        totalSpace: { type: "string" },
+        derivation: { type: "string" },
+        pointerMovement: { type: "string" }
+      }
+    },
+    codeComparison: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          approach: { type: "string" },
+          intuition: { type: "string" },
+          timeComplexity: { type: "string" },
+          auxiliarySpace: { type: "string" },
+          verdict: { type: "string" },
+          tradeOffs: { type: "string" }
+        }
+      }
+    },
+    keyTakeaways: {
+      type: "array",
+      items: { type: "string" }
+    },
+    provenance: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+        model: { type: "string" },
+        generatedAt: { type: "string" },
+        isVerifiedCurriculum: { type: "boolean" },
+        confidence: { type: "string" }
+      }
+    },
     sections: {
       type: "array",
       items: {
@@ -213,7 +275,8 @@ const UNIVERSAL_ANALYSIS_SCHEMA = Object.freeze({
               "problem-understanding", "student-approach", "step-by-step-logic", "time-complexity", "space-complexity",
               "strengths", "weaknesses", "edge-cases", "optimization", "alternative-approach", "dsa-concepts",
               "brute-force", "optimal-approach", "optimized-code", "complexity-comparison", "counterexample",
-              "mistake-analysis", "tle-analysis", "runtime-error", "compilation-error", "key-takeaways", "animatic-trace"
+              "mistake-analysis", "tle-analysis", "runtime-error", "compilation-error", "key-takeaways", "animatic-trace",
+              "core-observations", "improved-approach", "correctness-reasoning"
             ]
           },
           title: { type: "string" },
@@ -364,7 +427,7 @@ function createGeminiMentorProvider({ env = process.env, client } = {}) {
   return {
     providerName: "gemini",
     model,
-    async analyze({ instructions, input, problemContext }) {
+    async analyze({ instructions, input, problemContext, problemSlug }) {
       const prompt = `${instructions}\n\n${problemContext ? `PROBLEM CONTEXT:\n${problemContext}\n\n` : ""}STUDENT SUBMISSION AND TASK:\n${input}\n\nCRITICAL: Respond ONLY with a valid JSON object strictly matching the required schema. Ensure optimalCode contains complete, non-generic, working code in the requested language for this exact problem.`;
 
       const startTime = Date.now();
@@ -413,6 +476,15 @@ function createGeminiMentorProvider({ env = process.env, client } = {}) {
 
           parsed.provider = "gemini";
           parsed.model = model;
+          if (!parsed.provenance) {
+            parsed.provenance = {
+              provider: "gemini",
+              model,
+              generatedAt: new Date().toISOString(),
+              isVerifiedCurriculum: Boolean(problemSlug && CANONICAL_PROBLEMS[problemSlug]),
+              confidence: "high"
+            };
+          }
           return { analysis: parsed, usage, model, provider: "gemini" };
         } catch (error) {
           lastError = error;
@@ -703,6 +775,40 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
               { approach: "Student Solution", timeComplexity: verified.timeComplexity || "O(n)", spaceComplexity: verified.spaceComplexity || "O(1)", verdict: "Accepted logic" },
               { approach: verified.optimalTitle || "Optimal Solution", timeComplexity: verified.optimalTime || verified.timeComplexity || "O(n)", spaceComplexity: verified.optimalSpace || "O(1)", verdict: "Optimal template" }
             ],
+            codeComparison: verified.codeComparison || [
+              { approach: "Brute Force", intuition: verified.bruteForceExplain || "Exhaustive evaluation", timeComplexity: verified.bruteForceTime || "O(n²)", auxiliarySpace: verified.bruteForceSpace || "O(1)", verdict: "Valid baseline", tradeOffs: "Exhaustive combinatorial overhead" },
+              { approach: "Student Solution", intuition: verified.studentApproach || "Submitted logic", timeComplexity: verified.timeComplexity || "O(n)", auxiliarySpace: verified.spaceComplexity || "O(1)", verdict: "Accepted logic", tradeOffs: "Direct implementation" },
+              { approach: verified.optimalTitle || "Optimal Solution", intuition: verified.optimalExplain || "Optimal invariant traversal", timeComplexity: verified.optimalTime || verified.timeComplexity || "O(n)", auxiliarySpace: verified.optimalSpace || "O(1)", verdict: "Optimal template", tradeOffs: "Minimal pointer and auxiliary footprint" }
+            ],
+            coreObservations: verified.coreObservations || [
+              verified.keyObservation || "Maintain core algorithmic invariants."
+            ],
+            improvedApproach: verified.improvedApproach || null,
+            correctnessReasoning: verified.correctnessReasoning || {
+              method: "Invariant Verification",
+              explanation: verified.optimalExplain || "Preserves problem invariants.",
+              keyInvariant: verified.keyObservation || "Invariants hold throughout execution."
+            },
+            complexityAnalysis: verified.complexityAnalysis || {
+              timeComplexity: verified.optimalTime || verified.timeComplexity || "O(n)",
+              spaceComplexity: verified.optimalSpace || verified.spaceComplexity || "O(1)",
+              auxiliarySpace: verified.auxiliarySpace || "O(1)",
+              totalSpace: verified.totalSpace || "O(n)",
+              derivation: verified.timeExplain || "Sequence traversal.",
+              pointerMovement: "Monotonic forward traversal."
+            },
+            keyTakeaways: verified.keyTakeaways || [
+              "Analyze actual pointer movement to establish true bounds.",
+              "Greedy selection is optimal when greedy-choice property holds.",
+              "Preserve problem-specific constraints and in-place invariants."
+            ],
+            provenance: {
+              provider: "local",
+              model: "local-curriculum-v1",
+              generatedAt: new Date().toISOString(),
+              isVerifiedCurriculum: true,
+              confidence: "high"
+            },
             summary: `Educational curriculum analysis for ${verified.title}.`,
             problemUnderstanding: {
               whatItAsks: verified.whatItAsks || `Find the optimal solution for ${verified.title}.`,
