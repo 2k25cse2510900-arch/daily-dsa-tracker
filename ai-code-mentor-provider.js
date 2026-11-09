@@ -4,6 +4,7 @@ const { GoogleGenAI } = require("@google/genai");
 const OpenAI = require("openai");
 const { CANONICAL_PROBLEMS, retrieveProblem } = require("./problem-intelligence-engine");
 const { analyzeStudentCode } = require("./student-code-intelligence");
+const { generateMultiTierSolutions } = require("./solution-generation-engine");
 
 const ANALYSIS_SCHEMA = Object.freeze({
   type: "object",
@@ -364,6 +365,78 @@ const UNIVERSAL_ANALYSIS_SCHEMA = Object.freeze({
           reason: { type: "string" }
         }
       }
+    },
+    solutions: {
+      type: "object",
+      properties: {
+        bruteForce: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            approach: { type: "string" },
+            algorithm: { type: "string" },
+            code: { type: "string" },
+            timeComplexity: { type: "string" },
+            spaceComplexity: { type: "string" },
+            auxiliarySpace: { type: "string" },
+            totalSpace: { type: "string" },
+            limitations: { type: "string" },
+            constraintBreakdown: { type: "string" },
+            tradeOffs: { type: "string" },
+            unavailableReason: { type: ["string", "null"] },
+            executionDisclaimer: { type: "string" }
+          }
+        },
+        improved: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            approach: { type: "string" },
+            algorithm: { type: "string" },
+            code: { type: "string" },
+            timeComplexity: { type: "string" },
+            spaceComplexity: { type: "string" },
+            auxiliarySpace: { type: "string" },
+            totalSpace: { type: "string" },
+            limitations: { type: "string" },
+            bottleneckRemoved: { type: "string" },
+            tradeOffs: { type: "string" },
+            unavailableReason: { type: ["string", "null"] },
+            executionDisclaimer: { type: "string" }
+          }
+        },
+        optimal: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            approach: { type: "string" },
+            algorithm: { type: "string" },
+            code: { type: "string" },
+            timeComplexity: { type: "string" },
+            spaceComplexity: { type: "string" },
+            auxiliarySpace: { type: "string" },
+            totalSpace: { type: "string" },
+            whyItWorks: { type: "string" },
+            keyInvariants: { type: "string" },
+            correctnessProof: { type: "string" },
+            tradeOffs: { type: "string" },
+            unavailableReason: { type: ["string", "null"] },
+            executionDisclaimer: { type: "string" }
+          }
+        }
+      }
+    },
+    solutionComparison: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          property: { type: "string" },
+          bruteForce: { type: "string" },
+          improved: { type: "string" },
+          optimal: { type: "string" }
+        }
+      }
     }
   }
 });
@@ -411,6 +484,25 @@ function validateSchemaContract(schema, path = "root") {
  */
 function adaptSchemaForGemini(schema = UNIVERSAL_ANALYSIS_SCHEMA) {
   const cloned = JSON.parse(JSON.stringify(schema));
+  function sanitizeForGemini(node) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node.type)) {
+      const hasNull = node.type.includes("null");
+      const primaryType = node.type.find(t => t !== "null") || "string";
+      node.type = primaryType;
+      if (hasNull) node.nullable = true;
+    }
+    if (node.properties && typeof node.properties === "object") {
+      for (const val of Object.values(node.properties)) {
+        sanitizeForGemini(val);
+      }
+    }
+    if (node.items) {
+      if (Array.isArray(node.items)) node.items.forEach(sanitizeForGemini);
+      else sanitizeForGemini(node.items);
+    }
+  }
+  sanitizeForGemini(cloned);
   validateSchemaContract(cloned, "gemini_response_schema");
   return cloned;
 }
@@ -806,6 +898,13 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
       });
 
       if (isVerified) {
+        const multiTier = generateMultiTierSolutions({
+          problem: verified,
+          language: lang,
+          studentCode: rawCode,
+          verdict: verdict || "Accepted"
+        });
+
         return {
           provider: "local",
           model: "local-curriculum-v1",
@@ -814,6 +913,9 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
             model: "local-curriculum-v1",
             problemTitle: verified.title || "Curriculum Problem",
             language: lang,
+            solutions: multiTier.solutions,
+            solutionComparison: multiTier.solutionComparison,
+            studentComparison: multiTier.studentComparison,
             studentApproach: codeIntel.overview || verified.studentApproach || `Local curriculum reference analysis for ${verified.title}`,
             correctnessStatus: codeIntel.diagnosis?.verdict || "Accepted",
             mistakeDiagnosis: {
@@ -942,6 +1044,13 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
       }
 
       // If unverified, clearly report lack of local curated solution rather than fabricating
+      const fallbackMultiTier = generateMultiTierSolutions({
+        problem: { title: "Unverified LeetCode Problem", slug },
+        language: lang,
+        studentCode: rawCode,
+        verdict: verdict || "Accepted"
+      });
+
       return {
         provider: "local",
         model: "local-curriculum-v1",
@@ -950,6 +1059,9 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
           model: "local-curriculum-v1",
           problemTitle: "Unverified LeetCode Problem",
           language: lang,
+          solutions: fallbackMultiTier.solutions,
+          solutionComparison: fallbackMultiTier.solutionComparison,
+          studentComparison: fallbackMultiTier.studentComparison,
           studentApproach: "Unverified problem in local curriculum",
           correctnessStatus: "Unanalyzed",
           mistakeDiagnosis: { hasMistake: false },

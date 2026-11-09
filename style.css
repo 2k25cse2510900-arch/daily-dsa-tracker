@@ -5834,17 +5834,59 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
   margin-bottom: 14px;
 }
 
-/* Brute Force, Edge Cases & Variables Cards */
+/* Brute Force, Improved, Optimal, Edge Cases & Variables Cards */
 .mentor-bruteforce-card,
+.mentor-improved-card,
+.mentor-solution-card,
 .mentor-edgecases-card,
 .mentor-vars-watch-card {
   margin-bottom: 14px;
 }
-.mentor-bruteforce-desc {
+.mentor-bruteforce-desc,
+.mentor-improved-desc {
   font-size: 13px;
   line-height: 1.6;
   color: #475569;
   margin: 0 0 10px 0;
+}
+.mentor-card-subtext {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+  margin: 8px 0 0 0;
+}
+.mentor-improved-unavailable {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 10px 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mentor-solution-disclaimer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: #64748b;
+  font-style: italic;
+}
+.mentor-solution-disclaimer svg {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+.badge-technique {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #dbeafe !important;
+  font-weight: 600;
 }
 .highlight-cell {
   background: #f0fdf4 !important;

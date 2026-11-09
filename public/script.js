@@ -5867,9 +5867,15 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
     }
   }
 
-  // Multi-Language Optimal Code Rendering
+  // Multi-Tier Solutions (Module 4) - Optimal Solution Rendering
+  const solOpt = analysisResult?.solutions?.optimal;
+  const solBf = analysisResult?.solutions?.bruteForce;
+  const solImp = analysisResult?.solutions?.improved;
+
   if (optimalCodeEl) {
-    if (analysisResult?.optimalCode) {
+    if (solOpt?.code) {
+      optimalCodeEl.textContent = solOpt.code;
+    } else if (analysisResult?.optimalCode) {
       optimalCodeEl.textContent = analysisResult.optimalCode;
     } else if (data.hasLocalSolution === false) {
       optimalCodeEl.textContent = data.unavailableReason || "Generating optimal solution with Gemini AI Mentor...";
@@ -5879,7 +5885,9 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
     }
   }
   if (optimalTitleEl) {
-    if (analysisResult?.optimalApproach?.title) {
+    if (solOpt?.title) {
+      optimalTitleEl.textContent = `${solOpt.title} (${langName})`;
+    } else if (analysisResult?.optimalApproach?.title) {
       optimalTitleEl.textContent = `${analysisResult.optimalApproach.title} (${langName})`;
     } else if (data.hasLocalSolution === false && !analysisResult?.optimalCode) {
       optimalTitleEl.textContent = `Optimal Solution (Generating via Gemini...)`;
@@ -5887,43 +5895,147 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
       optimalTitleEl.textContent = `${data.optimalTitle || "Optimal Solution"} (${langName})`;
     }
   }
+  const optTechBadge = $("mentorOptimalTechniqueBadge");
+  const optTimeBadge = $("mentorOptimalTimeBadge");
+  const optSpaceBadge = $("mentorOptimalSpaceBadge");
+  const optInvariantsEl = $("mentorOptimalInvariants");
+  if (optTechBadge) optTechBadge.textContent = solOpt?.approach || solOpt?.technique || "Two Pointers";
+  if (optTimeBadge) optTimeBadge.textContent = `${solOpt?.timeComplexity || analysisResult?.optimalComplexity?.timeComplexity || data.optimalTime || "O(n)"} Time`;
+  if (optSpaceBadge) optSpaceBadge.textContent = `${solOpt?.auxiliarySpace || solOpt?.spaceComplexity || analysisResult?.optimalComplexity?.auxiliarySpace || data.optimalSpace || "O(1)"} Aux Space`;
+  if (optInvariantsEl) {
+    const invText = solOpt?.correctnessProof || solOpt?.whyItWorks || solOpt?.keyInvariants || analysisResult?.optimalApproach?.whyItWorks || "Loop invariant guarantees problem properties are preserved across iterations.";
+    optInvariantsEl.textContent = `Correctness Invariant: ${invText}`;
+  }
 
-  // Brute Force Approach & Code (Module 4 & 5)
+  // Brute Force Baseline Card (Module 4)
   const bfTitleEl = $("mentorBruteForceTitle");
   const bfAlgoEl = $("mentorBruteForceAlgorithm");
   const bfCodeEl = $("mentorBruteForceCode");
   const bfTimeBadge = $("mentorBruteForceTimeBadge");
   const bfSpaceBadge = $("mentorBruteForceSpaceBadge");
+  const bfTechBadge = $("mentorBruteForceTechniqueBadge");
+  const bfLimitationsEl = $("mentorBruteForceLimitations");
 
   if (bfTitleEl) {
-    bfTitleEl.textContent = analysisResult?.bruteForce?.title
-      ? `Brute Force Baseline (${analysisResult.bruteForce.title})`
+    bfTitleEl.textContent = solBf?.title || analysisResult?.bruteForce?.title
+      ? `Brute Force Baseline (${solBf?.title || analysisResult.bruteForce.title})`
       : (data.bruteForceTitle ? `Brute Force Baseline (${data.bruteForceTitle})` : "Brute Force Baseline (Exhaustive Search)");
   }
+  if (bfTechBadge) bfTechBadge.textContent = solBf?.approach || solBf?.technique || "Exhaustive";
   if (bfAlgoEl) {
-    bfAlgoEl.textContent = analysisResult?.bruteForce?.algorithm || analysisResult?.bruteForce?.explanation || data.bruteForceExplain || "Exhaustively checks every possibility with nested iterations, leading to high computational overhead.";
+    bfAlgoEl.textContent = solBf?.algorithm || solBf?.intuition || analysisResult?.bruteForce?.algorithm || analysisResult?.bruteForce?.explanation || data.bruteForceExplain || "Exhaustively checks every possibility with nested iterations, leading to high computational overhead.";
   }
   if (bfCodeEl) {
-    const bfCode = analysisResult?.bruteForce?.code || data.bruteForceCodeByLang?.[selectedLang] || data.bruteForceCode || data.buggyCodeByLang?.[selectedLang] || data.buggyCode || "// Brute force baseline simulation";
+    const bfCode = solBf?.code || analysisResult?.bruteForce?.code || data.bruteForceCodeByLang?.[selectedLang] || data.bruteForceCode || data.buggyCodeByLang?.[selectedLang] || data.buggyCode || "// Brute force baseline simulation";
     bfCodeEl.textContent = bfCode;
   }
-  if (bfTimeBadge) bfTimeBadge.textContent = `${analysisResult?.bruteForce?.timeComplexity || data.bruteForceTime || "O(n²)"} Time`;
-  if (bfSpaceBadge) bfSpaceBadge.textContent = `${analysisResult?.bruteForce?.spaceComplexity || data.bruteForceSpace || "O(1)"} Space`;
+  if (bfTimeBadge) bfTimeBadge.textContent = `${solBf?.timeComplexity || analysisResult?.bruteForce?.timeComplexity || data.bruteForceTime || "O(n²)"} Time`;
+  if (bfSpaceBadge) bfSpaceBadge.textContent = `${solBf?.spaceComplexity || solBf?.auxiliarySpace || analysisResult?.bruteForce?.spaceComplexity || data.bruteForceSpace || "O(1)"} Space`;
+  if (bfLimitationsEl) {
+    const limText = solBf?.limitations || solBf?.constraintBreakdown || solBf?.tradeOffs || "Exceeds runtime budget on large constraint boundaries (N >= 10^5).";
+    bfLimitationsEl.textContent = `Limitations & Bottlenecks: ${limText}`;
+  }
 
-  // Approach Comparison Table (Module 4 & 5 - 3-Row Comparison)
-  const compIntuitionBf = $("mentorCompIntuitionBf");
-  const compIntuitionOpt = $("mentorCompIntuitionOpt");
-  const compTimeBf = $("mentorCompTimeBf");
-  const compTimeOpt = $("mentorCompTimeOpt");
-  const compSpaceBf = $("mentorCompSpaceBf");
-  const compSpaceOpt = $("mentorCompSpaceOpt");
+  // Improved / Intermediate Approach Card (Module 4)
+  const impTitleEl = $("mentorImprovedTitle");
+  const impAlgoEl = $("mentorImprovedAlgorithm");
+  const impCodeEl = $("mentorImprovedCode");
+  const impCodeWrapEl = $("mentorImprovedCodeWrap");
+  const impUnavailableEl = $("mentorImprovedUnavailable");
+  const impUnavailableReasonEl = $("mentorImprovedUnavailableReason");
+  const impTradeoffEl = $("mentorImprovedTradeoff");
+  const impTechBadge = $("mentorImprovedTechniqueBadge");
+  const impTimeBadge = $("mentorImprovedTimeBadge");
+  const impSpaceBadge = $("mentorImprovedSpaceBadge");
 
-  if (compIntuitionBf) compIntuitionBf.textContent = analysisResult?.bruteForce?.algorithm || data.bruteForceExplain || "Exhaustively check all combinations with nested loops.";
-  if (compIntuitionOpt) compIntuitionOpt.textContent = analysisResult?.optimalApproach?.whyItWorks || analysisResult?.optimalApproach?.algorithm || data.optimalExplain || "Eliminate redundant computations with optimal invariants.";
-  if (compTimeBf) compTimeBf.textContent = analysisResult?.bruteForce?.timeComplexity || data.bruteForceTime || "O(n²)";
-  if (compTimeOpt) compTimeOpt.textContent = analysisResult?.optimalComplexity?.timeComplexity || data.optimalTime || data.timeComplexity || "O(n)";
-  if (compSpaceBf) compSpaceBf.textContent = analysisResult?.bruteForce?.spaceComplexity || data.bruteForceSpace || "O(1)";
-  if (compSpaceOpt) compSpaceOpt.textContent = analysisResult?.optimalComplexity?.spaceComplexity || data.optimalSpace || data.spaceComplexity || "O(n)";
+  if (impTitleEl) {
+    impTitleEl.textContent = solImp?.title || (data.improvedTitle ? `Improved Approach (${data.improvedTitle})` : "Improved / Intermediate Approach");
+  }
+  if (impTechBadge) impTechBadge.textContent = solImp?.approach || solImp?.technique || "Intermediate";
+  if (impTimeBadge) impTimeBadge.textContent = `${solImp?.timeComplexity || "O(n log n)"} Time`;
+  if (impSpaceBadge) impSpaceBadge.textContent = `${solImp?.spaceComplexity || solImp?.auxiliarySpace || "O(n)"} Space`;
+  if (impAlgoEl) {
+    impAlgoEl.textContent = solImp?.algorithm || solImp?.intuition || "Intermediate algorithmic enhancement addressing brute force bottlenecks.";
+  }
+
+  const isImpUnavailable = Boolean(solImp?.unavailableReason || (!solImp?.code && solImp?.available === false));
+  if (isImpUnavailable) {
+    if (impUnavailableEl) impUnavailableEl.hidden = false;
+    if (impUnavailableReasonEl) {
+      impUnavailableReasonEl.textContent = solImp?.unavailableReason || "No intermediate approach between brute force baseline and optimal exists for this problem structure.";
+    }
+    if (impCodeWrapEl) impCodeWrapEl.hidden = true;
+  } else {
+    if (impUnavailableEl) impUnavailableEl.hidden = true;
+    if (impCodeWrapEl) impCodeWrapEl.hidden = false;
+    if (impCodeEl) {
+      impCodeEl.textContent = solImp?.code || "// Intermediate solution code unavailable in selected language";
+    }
+  }
+  if (impTradeoffEl) {
+    const tradeoffText = solImp?.bottleneckRemoved
+      ? `Bottleneck Removed: ${solImp.bottleneckRemoved}. ${solImp.tradeOffs || ""}`
+      : (solImp?.tradeOffs || "");
+    impTradeoffEl.textContent = tradeoffText;
+  }
+
+  // Approach Comparison Table (Module 4 - 4-Way Multi-Tier Matrix)
+  if (comparisonBodyEl) {
+    if (Array.isArray(analysisResult?.solutionComparison) && analysisResult.solutionComparison.length) {
+      comparisonBodyEl.innerHTML = analysisResult.solutionComparison.map(row => {
+        const prop = row.property || row.dimension || "Metric";
+        const isOptRow = row.student === row.optimal;
+        return `
+          <tr>
+            <td><strong>${escapeHTML(prop)}</strong></td>
+            <td>${escapeHTML(row.bruteForce || "—")}</td>
+            <td>${escapeHTML(row.improved || "N/A")}</td>
+            <td class="highlight-cell">${escapeHTML(row.optimal || "—")}</td>
+            <td class="${isOptRow ? "highlight-cell" : ""}">${escapeHTML(row.student || "—")}</td>
+          </tr>
+        `;
+      }).join("");
+    } else {
+      const intuitionBf = solBf?.intuition || analysisResult?.bruteForce?.algorithm || data.bruteForceExplain || "Exhaustively check all combinations with nested loops.";
+      const intuitionImp = solImp?.intuition || "Binary Search / Dynamic Buffer optimization.";
+      const intuitionOpt = solOpt?.intuition || analysisResult?.optimalApproach?.whyItWorks || data.optimalExplain || "Eliminate redundant computations with optimal invariants.";
+      const intuitionStudent = analysisResult?.studentComparison?.matchesApproach || "Submitted Implementation";
+
+      const timeBf = solBf?.timeComplexity || analysisResult?.bruteForce?.timeComplexity || data.bruteForceTime || "O(n²)";
+      const timeImp = solImp?.timeComplexity || "O(n log n)";
+      const timeOpt = solOpt?.timeComplexity || analysisResult?.optimalComplexity?.timeComplexity || data.optimalTime || "O(n)";
+      const timeStudent = analysisResult?.studentComparison?.studentTime || derivedTime || "O(n)";
+
+      const spaceBf = solBf?.auxiliarySpace || solBf?.spaceComplexity || analysisResult?.bruteForce?.spaceComplexity || data.bruteForceSpace || "O(1)";
+      const spaceImp = solImp?.auxiliarySpace || solImp?.spaceComplexity || "O(n)";
+      const spaceOpt = solOpt?.auxiliarySpace || solOpt?.spaceComplexity || analysisResult?.optimalComplexity?.auxiliarySpace || "O(1)";
+      const spaceStudent = analysisResult?.studentComparison?.studentSpace || derivedSpace || "O(1)";
+
+      comparisonBodyEl.innerHTML = `
+        <tr>
+          <td><strong>Intuition &amp; Invariant</strong></td>
+          <td>${escapeHTML(intuitionBf)}</td>
+          <td>${escapeHTML(intuitionImp)}</td>
+          <td class="highlight-cell">${escapeHTML(intuitionOpt)}</td>
+          <td>${escapeHTML(intuitionStudent)}</td>
+        </tr>
+        <tr>
+          <td><strong>Time Complexity</strong></td>
+          <td><code>${escapeHTML(timeBf)}</code></td>
+          <td><code>${escapeHTML(timeImp)}</code></td>
+          <td class="highlight-cell"><code>${escapeHTML(timeOpt)}</code></td>
+          <td class="${timeStudent === timeOpt ? "highlight-cell" : ""}"><code>${escapeHTML(timeStudent)}</code></td>
+        </tr>
+        <tr>
+          <td><strong>Auxiliary Space</strong></td>
+          <td><code>${escapeHTML(spaceBf)}</code></td>
+          <td><code>${escapeHTML(spaceImp)}</code></td>
+          <td class="highlight-cell"><code>${escapeHTML(spaceOpt)}</code></td>
+          <td class="${spaceStudent === spaceOpt ? "highlight-cell" : ""}"><code>${escapeHTML(spaceStudent)}</code></td>
+        </tr>
+      `;
+    }
+  }
 
   // Edge Cases Table (Module 4 & 5)
   const edgeCasesTbody = $("mentorEdgeCasesTableBody");
@@ -7334,7 +7446,7 @@ function initializeAiCodeMentor() {
     });
   }
 
-  // Language dropdown change
+  // Language dropdown change (Module 4 Multi-Tier Solutions)
   const langSelect = $("mentorLangSelect");
   if (langSelect && !langSelect.dataset.bound) {
     langSelect.dataset.bound = "true";
@@ -7350,36 +7462,35 @@ function initializeAiCodeMentor() {
       if (optimalTitleEl) {
         optimalTitleEl.textContent = `${data.optimalTitle || "Optimal Solution"} (${formatLang(selectedLang)})`;
       }
-      if (optimalCodeEl) {
-        if (data.acceptedCodeByLang?.[selectedLang]) {
-          optimalCodeEl.textContent = data.acceptedCodeByLang[selectedLang];
-        } else if (currentMentorProblem) {
-          // Dynamically fetch optimal solution for the newly selected language
-          optimalCodeEl.textContent = `Fetching optimal solution in ${formatLang(selectedLang)}…`;
-          apiRequest("/api/ai-code-mentor/optimal-solution", {
-            method: "POST",
-            body: JSON.stringify({
-              problemSlug: currentMentorProblem.slug,
-              problemTitle: currentMentorProblem.title,
-              language: selectedLang
-            })
-          }).then(res => {
-            if (res?.solution?.optimalCode) {
-              optimalCodeEl.textContent = res.solution.optimalCode;
-              if (res.solution.optimalComplexity) {
-                if ($("mentorTimeComplexity")) $("mentorTimeComplexity").textContent = res.solution.optimalComplexity.timeComplexity || "O(n)";
-                if ($("mentorSpaceComplexity")) $("mentorSpaceComplexity").textContent = res.solution.optimalComplexity.spaceComplexity || "O(1)";
-              }
-            } else {
-              optimalCodeEl.textContent = data.acceptedCode || data.optimalCode || "// Optimal code unavailable in selected language";
-            }
-          }).catch(() => {
-            optimalCodeEl.textContent = data.acceptedCode || data.optimalCode || "// Optimal code unavailable in selected language";
+
+      // Fetch complete multi-tier solutions for newly selected language
+      apiRequest("/api/ai-code-mentor/solutions", {
+        method: "POST",
+        body: JSON.stringify({
+          problemSlug: currentMentorProblem?.slug,
+          problemTitle: currentMentorProblem?.title,
+          problemNumber: currentMentorProblem?.number || currentMentorProblem?.frontendQuestionId,
+          language: selectedLang,
+          studentCode: $("mentorCodeInput")?.value || null,
+          verdict: currentMentorProblem?.status || "Accepted"
+        })
+      }).then(res => {
+        if (res?.solutions) {
+          renderNormalModeAnalysis(data, currentMentorBuggyState, {
+            ...res,
+            solutions: res.solutions,
+            solutionComparison: res.solutionComparison,
+            studentComparison: res.studentComparison,
+            optimalCode: res.solutions?.optimal?.code
           });
-        } else {
-          optimalCodeEl.textContent = data.optimalCode || data.acceptedCode;
+        } else if (optimalCodeEl) {
+          optimalCodeEl.textContent = data.acceptedCodeByLang?.[selectedLang] || data.acceptedCode || data.optimalCode || "// Optimal code unavailable in selected language";
         }
-      }
+      }).catch(() => {
+        if (optimalCodeEl) {
+          optimalCodeEl.textContent = data.acceptedCodeByLang?.[selectedLang] || data.acceptedCode || data.optimalCode || "// Optimal code unavailable in selected language";
+        }
+      });
 
       // Preserve student editor code without overwriting when switching languages
       const langBadge = $("mentorLangBadge");
@@ -7637,8 +7748,23 @@ function initializeAiCodeMentor() {
     copyBfBtn.addEventListener("click", () => {
       const code = $("mentorBruteForceCode")?.textContent || "";
       if (code) {
-        navigator.clipboard.writeText(code);
+        navigator.clipboard.writeText(code).catch(() => {});
         showToast("Copied brute force code!");
+      }
+    });
+  }
+
+  // Copy Improved Approach Code Button (Module 4)
+  const copyImpBtn = $("mentorCopyImprovedBtn");
+  if (copyImpBtn && !copyImpBtn.dataset.bound) {
+    copyImpBtn.dataset.bound = "true";
+    copyImpBtn.addEventListener("click", () => {
+      const code = $("mentorImprovedCode")?.textContent || "";
+      if (code && !code.startsWith("// Intermediate solution code unavailable")) {
+        navigator.clipboard.writeText(code).catch(() => {});
+        showToast("Copied improved approach code!");
+      } else {
+        showToast("No improved approach code available to copy.");
       }
     });
   }

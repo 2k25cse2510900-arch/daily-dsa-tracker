@@ -105,6 +105,15 @@ function createAiCodeMentorRouter({ memberOnly, serviceFor, reviewRateLimit, aud
     }
   });
 
+  router.post("/solutions", async (req, res) => {
+    try {
+      const result = await serviceFor().generateSolutions(req.member, req.body);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.post("/reviews", reviewRateLimit, async (req, res) => {
     try {
       const review = await serviceFor().createReview(req.member, req.body);

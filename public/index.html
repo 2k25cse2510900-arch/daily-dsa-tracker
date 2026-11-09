@@ -925,38 +925,46 @@
               </div>
             </div>
 
-            <!-- Approach Comparison Table (Module 4 & 5 - 3-Row Comparison) -->
+            <!-- Approach Comparison Table (Module 4 - 4-Way Multi-Tier Matrix) -->
             <div id="mentorComparisonTableCard" class="mentor-card mentor-table-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">PARADIGM COMPARISON</span>
-                  <h4 class="mentor-card-subtitle">Brute Force vs Optimal Trade-Off</h4>
+                  <h4 class="mentor-card-subtitle">Multi-Tier Solution Comparison Matrix</h4>
                 </div>
               </div>
               <div class="mentor-table-wrapper">
                 <table class="mentor-comparison-table">
                   <thead>
                     <tr>
-                      <th>Dimension</th>
-                      <th>Brute Force Approach</th>
-                      <th>Optimal Approach</th>
+                      <th>Property</th>
+                      <th>Brute Force</th>
+                      <th>Improved Approach</th>
+                      <th>Optimal Solution</th>
+                      <th id="mentorCompStudentHeader">Your Submission</th>
                     </tr>
                   </thead>
                   <tbody id="mentorComparisonTableBody">
                     <tr>
-                      <td><strong>Intuition &amp; Invariant</strong></td>
-                      <td id="mentorCompIntuitionBf">Exhaustively test every pair (i, j) with nested loops.</td>
-                      <td id="mentorCompIntuitionOpt">Look up complement (target - x) in O(1) time using hash map.</td>
+                      <td><strong>Algorithmic Technique</strong></td>
+                      <td id="mentorCompTechniqueBf">Exhaustive Search</td>
+                      <td id="mentorCompTechniqueImp">Binary Search / Dynamic Buffer</td>
+                      <td id="mentorCompTechniqueOpt">In-Place Two Pointers</td>
+                      <td id="mentorCompTechniqueStudent">Two Pointers</td>
                     </tr>
                     <tr>
                       <td><strong>Time Complexity</strong></td>
-                      <td><code id="mentorCompTimeBf">O(n²)</code> &mdash; quadratic comparisons</td>
-                      <td class="highlight-cell"><code id="mentorCompTimeOpt">O(n)</code> &mdash; single pass</td>
+                      <td><code id="mentorCompTimeBf">O(n²)</code></td>
+                      <td><code id="mentorCompTimeImp">O(n log n)</code></td>
+                      <td class="highlight-cell"><code id="mentorCompTimeOpt">O(n)</code></td>
+                      <td id="mentorCompTimeStudentCell"><code id="mentorCompTimeStudent">O(n)</code></td>
                     </tr>
                     <tr>
-                      <td><strong>Space Complexity</strong></td>
-                      <td><code id="mentorCompSpaceBf">O(1)</code> &mdash; in-place traversal</td>
-                      <td class="highlight-cell"><code id="mentorCompSpaceOpt">O(n)</code> &mdash; hash table auxiliary buffer</td>
+                      <td><strong>Auxiliary Space</strong></td>
+                      <td><code id="mentorCompSpaceBf">O(1)</code></td>
+                      <td><code id="mentorCompSpaceImp">O(n)</code></td>
+                      <td class="highlight-cell"><code id="mentorCompSpaceOpt">O(1)</code></td>
+                      <td id="mentorCompSpaceStudentCell"><code id="mentorCompSpaceStudent">O(1)</code></td>
                     </tr>
                   </tbody>
                 </table>
@@ -977,14 +985,15 @@
               </div>
             </div>
 
-            <!-- Brute Force Approach & Code (Module 4 & 5) -->
+            <!-- Brute Force Approach & Code (Module 4) -->
             <div id="mentorBruteForceCard" class="mentor-card mentor-bruteforce-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">BASELINE BENCHMARK</span>
-                  <h4 class="mentor-card-subtitle" id="mentorBruteForceTitle">Brute Force Baseline (Nested Loops)</h4>
+                  <h4 class="mentor-card-subtitle" id="mentorBruteForceTitle">Brute Force Baseline</h4>
                 </div>
                 <div class="mentor-card-tools">
+                  <span id="mentorBruteForceTechniqueBadge" class="badge-tag badge-technique">Exhaustive</span>
                   <span id="mentorBruteForceTimeBadge" class="badge-tag">O(n²) Time</span>
                   <span id="mentorBruteForceSpaceBadge" class="badge-tag">O(1) Space</span>
                   <button id="mentorCopyBruteForceBtn" class="mentor-btn-icon" type="button" aria-label="Copy brute force code">
@@ -1006,6 +1015,44 @@
                     return [i, j]
         return []</code></pre>
               </div>
+              <p id="mentorBruteForceLimitations" class="mentor-card-subtext"></p>
+              <div class="mentor-solution-disclaimer" role="note">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
+                <span>AI-generated solution &mdash; execution verification not yet performed</span>
+              </div>
+            </div>
+
+            <!-- Improved / Intermediate Approach (Module 4) -->
+            <div id="mentorImprovedCard" class="mentor-card mentor-improved-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">INTERMEDIATE ENHANCEMENT</span>
+                  <h4 class="mentor-card-subtitle" id="mentorImprovedTitle">Improved / Intermediate Approach</h4>
+                </div>
+                <div class="mentor-card-tools">
+                  <span id="mentorImprovedTechniqueBadge" class="badge-tag badge-technique">Binary Search</span>
+                  <span id="mentorImprovedTimeBadge" class="badge-tag">O(N log M) Time</span>
+                  <span id="mentorImprovedSpaceBadge" class="badge-tag">O(M) Space</span>
+                  <button id="mentorCopyImprovedBtn" class="mentor-btn-icon" type="button" aria-label="Copy improved approach code">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <p id="mentorImprovedAlgorithm" class="mentor-improved-desc">
+                Intermediate algorithmic enhancement addressing brute force bottlenecks.
+              </p>
+              <div id="mentorImprovedUnavailable" class="mentor-improved-unavailable" hidden>
+                <p id="mentorImprovedUnavailableReason">No intermediate approach between brute force baseline and optimal exists for this problem structure.</p>
+              </div>
+              <div id="mentorImprovedCodeWrap" class="mentor-code-block-wrap">
+                <pre class="mentor-code-block"><code id="mentorImprovedCode">// Improved solution code</code></pre>
+              </div>
+              <p id="mentorImprovedTradeoff" class="mentor-card-subtext"></p>
+              <div class="mentor-solution-disclaimer" role="note">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
+                <span>AI-generated solution &mdash; execution verification not yet performed</span>
+              </div>
             </div>
 
             <!-- Optimized Solution Panel -->
@@ -1013,12 +1060,17 @@
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
                   <span class="mentor-card-kicker">OPTIMAL SOLUTION</span>
-                  <h4 class="mentor-card-subtitle" id="mentorOptimalTitle">Optimal One-Pass Hash Table Implementation</h4>
+                  <h4 class="mentor-card-subtitle" id="mentorOptimalTitle">Optimal Solution</h4>
                 </div>
-                <button id="mentorCopyOptimalBtn" class="mentor-btn-icon" type="button" aria-label="Copy optimal code">
-                  <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
-                  Copy
-                </button>
+                <div class="mentor-card-tools">
+                  <span id="mentorOptimalTechniqueBadge" class="badge-tag badge-technique">Two Pointers</span>
+                  <span id="mentorOptimalTimeBadge" class="badge-tag">O(n) Time</span>
+                  <span id="mentorOptimalSpaceBadge" class="badge-tag">O(1) Aux Space</span>
+                  <button id="mentorCopyOptimalBtn" class="mentor-btn-icon" type="button" aria-label="Copy optimal code">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
+                    Copy
+                  </button>
+                </div>
               </div>
               <div class="mentor-code-block-wrap">
                 <pre class="mentor-code-block"><code id="mentorOptimalCode">class Solution:
@@ -1030,6 +1082,11 @@
                 return [seen[complement], i]
             seen[num] = i
         return []</code></pre>
+              </div>
+              <p id="mentorOptimalInvariants" class="mentor-card-subtext"></p>
+              <div class="mentor-solution-disclaimer" role="note">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
+                <span>AI-generated solution &mdash; execution verification not yet performed</span>
               </div>
             </div>
 
