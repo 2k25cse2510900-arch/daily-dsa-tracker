@@ -494,25 +494,163 @@ function extractDataStructures(lines, langKey) {
 }
 
 /**
+ * Detects algorithmic features (Binary Search, Monotonic Stack, Graph DFS/BFS, Sliding Window, DP)
+ * purely from code structure, variable roles, loop mechanics, and data structures.
+ */
+function detectAlgorithmicFeatures(structure, problem) {
+  const { lines, loops, variables, dataStructures } = structure;
+  const fullText = lines.map(l => l.stripped).join("\n");
+
+  // 1. Binary Search Detection (Halving search space)
+  let binarySearch = null;
+  for (const l of loops) {
+    const isHalvingCond = /(?:low|left|l|start|high|right|r|end)\s*<=?\s*(?:high|right|r|end|low|left|l|start)/i.test(l.condition);
+    const bodyLines = lines.filter(item => item.lineNum >= l.line && (!l.endLine || item.lineNum <= l.endLine));
+    const bodyText = bodyLines.map(item => item.stripped).join("\n");
+    const hasMid = /\bmid\s*=|(?:\b(?:low|left|l|start)\s*\+\s*(?:high|right|r|end)|\b(?:high|right|r|end)\s*-\s*(?:low|left|l|start))\s*(?:\/|\/\/|>>)\s*2/i.test(bodyText);
+    const hasBoundaryUpdate = /\b(?:high|right|r|end|low|left|l|start)\s*=\s*(?:mid|low|high)\s*[+-]?/i.test(bodyText);
+
+    if (isHalvingCond && (hasMid || hasBoundaryUpdate)) {
+      const innerLoop = loops.find(inner => inner.line > l.line && (!l.endLine || inner.line <= l.endLine));
+      binarySearch = {
+        detected: true,
+        isAnswerSpace: Boolean(innerLoop),
+        loopLine: l.line,
+        innerLoopLine: innerLoop?.line || null
+      };
+      break;
+    }
+  }
+
+  // 2. Monotonic Stack Detection
+  let monotonicStack = null;
+  const hasStackDs = dataStructures.some(ds => ds.type === "Stack" || ds.type === "Queue / Deque") ||
+                     variables.some(v => /stack|stk|deque/i.test(v.name));
+  for (const l of loops) {
+    if (l.depth >= 2) {
+      const isStackWhile = l.type === "while" && (/stack|stk|\.empty|\.isEmpty|len\s*\(|size\s*\(/i.test(l.condition) || /\.pop\s*\(|\.poll\s*\(/i.test(fullText));
+      if (isStackWhile && hasStackDs) {
+        monotonicStack = { detected: true, line: l.line };
+        break;
+      }
+    }
+  }
+
+  // 3. Graph DFS / BFS Traversal Detection (Recursion or Queue over grid or adjacency)
+  let graphTraversal = null;
+  const hasRecursion = /function\s+(\w+)[^}]*\b\1\s*\(|\b(\w+)\s*=\s*function[^}]*\b\2\s*\(|void\s+(\w+)[^}]*\b\3\s*\(|def\s+(\w+)[^:]*:[^]*?\b\4\s*\(/i.test(fullText) ||
+                       /\bdfs\s*\(/i.test(fullText) || /\bbfs\s*\(/i.test(fullText);
+  const has2DGridLoops = loops.some(l1 => loops.some(l2 => l2.depth > l1.depth && /(?:grid|matrix|board|\b[rc]\b|\brow\b|\bcol\b)/i.test(l1.condition + l2.condition)));
+  const hasGridMarking = /(?:grid|visited)\[[^\]]+\](?:\[[^\]]+\])?\s*=\s*['"0-9#]|visited\.add\s*\(/i.test(fullText);
+
+  if ((hasRecursion || /\bqueue\b|\bdeque\b/i.test(fullText)) && (has2DGridLoops || hasGridMarking)) {
+    graphTraversal = { detected: true, type: hasRecursion ? "DFS" : "BFS", isGrid: has2DGridLoops };
+  }
+
+  // 4. Sliding Window Detection
+  let slidingWindow = null;
+  const hasWindowPointers = variables.some(v => /left|start|windowStart/i.test(v.name)) &&
+                            (variables.some(v => /right|end|windowEnd/i.test(v.name)) || loops.some(l => /enumerate|range/i.test(l.condition)));
+  const hasWindowContract = /left\s*=\s*|left\s*\+\+|start\s*=\s*|start\s*\+\+/i.test(fullText);
+  const hasWindowMap = dataStructures.some(ds => ds.type === "HashMap" || ds.type === "HashSet") || /seen|window|count|freq/i.test(fullText);
+
+  if (hasWindowPointers && hasWindowContract && hasWindowMap && !monotonicStack) {
+    slidingWindow = { detected: true };
+  }
+
+  // 5. Space-Optimized Dynamic Programming Detection
+  let dynamicProgramming = null;
+  const hasDpVariables = variables.some(v => /prev|dp|take|curr/i.test(v.name)) ||
+                         /(?:prev1|prev2|take|notTake|curr\s*=\s*max)/i.test(fullText);
+  const hasRecurrence = /max\s*\([^)]*take[^)]*\)|max\s*\([^)]*prev[^)]*\)|dp\[i\]\s*=/i.test(fullText);
+  if (hasDpVariables && hasRecurrence) {
+    const isScalarOnly = !/new\s+(?:int|vector|ArrayList)\[/i.test(fullText) && !/\bdp\s*=\s*\[/i.test(fullText);
+    dynamicProgramming = { detected: true, isSpaceOptimized: isScalarOnly };
+  }
+
+  // 6. Two-Pointer Scans
+  const hasTwoPointersCondition = loops.some(l => l.condition && (
+    /\w+\s*<\s*(?:len\s*\([^)]+\)|[^&]+\.length\s*\(?\)?)\s*(?:&&|\band\b)\s*\w+\s*<\s*(?:len\s*\([^)]+\)|[^&]+\.length)/i.test(l.condition) ||
+    (/\b[ij]\b.*\b[ij]\b/.test(l.condition) && (l.condition.includes("&&") || l.condition.includes(" and ")))
+  ));
+  const hasMonotonicPointer = loops.some(l => l.innerMonotonicPointers && l.innerMonotonicPointers.length > 0) ||
+                               variables.some(v => v.role === "pointer" && v.isMonotonic) ||
+                               hasTwoPointersCondition;
+  const hasWriteReadPointers = variables.some(v => v.name === "write") && variables.some(v => v.name === "read");
+  const hasOppositePointers = variables.some(v => v.name === "left") && variables.some(v => v.name === "right");
+
+  return {
+    binarySearch,
+    monotonicStack,
+    graphTraversal,
+    slidingWindow,
+    dynamicProgramming,
+    hasMonotonicPointer,
+    hasWriteReadPointers,
+    hasOppositePointers
+  };
+}
+
+/**
  * Classifies the algorithmic pattern from code structure, variable roles, and loop mechanics.
  */
 function classifyAlgorithmPattern(structure, problem) {
-  const { loops, variables, dataStructures } = structure;
-  const isSubsequenceProblem = problem?.slug === "is-subsequence" ||
-    problem?.canonicalSlug === "is-subsequence" ||
-    problem?.id === "392" ||
-    problem?.problemNumber === 392 ||
-    (typeof problem?.title === "string" && /is\s*subsequence/i.test(problem.title));
-  const hasMonotonicPointer = loops.some(l => l.innerMonotonicPointers && l.innerMonotonicPointers.length > 0) ||
-                               variables.some(v => v.role === "pointer" && v.isMonotonic) ||
-                               (isSubsequenceProblem && variables.some(v => v.role === "pointer"));
-  const hasOppositePointers = variables.some(v => v.name === "left") && variables.some(v => v.name === "right");
-  const hasWriteReadPointers = variables.some(v => v.name === "write") && variables.some(v => v.name === "read");
+  const { loops, dataStructures } = structure;
+  const features = detectAlgorithmicFeatures(structure, problem);
+  const maxDepth = loops.reduce((acc, l) => Math.max(acc, l.depth), 0);
   const hasHashMap = dataStructures.some(ds => ds.type === "HashMap");
   const hasHashSet = dataStructures.some(ds => ds.type === "HashSet");
-  const maxDepth = loops.reduce((acc, l) => Math.max(acc, l.depth), 0);
 
-  if (hasMonotonicPointer) {
+  if (features.binarySearch) {
+    if (features.binarySearch.isAnswerSpace) {
+      return {
+        pattern: "Binary Search: Monotonic Predicate on Answer Space",
+        confidence: "high",
+        explanation: "Performs binary search over the feasible answer range, evaluating a linear verification check at each midpoint step."
+      };
+    }
+    return {
+      pattern: "Binary Search: Direct Key Lookup",
+      confidence: "high",
+      explanation: "Halves the search range at each step using a computed midpoint, achieving logarithmic runtime."
+    };
+  }
+
+  if (features.monotonicStack) {
+    return {
+      pattern: "Monotonic Stack: Nearest Greater/Smaller Element",
+      confidence: "high",
+      explanation: "Maintains a monotonic order in an auxiliary stack by popping non-qualifying elements in an inner loop. Total operations across all iterations are bounded by amortized linear time."
+    };
+  }
+
+  if (features.graphTraversal) {
+    return {
+      pattern: `Graph Traversal: Grid ${features.graphTraversal.type === "DFS" ? "Depth-First Search (DFS)" : "Breadth-First Search (BFS)"}`,
+      confidence: "high",
+      explanation: "Traverses connected components in the grid, marking visited cells in-place to avoid re-exploration and ensure linear time relative to grid size."
+    };
+  }
+
+  if (features.slidingWindow) {
+    return {
+      pattern: "Sliding Window: Dynamic Size Window",
+      confidence: "high",
+      explanation: "Expands the window with a scanning pointer while conditionally advancing the contracting pointer, bounding total pointer movements to 2n."
+    };
+  }
+
+  if (features.dynamicProgramming) {
+    return {
+      pattern: features.dynamicProgramming.isSpaceOptimized
+        ? "Dynamic Programming: State Machine / Space-Optimized Recurrence"
+        : "Dynamic Programming: Tabulation",
+      confidence: "high",
+      explanation: "Solves optimal subproblems sequentially by evaluating recurrence relations with space-optimized state variables."
+    };
+  }
+
+  if (features.hasMonotonicPointer) {
     return {
       pattern: "Two Pointers: Monotonic Forward Scan",
       confidence: "high",
@@ -520,7 +658,7 @@ function classifyAlgorithmPattern(structure, problem) {
     };
   }
 
-  if (hasWriteReadPointers) {
+  if (features.hasWriteReadPointers) {
     return {
       pattern: "Two Pointers: In-Place Compaction",
       confidence: "high",
@@ -528,7 +666,7 @@ function classifyAlgorithmPattern(structure, problem) {
     };
   }
 
-  if (hasOppositePointers) {
+  if (features.hasOppositePointers) {
     return {
       pattern: "Two Pointers: Opposite-End Convergence",
       confidence: "high",
@@ -579,68 +717,139 @@ function classifyAlgorithmPattern(structure, problem) {
  * Derives mathematical time and space complexity directly from control flow mechanics.
  */
 function deriveComplexityFromFlow(structure, problem) {
-  const { loops, variables, dataStructures } = structure;
-  const isMonotonic = loops.some(l => l.innerMonotonicPointers && l.innerMonotonicPointers.length > 0) ||
-                      variables.some(v => v.role === "pointer" && v.isMonotonic);
+  const { loops, dataStructures, lines } = structure;
+  const features = detectAlgorithmicFeatures(structure, problem);
   const maxDepth = loops.reduce((acc, l) => Math.max(acc, l.depth), 0);
   const hasHashMap = dataStructures.some(ds => ds.type === "HashMap");
   const hasHashSet = dataStructures.some(ds => ds.type === "HashSet");
+  const fullText = lines.map(l => l.stripped).join("\n");
 
-  const isSubsequenceProblem = problem?.slug === "is-subsequence" ||
-    problem?.canonicalSlug === "is-subsequence" ||
-    problem?.id === "392" ||
-    problem?.problemNumber === 392 ||
-    (typeof problem?.title === "string" && /is\s*subsequence/i.test(problem.title));
-
-  // String subsequence monotonic loop or two-pointer scan
-  if (isSubsequenceProblem) {
-    if (maxDepth >= 2 && !isMonotonic) {
+  // 1. Binary Search
+  if (features.binarySearch) {
+    if (features.binarySearch.isAnswerSpace) {
       return {
-        timeComplexity: "O(n²)",
+        timeComplexity: "O(n log m)",
         auxiliarySpace: "O(1)",
-        inputStorage: "O(|s| + |t|) immutable input strings",
-        outputStorage: "O(1) boolean scalar return",
-        totalSpace: "O(|s| + |t|)",
-        timeDerivation: "Nested loops reset the inner search pointer for each outer character, degrading time complexity to quadratic O(|s| · |t|).",
-        spaceDerivation: "Allocates only scalar loop counters: O(1) auxiliary space.",
-        isOptimal: false
+        inputStorage: "O(n) input array",
+        outputStorage: "O(1) scalar return",
+        totalSpace: "O(n)",
+        timeDerivation: "The outer while loop halves the answer search space [1, max] in O(log m) iterations. In each iteration, an inner linear pass evaluates the feasibility predicate across all n elements in O(n) time. Total time is strictly O(n log m).",
+        spaceDerivation: "Uses only scalar variables (low, high, mid, ans, hours) on the stack: strictly O(1) auxiliary space.",
+        isOptimal: true,
+        confidence: "verified"
       };
     }
     return {
-      timeComplexity: "O(|s| + |t|)",
+      timeComplexity: "O(log n)",
       auxiliarySpace: "O(1)",
-      inputStorage: "O(|s| + |t|) immutable input strings",
-      outputStorage: "O(1) boolean scalar return",
-      totalSpace: "O(|s| + |t|)",
-      timeDerivation: isMonotonic
-        ? "The outer loop runs at most |s| times. The inner pointer index advances through t at most |t| times across the entire algorithm because it is initialized once outside all loops and never reset. Total loop iterations are bounded by |s| + |t|."
-        : "The two pointers traverse sequences s and t monotonically without resetting. Total operations are strictly bounded by |s| + |t|.",
-      spaceDerivation: "Allocates only integer pointer variables (index, c, i, j) on the call stack. No auxiliary heap memory, arrays, or recursion used: strictly O(1) auxiliary space.",
-      isOptimal: true
+      inputStorage: "O(n) input sequence",
+      outputStorage: "O(1) scalar return",
+      totalSpace: "O(n)",
+      timeDerivation: "At each iteration, the interval [low, high] is halved by midpoint comparison: O(log n) total operations.",
+      spaceDerivation: "Allocates only fixed scalar variables on the stack: O(1) auxiliary space.",
+      isOptimal: true,
+      confidence: "verified"
     };
   }
 
-  const isCompressionProblem = problem?.slug === "string-compression" ||
-    problem?.canonicalSlug === "string-compression" ||
-    problem?.id === "443" ||
-    problem?.problemNumber === 443 ||
-    (typeof problem?.title === "string" && /string\s*compression/i.test(problem.title));
+  // 2. Monotonic Stack
+  if (features.monotonicStack) {
+    return {
+      timeComplexity: "O(n)",
+      auxiliarySpace: "O(n)",
+      inputStorage: "O(n) sequence",
+      outputStorage: "O(n) result array",
+      totalSpace: "O(n)",
+      timeDerivation: "Although an inner while loop is present, each index is pushed onto the stack exactly once and popped at most once. The total number of push and pop operations across all iterations is strictly bounded by 2n: O(n) amortized linear time.",
+      spaceDerivation: "The auxiliary stack stores at most n indices in the worst case (strictly monotonic sequence): O(n) auxiliary space.",
+      isOptimal: true,
+      confidence: "verified"
+    };
+  }
 
-  // String compression in-place write
-  if (isCompressionProblem) {
+  // 3. Graph DFS / BFS Traversal (Grid)
+  if (features.graphTraversal) {
+    return {
+      timeComplexity: "O(m · n)",
+      auxiliarySpace: "O(m · n)",
+      inputStorage: "O(m · n) 2D grid",
+      outputStorage: "O(1) scalar count",
+      totalSpace: "O(m · n)",
+      timeDerivation: "Every cell (r, c) in the m × n grid is visited at most once by the traversal because visited land cells are immediately marked. Total exploration time is strictly bounded by O(m · n).",
+      spaceDerivation: "The recursive call stack (or BFS queue) reaches a maximum depth of O(m · n) in the worst case (e.g. grid completely filled with land): O(m · n) auxiliary space.",
+      isOptimal: true,
+      confidence: "verified"
+    };
+  }
+
+  // 4. Sliding Window
+  if (features.slidingWindow) {
+    return {
+      timeComplexity: "O(n)",
+      auxiliarySpace: "O(min(m, n))",
+      inputStorage: "O(n) sequence",
+      outputStorage: "O(1) scalar return",
+      totalSpace: "O(n)",
+      timeDerivation: "The right pointer expands the window by scanning the sequence once, while the left pointer advances monotonically to contract the window. Total pointer steps are bounded by 2n: O(n) linear time.",
+      spaceDerivation: "The auxiliary hash table or frequency map stores at most min(m, n) distinct elements in the current window: O(min(m, n)) auxiliary space.",
+      isOptimal: true,
+      confidence: "verified"
+    };
+  }
+
+  // 5. Space-Optimized Dynamic Programming
+  if (features.dynamicProgramming) {
+    const isOptimized = features.dynamicProgramming.isSpaceOptimized;
+    return {
+      timeComplexity: "O(n)",
+      auxiliarySpace: isOptimized ? "O(1)" : "O(n)",
+      inputStorage: "O(n) input sequence",
+      outputStorage: "O(1) scalar return",
+      totalSpace: "O(n)",
+      timeDerivation: "Iterates through the n elements in a single linear pass, computing the recurrence relation for each element in O(1) time: strictly O(n) time.",
+      spaceDerivation: isOptimized
+        ? "Maintains only 2-3 scalar state variables (prev1, prev2, curr) on the stack without allocating an auxiliary table: strictly O(1) auxiliary space."
+        : "Allocates a 1D DP table of length n: O(n) auxiliary space.",
+      isOptimal: true,
+      confidence: "verified"
+    };
+  }
+
+  // 6. In-Place Compaction (e.g. Read/Write Pointers on single sequence)
+  if (features.hasWriteReadPointers) {
     return {
       timeComplexity: "O(n)",
       auxiliarySpace: "O(1)",
-      inputStorage: "O(n) character array modified in-place",
+      inputStorage: "O(n) array modified in-place",
       outputStorage: "O(1) integer return",
       totalSpace: "O(n)",
-      timeDerivation: "The read pointer visits each character in the input array exactly once. The write pointer writes each character and count digit at most once: strictly linear O(n) operations.",
+      timeDerivation: "The read pointer visits each character in the input array exactly once. The write pointer writes each element at most once: strictly linear O(n) operations.",
       spaceDerivation: "The array is mutated strictly in-place. Pointers write and read are scalar variables on the stack: O(1) auxiliary space.",
-      isOptimal: true
+      isOptimal: true,
+      confidence: "verified"
     };
   }
 
-  // Hash Map approach
+  // 7. Monotonic Pointer Forward Scan (e.g. Two Strings / Subsequence)
+  if (features.hasMonotonicPointer) {
+    const hasTwoStrings = /\bString\s+s\b.*\bString\s+t\b|\bstr\b.*\bstr\b|\bs\b.*\bt\b/i.test(fullText) ||
+                          problem?.title?.toLowerCase().includes("subsequence") ||
+                          problem?.slug?.toLowerCase().includes("subsequence");
+    const timeClass = hasTwoStrings ? "O(|s| + |t|)" : "O(n + m)";
+    return {
+      timeComplexity: timeClass,
+      auxiliarySpace: "O(1)",
+      inputStorage: hasTwoStrings ? "O(|s| + |t|) immutable input strings" : "O(n + m) input sequences",
+      outputStorage: "O(1) scalar return",
+      totalSpace: hasTwoStrings ? "O(|s| + |t|)" : "O(n + m)",
+      timeDerivation: "The outer loop runs at most |s| times. The inner pointer advances monotonically through the target sequence at most |t| times across the entire algorithm because it is initialized once outside all loops and never reset. Total loop iterations are bounded by " + timeClass + ".",
+      spaceDerivation: "Allocates only integer pointer variables on the call stack. No auxiliary heap memory, arrays, or recursion used: strictly O(1) auxiliary space.",
+      isOptimal: true,
+      confidence: "verified"
+    };
+  }
+
+  // 8. Hash Map Frequency / Complement Lookup
   if (hasHashMap) {
     return {
       timeComplexity: "O(n)",
@@ -650,11 +859,28 @@ function deriveComplexityFromFlow(structure, problem) {
       totalSpace: "O(n)",
       timeDerivation: "A single linear pass scans elements, performing O(1) amortized hash map insertions and lookups.",
       spaceDerivation: "The hash map stores counts or indices for up to n elements: O(n) auxiliary memory.",
-      isOptimal: true
+      isOptimal: true,
+      confidence: "verified"
     };
   }
 
-  // Single pass without hash map
+  // 8.5. Sorting + Linear / Two-Pointer Pass
+  const hasSorting = /\b(?:Arrays\.sort|Collections\.sort|\.sort\(|std::sort|sort\.Slice|sort\.Ints|sort_unstable)\b/i.test(fullText);
+  if (hasSorting && (maxDepth <= 1 || features.hasTwoPointersCondition || features.hasOppositePointers || features.hasMonotonicPointer)) {
+    return {
+      timeComplexity: "O(n log n)",
+      auxiliarySpace: "O(1)",
+      inputStorage: "O(n) sequence",
+      outputStorage: "O(1) scalar return",
+      totalSpace: "O(n)",
+      timeDerivation: "Comparison-based sorting takes O(n log n) time, which asymptotically dominates the subsequent linear O(n) traversal or two-pointer convergence pass. Total time complexity is strictly O(n log n).",
+      spaceDerivation: "In-place primitive array sorting allocates O(1) or O(log n) call stack space without auxiliary heap data structures.",
+      isOptimal: true,
+      confidence: "verified"
+    };
+  }
+
+  // 9. Single Pass Linear Traversal
   if (maxDepth === 1 && !hasHashMap && !hasHashSet) {
     return {
       timeComplexity: "O(n)",
@@ -664,12 +890,13 @@ function deriveComplexityFromFlow(structure, problem) {
       totalSpace: "O(n)",
       timeDerivation: "Single linear loop traversal processing elements sequentially.",
       spaceDerivation: "Allocates only scalar loop variables on the stack: O(1) auxiliary space.",
-      isOptimal: true
+      isOptimal: true,
+      confidence: "verified"
     };
   }
 
-  // Nested without monotonicity
-  if (maxDepth >= 2 && !isMonotonic) {
+  // 10. True Nested Loops (Without Monotonicity or Halving)
+  if (maxDepth >= 2 && !features.hasMonotonicPointer) {
     return {
       timeComplexity: "O(n²)",
       auxiliarySpace: "O(1)",
@@ -678,7 +905,8 @@ function deriveComplexityFromFlow(structure, problem) {
       totalSpace: "O(n)",
       timeDerivation: "Nested loops re-evaluate inner elements for each outer element without monotonic bounds: up to n(n-1)/2 operations.",
       spaceDerivation: "Uses only scalar loop counters on the stack: O(1) auxiliary space.",
-      isOptimal: false
+      isOptimal: false,
+      confidence: "verified"
     };
   }
 
@@ -690,7 +918,8 @@ function deriveComplexityFromFlow(structure, problem) {
     totalSpace: "O(n)",
     timeDerivation: "Derived from linear instruction execution.",
     spaceDerivation: "Fixed scalar variable allocations.",
-    isOptimal: true
+    isOptimal: true,
+    confidence: "inferred"
   };
 }
 
@@ -919,14 +1148,18 @@ function checkCodeProblemConsistency({ structure, problem, language, sourceCode 
     });
   }
 
-  // 2. In-place modification check (e.g. String Compression #443)
-  if (problem.slug === "string-compression") {
-    const modifiesInPlace = sourceCode.includes("chars[write") || sourceCode.includes("chars[read") || sourceCode.includes("chars[");
+  // 2. In-place modification check (e.g. String Compression or arbitrary in-place problems)
+  const requiresInPlace = problem.slug === "string-compression" ||
+    (problem.statement && /in-place|modify the input array/i.test(problem.statement)) ||
+    (problem.description && /in-place|modify the input array/i.test(problem.description));
+  if (requiresInPlace) {
+    const modifiesInPlace = /(?:chars|nums|arr|grid|board)\[[^\]]+\]\s*=/i.test(sourceCode) ||
+      sourceCode.includes("chars[write") || sourceCode.includes("chars[read") || sourceCode.includes("chars[");
     if (!modifiesInPlace) {
       issues.push({
         type: "in_place_violation",
         severity: "critical",
-        message: "String Compression problem requires in-place modification of the 'chars' array, but no in-place assignment was detected."
+        message: `${problem.title || "The problem"} requires in-place modification of the input collection, but no in-place assignment was detected.`
       });
     }
   }
@@ -1049,7 +1282,7 @@ function buildEvidenceBasedFindings({ structure, consistency, diagnosis, rawLine
 function prepareAnimaticTrace({ structure, sourceCode, problem, language }) {
   const { loops, variables } = structure;
   const isMonotonic = loops.some(l => l.innerMonotonicPointers && l.innerMonotonicPointers.length > 0);
-  const isStringCompression = problem?.slug === "string-compression" || variables.some(v => v.name === "write" && v.name === "read");
+  const isStringCompression = variables.some(v => v.name === "write" && v.name === "read") || problem?.slug === "string-compression";
 
   // Pattern 1: Monotonic two-pointer scan (e.g. #392 Is Subsequence)
   if (isMonotonic) {

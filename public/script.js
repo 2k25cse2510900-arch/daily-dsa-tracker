@@ -7799,6 +7799,253 @@ function initializeAiCodeMentor() {
     });
   }
 
+  // 9. Module 5 Execution & Verification Controls
+  function updateCardExecutionBadge(badgeEl, status, summary) {
+    if (!badgeEl) return;
+    badgeEl.hidden = false;
+    badgeEl.className = "badge-tag";
+    const st = String(status || "").toLowerCase();
+    if (st === "passed") {
+      badgeEl.classList.add("badge-exec-passed");
+      badgeEl.textContent = summary?.total ? `✓ Passed (${summary.passed}/${summary.total})` : "✓ Passed";
+    } else if (st === "failed") {
+      badgeEl.classList.add("badge-exec-failed");
+      badgeEl.textContent = summary?.total ? `✕ Failed (${summary.passed}/${summary.total})` : "✕ Failed";
+    } else if (st === "compilation_error") {
+      badgeEl.classList.add("badge-exec-failed");
+      badgeEl.textContent = "Compile Error";
+    } else if (st === "time_limit_exceeded") {
+      badgeEl.classList.add("badge-exec-failed");
+      badgeEl.textContent = "Time Limit Exceeded";
+    } else if (st === "runtime_error") {
+      badgeEl.classList.add("badge-exec-failed");
+      badgeEl.textContent = "Runtime Error";
+    } else if (st === "execution_only") {
+      badgeEl.classList.add("badge-exec-amber");
+      badgeEl.textContent = "Execution Only";
+    } else {
+      badgeEl.classList.add("badge-exec-grey");
+      badgeEl.textContent = st ? st.replace(/_/g, " ") : "Not Run";
+    }
+  }
+
+  function renderExecutionResults(containerEl, execResult) {
+    if (!containerEl || !execResult) return;
+    containerEl.hidden = false;
+    const summary = execResult.testSummary || { total: 0, passed: 0, failed: 0 };
+    const runtime = execResult.resourceUsage?.executionTimeMs || 0;
+    const results = Array.isArray(execResult.results) ? execResult.results : [];
+    const isPassed = execResult.status === "passed";
+
+    let rowsHtml = results.map((r, idx) => {
+      const pass = r.status === "passed";
+      const statusClass = pass ? "pass" : "fail";
+      const actualText = r.actualOutput !== null && r.actualOutput !== undefined ? escapeHTML(String(r.actualOutput)) : (r.error ? `<em>${escapeHTML(r.error)}</em>` : "&mdash;");
+      return `<tr>
+        <td><strong>#${idx + 1}</strong></td>
+        <td><code>${escapeHTML(r.input || "")}</code></td>
+        <td><code>${escapeHTML(r.expectedOutput || "&mdash;")}</code></td>
+        <td><code class="${statusClass}">${actualText}</code></td>
+        <td class="${statusClass}">${pass ? "✓ PASS" : "✕ FAIL"}</td>
+      </tr>`;
+    }).join("");
+
+    let errorBlock = "";
+    if (Array.isArray(execResult.errors) && execResult.errors.length) {
+      errorBlock = `<div class="mentor-exec-error-box" style="margin-top:6px; color:#b91c1c; font-family:monospace; font-size:11px; white-space:pre-wrap; background:#fef2f2; padding:6px 8px; border-radius:4px;">${escapeHTML(execResult.errors.join("\n"))}</div>`;
+    }
+
+    containerEl.innerHTML = `
+      <details class="mentor-exec-details" ${!isPassed ? "open" : ""}>
+        <summary>
+          <strong>Execution Details:</strong> ${isPassed ? "✓ All test cases passed" : "✕ Test case failures detected"} &middot; 
+          <span>${summary.passed}/${summary.total} Passed</span> &middot; 
+          <span>Runtime: ${runtime}ms</span>
+        </summary>
+        ${errorBlock}
+        <table class="mentor-exec-table">
+          <thead>
+            <tr><th>Test</th><th>Input</th><th>Expected</th><th>Actual</th><th>Verdict</th></tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || "<tr><td colspan='5'>No test cases recorded</td></tr>"}
+          </tbody>
+        </table>
+      </details>
+    `;
+  }
+
+  function updateMatrixRow(tier, execResult) {
+    const summary = execResult?.testSummary || {};
+    const runtime = execResult?.resourceUsage?.executionTimeMs !== undefined ? `${execResult.resourceUsage.executionTimeMs} ms` : "&mdash;";
+    const status = execResult?.status || "Not Run";
+    const passedStr = summary.total !== undefined ? `${summary.passed}/${summary.total} Passed` : "&mdash;";
+
+    if (tier === "bruteForce") {
+      const tEl = $("mentorCompTestsBf"); if (tEl) tEl.innerHTML = `<span class="badge-tag ${status === "passed" ? "badge-exec-passed" : "badge-exec-failed"}">${passedStr}</span>`;
+      const rEl = $("mentorCompRuntimeBf"); if (rEl) rEl.textContent = runtime;
+      const sEl = $("mentorCompStatusBf"); if (sEl) sEl.textContent = status.replace(/_/g, " ");
+    } else if (tier === "improved") {
+      const tEl = $("mentorCompTestsImp"); if (tEl) tEl.innerHTML = `<span class="badge-tag ${status === "passed" ? "badge-exec-passed" : "badge-exec-failed"}">${passedStr}</span>`;
+      const rEl = $("mentorCompRuntimeImp"); if (rEl) rEl.textContent = runtime;
+      const sEl = $("mentorCompStatusImp"); if (sEl) sEl.textContent = status.replace(/_/g, " ");
+    } else if (tier === "optimal") {
+      const tEl = $("mentorCompTestsOpt"); if (tEl) tEl.innerHTML = `<span class="badge-tag ${status === "passed" ? "badge-exec-passed" : "badge-exec-failed"}">${passedStr}</span>`;
+      const rEl = $("mentorCompRuntimeOpt"); if (rEl) rEl.textContent = runtime;
+      const sEl = $("mentorCompStatusOpt"); if (sEl) sEl.textContent = status.replace(/_/g, " ");
+    } else if (tier === "studentSubmission" || tier === "student") {
+      const tEl = $("mentorCompTestsStudent"); if (tEl) tEl.innerHTML = `<span class="badge-tag ${status === "passed" ? "badge-exec-passed" : "badge-exec-failed"}">${passedStr}</span>`;
+      const rEl = $("mentorCompRuntimeStudent"); if (rEl) rEl.textContent = runtime;
+      const sEl = $("mentorCompStatusStudent"); if (sEl) sEl.textContent = status.replace(/_/g, " ");
+    }
+  }
+
+  async function runSingleExecution(tier, code, buttonEl, badgeEl, resultsContainerEl) {
+    if (!code || !code.trim() || code.startsWith("Problem-specific") || code.startsWith("// Improved solution code unavailable")) {
+      showToast("No executable code available for this approach.", "warning");
+      return;
+    }
+    if (buttonEl.disabled) return;
+    const originalText = buttonEl.textContent;
+    buttonEl.disabled = true;
+    buttonEl.textContent = "Running...";
+
+    try {
+      const payload = {
+        sourceCode: code,
+        language: $("mentorLangSelect")?.value || "python3",
+        problemNumber: currentMentorProblem?.number,
+        problemSlug: currentMentorProblem?.slug,
+        problemTitle: currentMentorProblem?.title,
+        tier
+      };
+      const res = await apiRequest("/api/ai-code-mentor/execute", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      updateCardExecutionBadge(badgeEl, res.status, res.testSummary);
+      renderExecutionResults(resultsContainerEl, res);
+      updateMatrixRow(tier, res);
+      showToast(`Verification: ${res.status.toUpperCase()} (${res.testSummary?.passed || 0}/${res.testSummary?.total || 0})`);
+    } catch (err) {
+      showToast(`Execution failed: ${err.message}`, "error");
+      if (badgeEl) {
+        badgeEl.hidden = false;
+        badgeEl.className = "badge-tag badge-exec-failed";
+        badgeEl.textContent = "Error";
+      }
+    } finally {
+      buttonEl.disabled = false;
+      buttonEl.textContent = originalText;
+    }
+  }
+
+  // Brute Force Execution Button
+  const runBfBtn = $("mentorRunBruteForceBtn");
+  if (runBfBtn && !runBfBtn.dataset.bound) {
+    runBfBtn.dataset.bound = "true";
+    runBfBtn.addEventListener("click", () => {
+      const code = $("mentorBruteForceCode")?.textContent || "";
+      runSingleExecution("bruteForce", code, runBfBtn, $("mentorBruteForceExecBadge"), $("mentorBruteForceExecResult"));
+    });
+  }
+
+  // Improved Approach Execution Button
+  const runImpBtn = $("mentorRunImprovedBtn");
+  if (runImpBtn && !runImpBtn.dataset.bound) {
+    runImpBtn.dataset.bound = "true";
+    runImpBtn.addEventListener("click", () => {
+      const code = $("mentorImprovedCode")?.textContent || "";
+      runSingleExecution("improved", code, runImpBtn, $("mentorImprovedExecBadge"), $("mentorImprovedExecResult"));
+    });
+  }
+
+  // Optimal Solution Execution Button
+  const runOptBtn = $("mentorRunOptimalBtn");
+  if (runOptBtn && !runOptBtn.dataset.bound) {
+    runOptBtn.dataset.bound = "true";
+    runOptBtn.addEventListener("click", () => {
+      const code = $("mentorOptimalCode")?.textContent || "";
+      runSingleExecution("optimal", code, runOptBtn, $("mentorOptimalExecBadge"), $("mentorOptimalExecResult"));
+    });
+  }
+
+  // Student Code Execution Button
+  const runStudentBtn = $("mentorRunStudentBtn");
+  if (runStudentBtn && !runStudentBtn.dataset.bound) {
+    runStudentBtn.dataset.bound = "true";
+    runStudentBtn.addEventListener("click", () => {
+      const code = $("mentorCodeInput")?.value || "";
+      runSingleExecution("studentSubmission", code, runStudentBtn, $("mentorStudentExecBadge"), $("mentorStudentExecResult"));
+    });
+  }
+
+  // Verify All Solutions Button
+  const verifyAllBtn = $("mentorVerifyAllBtn");
+  if (verifyAllBtn && !verifyAllBtn.dataset.bound) {
+    verifyAllBtn.dataset.bound = "true";
+    verifyAllBtn.addEventListener("click", async () => {
+      if (verifyAllBtn.disabled) return;
+      verifyAllBtn.disabled = true;
+      const originalText = verifyAllBtn.textContent;
+      verifyAllBtn.textContent = "Verifying All...";
+      const statusEl = $("mentorVerifyAllStatus");
+      if (statusEl) statusEl.textContent = "Executing independent verification across all solution tiers...";
+
+      try {
+        const payload = {
+          language: $("mentorLangSelect")?.value || "python3",
+          problemNumber: currentMentorProblem?.number,
+          problemSlug: currentMentorProblem?.slug,
+          problemTitle: currentMentorProblem?.title,
+          studentCode: $("mentorCodeInput")?.value || null,
+          submissionId: currentMentorProblem?.submissionId || null,
+          solutions: {
+            optimal: { code: $("mentorOptimalCode")?.textContent, available: Boolean($("mentorOptimalCode")?.textContent) },
+            bruteForce: { code: $("mentorBruteForceCode")?.textContent, available: Boolean($("mentorBruteForceCode")?.textContent) },
+            improved: { code: $("mentorImprovedCode")?.textContent, available: Boolean($("mentorImprovedCode")?.textContent && !$("mentorImprovedCode")?.textContent.startsWith("// Improved solution code unavailable")) }
+          }
+        };
+
+        const res = await apiRequest("/api/ai-code-mentor/verify-solutions", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+
+        if (res?.solutions) {
+          if (res.solutions.optimal) {
+            updateCardExecutionBadge($("mentorOptimalExecBadge"), res.solutions.optimal.status, res.solutions.optimal.testSummary);
+            renderExecutionResults($("mentorOptimalExecResult"), res.solutions.optimal);
+            updateMatrixRow("optimal", res.solutions.optimal);
+          }
+          if (res.solutions.bruteForce) {
+            updateCardExecutionBadge($("mentorBruteForceExecBadge"), res.solutions.bruteForce.status, res.solutions.bruteForce.testSummary);
+            renderExecutionResults($("mentorBruteForceExecResult"), res.solutions.bruteForce);
+            updateMatrixRow("bruteForce", res.solutions.bruteForce);
+          }
+          if (res.solutions.improved) {
+            updateCardExecutionBadge($("mentorImprovedExecBadge"), res.solutions.improved.status, res.solutions.improved.testSummary);
+            renderExecutionResults($("mentorImprovedExecResult"), res.solutions.improved);
+            updateMatrixRow("improved", res.solutions.improved);
+          }
+          if (res.solutions.studentSubmission) {
+            updateCardExecutionBadge($("mentorStudentExecBadge"), res.solutions.studentSubmission.status, res.solutions.studentSubmission.testSummary);
+            renderExecutionResults($("mentorStudentExecResult"), res.solutions.studentSubmission);
+            updateMatrixRow("studentSubmission", res.solutions.studentSubmission);
+          }
+        }
+        if (statusEl) statusEl.textContent = "All available solution tiers verified.";
+        showToast("Multi-tier execution verification complete!");
+      } catch (err) {
+        showToast(`Verification failed: ${err.message}`, "error");
+        if (statusEl) statusEl.textContent = `Verification error: ${err.message}`;
+      } finally {
+        verifyAllBtn.disabled = false;
+        verifyAllBtn.textContent = originalText;
+      }
+    });
+  }
+
 function normalizeMentorMode(rawMode) {
   const m = String(rawMode || "explain").toLowerCase().trim();
   const map = {

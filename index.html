@@ -766,6 +766,9 @@
                   </label>
                 </div>
                 <div class="mentor-editor-btns">
+                  <button id="mentorRunStudentBtn" class="btn btn-secondary mentor-run-student-btn" type="button" aria-label="Run student code verification">
+                    &#9654; Run My Code
+                  </button>
                   <button id="mentorFindMistakeQuickBtn" class="btn btn-light mentor-mistake-btn" type="button">
                     &#9888; Find Mistake
                   </button>
@@ -774,6 +777,7 @@
                   </button>
                 </div>
               </div>
+              <div id="mentorStudentExecResult" class="mentor-exec-results" hidden></div>
             </div>
 
             <!-- Problem Context & Description Box (Interactive & Standalone) -->
@@ -925,7 +929,16 @@
               </div>
             </div>
 
-            <!-- Approach Comparison Table (Module 4 - 4-Way Multi-Tier Matrix) -->
+            <!-- Module 5: Verification Control Bar -->
+            <div class="mentor-verification-header-bar">
+              <button id="mentorVerifyAllBtn" class="mentor-btn-action btn-verify-all" type="button">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+                Verify All Solutions
+              </button>
+              <span id="mentorVerifyAllStatus" class="mentor-verify-all-status">Independent execution verification across all available solution tiers</span>
+            </div>
+
+            <!-- Approach Comparison Table (Module 4 & 5 - 4-Way Multi-Tier Matrix) -->
             <div id="mentorComparisonTableCard" class="mentor-card mentor-table-card">
               <div class="mentor-card-head">
                 <div class="mentor-card-title-wrap">
@@ -966,6 +979,27 @@
                       <td class="highlight-cell"><code id="mentorCompSpaceOpt">O(1)</code></td>
                       <td id="mentorCompSpaceStudentCell"><code id="mentorCompSpaceStudent">O(1)</code></td>
                     </tr>
+                    <tr>
+                      <td><strong>Test Results (Module 5)</strong></td>
+                      <td id="mentorCompTestsBf"><span class="badge-tag badge-exec-grey">Not Run</span></td>
+                      <td id="mentorCompTestsImp"><span class="badge-tag badge-exec-grey">Not Run</span></td>
+                      <td id="mentorCompTestsOpt"><span class="badge-tag badge-exec-grey">Not Run</span></td>
+                      <td id="mentorCompTestsStudent"><span class="badge-tag badge-exec-grey">Not Run</span></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Measured Runtime</strong></td>
+                      <td id="mentorCompRuntimeBf">&mdash;</td>
+                      <td id="mentorCompRuntimeImp">&mdash;</td>
+                      <td class="highlight-cell" id="mentorCompRuntimeOpt">&mdash;</td>
+                      <td id="mentorCompRuntimeStudent">&mdash;</td>
+                    </tr>
+                    <tr>
+                      <td><strong>Verification Status</strong></td>
+                      <td id="mentorCompStatusBf">&mdash;</td>
+                      <td id="mentorCompStatusImp">&mdash;</td>
+                      <td id="mentorCompStatusOpt">&mdash;</td>
+                      <td id="mentorCompStatusStudent">&mdash;</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -996,6 +1030,11 @@
                   <span id="mentorBruteForceTechniqueBadge" class="badge-tag badge-technique">Exhaustive</span>
                   <span id="mentorBruteForceTimeBadge" class="badge-tag">O(n²) Time</span>
                   <span id="mentorBruteForceSpaceBadge" class="badge-tag">O(1) Space</span>
+                  <button id="mentorRunBruteForceBtn" class="mentor-btn-icon btn-run-execution" type="button" aria-label="Run brute force verification">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                    Run
+                  </button>
+                  <span id="mentorBruteForceExecBadge" class="badge-tag badge-exec-grey">Not Run</span>
                   <button id="mentorCopyBruteForceBtn" class="mentor-btn-icon" type="button" aria-label="Copy brute force code">
                     <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
                     Copy
@@ -1016,6 +1055,7 @@
         return []</code></pre>
               </div>
               <p id="mentorBruteForceLimitations" class="mentor-card-subtext"></p>
+              <div id="mentorBruteForceExecResult" class="mentor-exec-results" hidden></div>
               <div class="mentor-solution-disclaimer" role="note">
                 <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
                 <span>AI-generated solution &mdash; execution verification not yet performed</span>
@@ -1033,6 +1073,11 @@
                   <span id="mentorImprovedTechniqueBadge" class="badge-tag badge-technique">Binary Search</span>
                   <span id="mentorImprovedTimeBadge" class="badge-tag">O(N log M) Time</span>
                   <span id="mentorImprovedSpaceBadge" class="badge-tag">O(M) Space</span>
+                  <button id="mentorRunImprovedBtn" class="mentor-btn-icon btn-run-execution" type="button" aria-label="Run improved approach verification">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                    Run
+                  </button>
+                  <span id="mentorImprovedExecBadge" class="badge-tag badge-exec-grey">Not Run</span>
                   <button id="mentorCopyImprovedBtn" class="mentor-btn-icon" type="button" aria-label="Copy improved approach code">
                     <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
                     Copy
@@ -1049,6 +1094,7 @@
                 <pre class="mentor-code-block"><code id="mentorImprovedCode">// Improved solution code</code></pre>
               </div>
               <p id="mentorImprovedTradeoff" class="mentor-card-subtext"></p>
+              <div id="mentorImprovedExecResult" class="mentor-exec-results" hidden></div>
               <div class="mentor-solution-disclaimer" role="note">
                 <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
                 <span>AI-generated solution &mdash; execution verification not yet performed</span>
@@ -1066,6 +1112,11 @@
                   <span id="mentorOptimalTechniqueBadge" class="badge-tag badge-technique">Two Pointers</span>
                   <span id="mentorOptimalTimeBadge" class="badge-tag">O(n) Time</span>
                   <span id="mentorOptimalSpaceBadge" class="badge-tag">O(1) Aux Space</span>
+                  <button id="mentorRunOptimalBtn" class="mentor-btn-icon btn-run-execution" type="button" aria-label="Run optimal solution verification">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                    Run
+                  </button>
+                  <span id="mentorOptimalExecBadge" class="badge-tag badge-exec-grey">Not Run</span>
                   <button id="mentorCopyOptimalBtn" class="mentor-btn-icon" type="button" aria-label="Copy optimal code">
                     <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"/><path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-2V5H5v11h4v2H5a2 2 0 01-2-2V5z"/><path d="M15 8h-4a1 1 0 00-1 1v7a1 1 0 001 1h4a1 1 0 001-1V9a1 1 0 00-1-1z"/></svg>
                     Copy
@@ -1084,6 +1135,7 @@
         return []</code></pre>
               </div>
               <p id="mentorOptimalInvariants" class="mentor-card-subtext"></p>
+              <div id="mentorOptimalExecResult" class="mentor-exec-results" hidden></div>
               <div class="mentor-solution-disclaimer" role="note">
                 <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
                 <span>AI-generated solution &mdash; execution verification not yet performed</span>

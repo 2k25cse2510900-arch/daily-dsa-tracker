@@ -6,6 +6,12 @@ const { validateGeneratedAnalysis } = require("./code-validation-pipeline");
 const { AiMentorCache } = require("./ai-mentor-cache");
 const { analyzeStudentCode } = require("./student-code-intelligence");
 const { generateMultiTierSolutions, validateGeneratedSolutions, CANONICAL_SOLUTIONS } = require("./solution-generation-engine");
+const {
+  executeCodeSnippet,
+  verifyAllSolutions,
+  createExecutionProvider,
+  normalizeExecutionLanguage
+} = require("./code-execution-engine");
 
 const MODES = Object.freeze([
   "explain", "mistake", "hint", "complexity", "optimize", "dry-run", "teach",
@@ -418,6 +424,7 @@ function publicReview(review) {
 function createAiCodeMentorService({
   db,
   provider,
+  executionProvider: externalExecutionProvider,
   cache: externalCache,
   now = () => new Date(),
   dailyQuota = 10,
@@ -438,7 +445,11 @@ function createAiCodeMentorService({
   const leetcodeSubmissions = (db && typeof db.collection === "function")
     ? db.collection("leetcodeSubmissions")
     : null;
+  const executions = (db && typeof db.collection === "function")
+    ? db.collection("aiCodeExecutions")
+    : null;
 
+  const executionProvider = externalExecutionProvider || createExecutionProvider(process.env);
   const cache = externalCache || new AiMentorCache({ db, now });
 
   async function reserve(userId) {
@@ -792,14 +803,55 @@ function createAiCodeMentorService({
 
       // Solution Generation Engine (Module 4) - Multi-Tier Solutions
       const multiTier = generateMultiTierSolutions({
-        problem,
+        problem: { ...problem, solutions: validated.solutions },
         language: input.language,
         studentCode: input.sourceCode,
         verdict: input.verdict
       });
 
       if (!validated.solutions || !validateGeneratedSolutions(validated.solutions).valid) {
-        validated.solutions = multiTier.solutions;
+        if (multiTier.solutions && validateGeneratedSolutions(multiTier.solutions).valid) {
+          validated.solutions = multiTier.solutions;
+        } else if (validated.optimalCode) {
+          // Normalize AI-generated optimalCode / bruteForce into solutions package
+          validated.solutions = {
+            optimal: {
+              available: true,
+              approachName: validated.optimalApproach?.title || "Optimal Solution",
+              technique: validated.optimalApproach?.algorithm || "Optimal Invariant",
+              intuition: validated.optimalApproach?.whyItWorks || "Leverage problem invariants.",
+              steps: ["Identify core problem invariant.", "Process input in optimal pass.", "Return target result."],
+              correctnessReasoning: validated.correctnessReasoning?.explanation || "Invariant guarantees correctness.",
+              code: validated.optimalCode,
+              timeComplexity: validated.optimalComplexity?.timeComplexity || "O(n)",
+              timeExplanation: validated.optimalComplexity?.explanation || "Linear pass.",
+              spaceComplexity: validated.optimalComplexity?.spaceComplexity || "O(1)",
+              spaceExplanation: validated.optimalComplexity?.derivation || "Constant auxiliary allocations.",
+              edgeCases: []
+            },
+            bruteForce: {
+              available: Boolean(validated.bruteForce?.code),
+              approachName: validated.bruteForce?.title || "Exhaustive Baseline Search",
+              technique: validated.bruteForce?.algorithm || "Exhaustive Search",
+              intuition: validated.bruteForce?.explanation || "Exhaustive evaluation.",
+              code: validated.bruteForce?.code || null,
+              timeComplexity: validated.bruteForce?.timeComplexity || "O(n²)",
+              spaceComplexity: validated.bruteForce?.spaceComplexity || "O(1)",
+              unavailableReason: validated.bruteForce?.code ? null : "Brute force implementation code not generated."
+            },
+            improved: {
+              available: Boolean(validated.improvedApproach?.code),
+              approachName: validated.improvedApproach?.title || "Intermediate Optimization",
+              technique: validated.improvedApproach?.algorithm || "Precomputation",
+              code: validated.improvedApproach?.code || null,
+              timeComplexity: validated.improvedApproach?.timeComplexity || "O(n log n)",
+              spaceComplexity: validated.improvedApproach?.spaceComplexity || "O(n)",
+              unavailableReason: validated.improvedApproach?.code ? null : "No distinct intermediate approach between brute force and optimal."
+            }
+          };
+        } else {
+          validated.solutions = multiTier.solutions;
+        }
       } else if (problem.isCanonical || CANONICAL_SOLUTIONS[problem.slug]) {
         // Ground canonical problems in authoritative multi-tier curriculum implementations
         if (multiTier.solutions?.bruteForce?.code) validated.solutions.bruteForce = multiTier.solutions.bruteForce;
@@ -1355,23 +1407,317 @@ function createAiCodeMentorService({
       problemTitle: body.problemTitle,
       problemSlug: body.problemSlug,
       problemUrl: body.problemUrl,
-      problemDescription: body.problemDescription
+      problemDescription: body.problemDescription || body.statement
     });
 
-    const solutionsResult = generateMultiTierSolutions({
+    if (problem.clarificationNeeded) {
+      throw mentorError(
+        "AMBIGUOUS_PROBLEM",
+        problem.reason || "Problem identity is ambiguous. Provide problem title, number, or description.",
+        400
+      );
+    }
+
+    // Fast-path: canonical solutions fixture
+    if (CANONICAL_SOLUTIONS[problem.slug]) {
+      const canonicalResult = generateMultiTierSolutions({
+        problem,
+        language,
+        studentCode: body.studentCode || body.sourceCode || null,
+        verdict: body.verdict || "Accepted"
+      });
+      return {
+        problemTitle: problem.title,
+        problemSlug: problem.slug,
+        problemNumber: problem.number,
+        language,
+        ...canonicalResult
+      };
+    }
+
+    // Check cached problem-level solutions
+    const modelTag = provider.model || "gemini";
+    const cachedOptimal = await cache.getProblemOptimal(problem.slug, language, modelTag);
+    if (cachedOptimal?.solutions && validateGeneratedSolutions({ solutions: cachedOptimal.solutions }, problem, language).valid) {
+      const solutionsResult = generateMultiTierSolutions({
+        problem: { ...problem, solutions: cachedOptimal.solutions },
+        language,
+        studentCode: body.studentCode || body.sourceCode || null,
+        verdict: body.verdict || "Accepted"
+      });
+      return {
+        problemTitle: problem.title,
+        problemSlug: problem.slug,
+        problemNumber: problem.number,
+        language,
+        ...solutionsResult,
+        cached: true
+      };
+    }
+
+    // Dynamic generation requires live AI provider
+    if (!provider || typeof provider.analyze !== "function" || provider.providerName === "local") {
+      const fallbackResult = generateMultiTierSolutions({
+        problem,
+        language,
+        studentCode: body.studentCode || body.sourceCode || null,
+        verdict: body.verdict || "Accepted"
+      });
+      return {
+        problemTitle: problem.title,
+        problemSlug: problem.slug,
+        problemNumber: problem.number,
+        language,
+        ...fallbackResult,
+        fallbackNotice: "Dynamic solution generation for non-curriculum problems requires an active AI provider (Gemini or OpenAI)."
+      };
+    }
+
+    // Live AI Provider solution synthesis
+    const reservation = await reserve(user.id);
+    try {
+      const instructions = instructionsFor("optimal-solution", problem, language, body.verdict || "Accepted");
+      const problemContext = buildProblemPromptContext(problem, language);
+      const inputPayload = JSON.stringify({
+        task: "generate-multi-tier-solutions",
+        language,
+        problem: {
+          title: problem.title,
+          slug: problem.slug,
+          number: problem.number,
+          difficulty: problem.difficulty,
+          statement: problem.statement || problem.description || body.problemDescription || ""
+        },
+        code: body.studentCode || body.sourceCode || null,
+        verdict: body.verdict || "Accepted"
+      });
+
+      const result = await provider.analyze({
+        instructions,
+        input: inputPayload,
+        problemContext,
+        problemSlug: problem.slug,
+        language,
+        sourceCode: body.studentCode || body.sourceCode || "",
+        verdict: body.verdict || "Accepted"
+      });
+
+      const rawAnalysis = result.analysis;
+      let aiSolutions = rawAnalysis?.solutions;
+
+      if (!aiSolutions && rawAnalysis?.optimalCode) {
+        aiSolutions = {
+          optimal: {
+            available: true,
+            approachName: rawAnalysis.optimalApproach?.title || "Optimal Solution",
+            technique: rawAnalysis.optimalApproach?.algorithm || "Algorithmic Invariant Optimization",
+            intuition: rawAnalysis.optimalApproach?.whyItWorks || "Leverage mathematical invariants to prune redundant states.",
+            steps: [
+              "Identify core problem invariant.",
+              "Process input in an optimal pass.",
+              "Return target result."
+            ],
+            correctnessReasoning: rawAnalysis.correctnessReasoning?.explanation || rawAnalysis.optimalApproach?.whyItWorks || "Invariant guarantees correctness without backtracking.",
+            code: rawAnalysis.optimalCode,
+            timeComplexity: rawAnalysis.optimalComplexity?.timeComplexity || "O(n)",
+            timeExplanation: rawAnalysis.optimalComplexity?.explanation || "Linear pass processing each input element once.",
+            spaceComplexity: rawAnalysis.optimalComplexity?.spaceComplexity || "O(1)",
+            spaceExplanation: rawAnalysis.optimalComplexity?.derivation || "Constant auxiliary memory allocations.",
+            edgeCases: (rawAnalysis.edgeCases || []).map(e => typeof e === "string" ? e : (e.caseName || e.explanation || "")).filter(Boolean)
+          },
+          bruteForce: {
+            available: Boolean(rawAnalysis.bruteForce?.code || rawAnalysis.bruteForce?.algorithm),
+            approachName: rawAnalysis.bruteForce?.title || "Exhaustive Baseline Search",
+            technique: rawAnalysis.bruteForce?.algorithm || "Exhaustive Search",
+            intuition: rawAnalysis.bruteForce?.explanation || "Enumerate and verify all candidate combinations.",
+            steps: [
+              "Formulate all possible input combinations or brute-force iterations.",
+              "Check each candidate against the problem criteria.",
+              "Return the first or optimal matching result."
+            ],
+            timeComplexity: rawAnalysis.bruteForce?.timeComplexity || "O(n²)",
+            timeExplanation: rawAnalysis.bruteForce?.explanation || "Nested evaluation of all candidate elements in the search space.",
+            spaceComplexity: rawAnalysis.bruteForce?.spaceComplexity || "O(1)",
+            spaceExplanation: "Minimal scalar variable allocation.",
+            limitations: [rawAnalysis.bruteForce?.explanation || "Causes high latency or TLE on large input constraints."],
+            code: rawAnalysis.bruteForce?.code || null
+          },
+          improved: {
+            available: Boolean(rawAnalysis.improvedApproach?.algorithm && rawAnalysis.improvedApproach?.code),
+            approachName: rawAnalysis.improvedApproach?.title || "Intermediate Optimization",
+            technique: rawAnalysis.improvedApproach?.algorithm || "Precomputation / Sorting",
+            intuition: rawAnalysis.improvedApproach?.explanation || "Intermediate data structure optimization.",
+            steps: [],
+            timeComplexity: rawAnalysis.improvedApproach?.timeComplexity || "O(n log n)",
+            timeExplanation: "Logarithmic sorting or precomputed lookup.",
+            spaceComplexity: rawAnalysis.improvedApproach?.spaceComplexity || "O(n)",
+            spaceExplanation: "Auxiliary table or frequency map.",
+            limitations: [],
+            code: rawAnalysis.improvedApproach?.code || null,
+            unavailableReason: (rawAnalysis.improvedApproach?.algorithm && rawAnalysis.improvedApproach?.code) ? null : "No meaningfully distinct intermediate approach exists for this problem. The problem transitions directly from exhaustive search to optimal linear/sublinear representation."
+          }
+        };
+      }
+
+      const check = validateGeneratedSolutions({ solutions: aiSolutions }, problem, language);
+      if (!check.valid) {
+        throw mentorError("AI_INVALID_RESPONSE", `Generated solutions validation failed: ${check.reason}`, 503);
+      }
+
+      await cache.saveProblemOptimal(problem.slug, language, modelTag, {
+        optimalCode: aiSolutions.optimal.code,
+        optimalComplexity: aiSolutions.optimal.timeComplexity,
+        solutions: aiSolutions,
+        verificationStatus: "ai_generated_unverified"
+      });
+
+      const solutionsResult = generateMultiTierSolutions({
+        problem: { ...problem, solutions: aiSolutions },
+        language,
+        studentCode: body.studentCode || body.sourceCode || null,
+        verdict: body.verdict || "Accepted"
+      });
+
+      return {
+        problemTitle: problem.title,
+        problemSlug: problem.slug,
+        problemNumber: problem.number,
+        language,
+        ...solutionsResult,
+        provider: result.provider || "gemini",
+        model: result.model || modelTag
+      };
+    } catch (err) {
+      await release(reservation);
+      throw err;
+    }
+  }
+
+  async function executeCode(user, body = {}) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    const sourceCode = body.sourceCode || body.code || "";
+    if (!sourceCode || typeof sourceCode !== "string" || !sourceCode.trim()) {
+      throw mentorError("SOURCE_CODE_REQUIRED", "Source code is required for execution.", 400);
+    }
+
+    const language = normalizeExecutionLanguage(body.language || "python3");
+    const problem = resolveProblemIdentity({
+      problemNumber: body.problemNumber,
+      problemTitle: body.problemTitle,
+      problemSlug: body.problemSlug,
+      problemUrl: body.problemUrl,
+      problemDescription: body.problemDescription || body.statement
+    });
+
+    const result = await executeCodeSnippet({
+      sourceCode,
+      language,
       problem,
-      language,
-      studentCode: body.studentCode || body.sourceCode || null,
-      verdict: body.verdict || "Accepted"
+      customTestCases: Array.isArray(body.customTestCases) ? body.customTestCases : [],
+      provider: executionProvider,
+      timeoutMs: Number(body.timeoutMs) || undefined
     });
 
-    return {
-      problemTitle: problem.title,
-      problemSlug: problem.slug,
-      problemNumber: problem.number,
+    if (executions) {
+      try {
+        await executions.insertOne({
+          _id: result.executionId,
+          userId: user.id,
+          problemNumber: result.problemId,
+          problemSlug: result.problemSlug,
+          language: result.language,
+          tier: body.tier || "standalone",
+          status: result.status,
+          verificationLevel: result.verificationLevel,
+          testSummary: result.testSummary,
+          resourceUsage: result.resourceUsage,
+          createdAt: new Date()
+        });
+      } catch (err) {
+        console.warn("Could not save execution history:", err.message);
+      }
+    }
+
+    return result;
+  }
+
+  async function verifySolutions(user, body = {}) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    const language = normalizeExecutionLanguage(body.language || "python3");
+    const problem = resolveProblemIdentity({
+      problemNumber: body.problemNumber,
+      problemTitle: body.problemTitle,
+      problemSlug: body.problemSlug,
+      problemUrl: body.problemUrl,
+      problemDescription: body.problemDescription || body.statement
+    });
+
+    let studentCode = body.studentCode || null;
+    let submissionVerdict = body.verdict || null;
+
+    if (!studentCode && body.submissionId) {
+      try {
+        const resolved = await findUserSubmissionRecord(user, body.submissionId);
+        if (resolved?.submission?.sourceCode) {
+          studentCode = resolved.submission.sourceCode;
+          submissionVerdict = resolved.submission.verdict || submissionVerdict;
+        }
+      } catch {}
+    }
+
+    const result = await verifyAllSolutions({
+      solutions: body.solutions || {},
+      studentCode,
+      submissionVerdict,
       language,
-      ...solutionsResult
-    };
+      problem,
+      customTestCases: Array.isArray(body.customTestCases) ? body.customTestCases : [],
+      provider: executionProvider
+    });
+
+    if (executions && result.solutions) {
+      try {
+        for (const [tier, tierRes] of Object.entries(result.solutions)) {
+          if (tierRes.status !== "not_run") {
+            const execId = `exec_${Date.now()}_${tier}_${Math.random().toString(36).substring(2, 7)}`;
+            await executions.insertOne({
+              _id: execId,
+              userId: user.id,
+              problemNumber: result.problemNumber,
+              problemSlug: result.problemSlug,
+              language: result.language,
+              tier,
+              status: tierRes.status,
+              verificationLevel: tierRes.verificationLevel,
+              testSummary: tierRes.testSummary,
+              resourceUsage: tierRes.resourceUsage,
+              createdAt: new Date()
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Could not save multi-tier execution history:", err.message);
+      }
+    }
+
+    return result;
+  }
+
+  async function getExecution(user, executionId) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    if (!executionId) throw mentorError("EXECUTION_ID_REQUIRED", "Execution ID is required.", 400);
+    if (!executions) {
+      throw mentorError("EXECUTION_NOT_FOUND", "Execution history is not available.", 404);
+    }
+
+    const doc = await executions.findOne({ _id: executionId });
+    if (!doc) {
+      throw mentorError("EXECUTION_NOT_FOUND", "Execution record was not found.", 404);
+    }
+    if (doc.userId && doc.userId !== user.id) {
+      throw mentorError("EXECUTION_FORBIDDEN", "You do not have permission to view this execution.", 403);
+    }
+    return doc;
   }
 
   return {
@@ -1379,6 +1725,9 @@ function createAiCodeMentorService({
     createReview,
     getOptimalSolution,
     generateSolutions,
+    executeCode,
+    verifySolutions,
+    getExecution,
     listReviews,
     reviewFor,
     deleteReview,

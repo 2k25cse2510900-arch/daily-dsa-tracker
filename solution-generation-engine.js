@@ -1719,76 +1719,101 @@ function compareStudentImplementation({ studentCode, language, solutions, proble
 }
 
 /**
+ * Checks whether a code string is a placeholder, TODO stub, or empty function.
+ */
+function isPlaceholderCode(code) {
+  if (!code || typeof code !== "string") return true;
+  const trimmed = code.trim();
+  if (trimmed.length === 0) return true;
+  if (/\bTODO\b/i.test(trimmed)) return true;
+  if (/\bplaceholder\b/i.test(trimmed)) return true;
+  if (/\bto be implemented\b/i.test(trimmed)) return true;
+  const withoutComments = trimmed.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, "").trim();
+  if (withoutComments.length === 0) return true;
+  if (/^\{\s*(?:return\s+[^;]+;)?\s*\}$/.test(withoutComments)) return true;
+  if (/^(?:def\s+\w+\([^)]*\)\s*:\s*(?:pass|return(?:\s+None)?)\s*)+$/.test(withoutComments)) return true;
+  return false;
+}
+
+/**
  * Dynamic fallback solution generator for non-canonical problems.
+ * Never outputs fake TODO stubs. If genuine code was not supplied via the AI provider,
+ * marks the tier unavailable with an honest pedagogical explanation.
  */
 function buildDynamicSolutions({ problem, language }) {
   const normLang = normalizeLanguage(language);
-  const signature = problem.signatures?.[normLang] || `// Solution signature for ${normLang}`;
+  const title = problem.title || "DSA Problem";
+  const hasRealOptimal = Boolean(problem.optimalCode && !isPlaceholderCode(problem.optimalCode));
+  const hasRealBrute = Boolean(problem.bruteForceCode && !isPlaceholderCode(problem.bruteForceCode));
+  const hasRealImproved = Boolean(problem.improvedCode && !isPlaceholderCode(problem.improvedCode));
 
   return {
     bruteForce: {
-      available: true,
-      approachName: "Exhaustive Baseline Search",
-      technique: "Exhaustive Search",
-      intuition: `Iterate through all candidate solutions for ${problem.title || "the problem"} to find matching criteria.`,
-      steps: [
-        "Formulate all possible input combinations or brute-force iterations.",
-        "Check each candidate against the problem criteria.",
-        "Return the first or optimal matching result."
+      available: hasRealBrute,
+      approachName: problem.bruteForceTitle || "Exhaustive Baseline Search",
+      technique: problem.bruteForceTechnique || "Exhaustive Search",
+      intuition: problem.bruteForceExplain || `Exhaustively evaluate all candidate states for ${title}.`,
+      steps: problem.bruteForceSteps || [
+        "Enumerate all possible combinations or state paths.",
+        "Verify candidate against problem requirements.",
+        "Return the target result."
       ],
-      timeComplexity: "O(n²)",
-      timeExplanation: "Nested evaluation of all candidate elements in the search space.",
-      spaceComplexity: "O(1)",
-      spaceExplanation: "Minimal scalar variable allocation.",
-      limitations: [
+      timeComplexity: problem.bruteForceTime || "O(n²)",
+      timeExplanation: problem.bruteForceTimeExplain || "Nested evaluation of all candidate elements in the search space.",
+      spaceComplexity: problem.bruteForceSpace || "O(1)",
+      spaceExplanation: problem.bruteForceSpaceExplain || "Minimal scalar variable allocation.",
+      limitations: problem.bruteForceLimitations || [
         "Causes high latency or TLE on large input constraints.",
         "Performs redundant calculations across repeated elements."
       ],
-      code: `// Brute Force Baseline for ${problem.title || "Problem"} (${normLang})\n// AI-generated solution — execution verification not yet performed.\n${signature} {\n    // TODO: Implement exhaustive search baseline\n}`
+      code: hasRealBrute ? problem.bruteForceCode : null,
+      unavailableReason: hasRealBrute ? null : "Live AI provider synthesis is required to generate dynamic brute force code for unverified problems."
     },
     improved: {
-      available: false,
-      approachName: "Intermediate Optimization",
-      technique: "Precomputation / Sorting",
-      intuition: "Intermediate data structure optimization.",
-      steps: [],
-      timeComplexity: "O(n log n)",
-      timeExplanation: "Logarithmic sorting or precomputed lookup.",
-      spaceComplexity: "O(n)",
-      spaceExplanation: "Auxiliary table or frequency map.",
-      limitations: [],
-      unavailableReason: "No meaningfully distinct intermediate approach exists for this problem. The problem transitions directly from exhaustive search to optimal linear/sublinear representation."
+      available: hasRealImproved,
+      approachName: problem.improvedTitle || "Intermediate Optimization",
+      technique: problem.improvedTechnique || "Precomputation / Sorting",
+      intuition: problem.improvedIntuition || "Intermediate data structure optimization.",
+      steps: problem.improvedSteps || [],
+      timeComplexity: problem.improvedTime || "O(n log n)",
+      timeExplanation: problem.improvedTimeExplain || "Logarithmic sorting or precomputed lookup.",
+      spaceComplexity: problem.improvedSpace || "O(n)",
+      spaceExplanation: problem.improvedSpaceExplain || "Auxiliary table or frequency map.",
+      limitations: problem.improvedLimitations || [],
+      code: hasRealImproved ? problem.improvedCode : null,
+      unavailableReason: hasRealImproved ? null : (problem.improvedReason || "No meaningfully distinct intermediate approach exists for this problem. The problem transitions directly from exhaustive search to optimal linear/sublinear representation.")
     },
     optimal: {
-      available: true,
+      available: hasRealOptimal,
       approachName: problem.optimalTitle || "Optimal Solution",
-      technique: "Algorithmic Invariant Optimization",
-      intuition: problem.keyObservation || "Leverage mathematical invariants to prune redundant states.",
-      steps: [
+      technique: problem.optimalTechnique || "Algorithmic Invariant Optimization",
+      intuition: problem.keyObservation || problem.optimalIntuition || "Leverage mathematical invariants to prune redundant states.",
+      steps: problem.optimalSteps || [
         "Identify core problem invariant.",
-        "Process input in a single pass or optimal logarithmic search.",
+        "Process input in an optimal logarithmic or linear pass.",
         "Return target result."
       ],
-      correctnessReasoning: "Proven invariant guarantees that all optimal sub-choices lead to the globally optimal result without backtracking.",
+      correctnessReasoning: problem.correctnessReasoning || "Proven invariant guarantees that all optimal sub-choices lead to the globally optimal result without backtracking.",
       timeComplexity: problem.timeComplexity || "O(n)",
       timeExplanation: problem.timeExplain || "Linear pass processing each input element once.",
       spaceComplexity: problem.spaceComplexity || "O(1)",
       spaceExplanation: problem.spaceExplain || "Constant auxiliary memory allocations.",
-      edgeCases: ["Empty input collections", "Single element boundary", "Duplicate values", "Extreme constraint limits"],
-      code: `// Optimal Canonical Solution for ${problem.title || "Problem"} (${normLang})\n// AI-generated solution — execution verification not yet performed.\n${signature} {\n    // TODO: Implement optimal solution\n}`
+      edgeCases: problem.edgeCases?.length ? problem.edgeCases : ["Empty input collections", "Single element boundary", "Extreme constraint limits"],
+      code: hasRealOptimal ? problem.optimalCode : null,
+      unavailableReason: hasRealOptimal ? null : "Live AI provider synthesis is required to generate dynamic optimal code for unverified problems."
     },
     comparison: {
       summary: "Optimal approach eliminates redundant iterations, achieving superior asymptotic runtime.",
       preferredApproach: problem.optimalTitle || "Optimal Solution",
       reason: "Provides the lowest time complexity while respecting problem constraints.",
       tradeoffs: [
-        { approach: "Brute Force", technique: "Exhaustive Search", timeComplexity: "O(n²)", spaceComplexity: "O(1)", tradeoff: "Simple logic but prone to TLE." },
-        { approach: "Optimal", technique: "Invariant Optimization", timeComplexity: problem.timeComplexity || "O(n)", spaceComplexity: problem.spaceComplexity || "O(1)", tradeoff: "Strictly minimal time complexity." }
+        { approach: "Brute Force", technique: problem.bruteForceTechnique || "Exhaustive Search", timeComplexity: problem.bruteForceTime || "O(n²)", spaceComplexity: problem.bruteForceSpace || "O(1)", tradeoff: "Simple logic but prone to TLE." },
+        { approach: "Optimal", technique: problem.optimalTechnique || "Invariant Optimization", timeComplexity: problem.timeComplexity || "O(n)", spaceComplexity: problem.spaceComplexity || "O(1)", tradeoff: "Strictly minimal asymptotic time complexity." }
       ],
       table: [
         { dimension: "Intuition", bruteForce: "Exhaustively check all combinations.", improved: "N/A", optimal: "Leverage invariants for direct computation." },
-        { dimension: "Time Complexity", bruteForce: "O(n²)", improved: "N/A", optimal: problem.timeComplexity || "O(n)" },
-        { dimension: "Auxiliary Space", bruteForce: "O(1)", improved: "N/A", optimal: problem.spaceComplexity || "O(1)" }
+        { dimension: "Time Complexity", bruteForce: problem.bruteForceTime || "O(n²)", improved: "N/A", optimal: problem.timeComplexity || "O(n)" },
+        { dimension: "Auxiliary Space", bruteForce: problem.bruteForceSpace || "O(1)", improved: "N/A", optimal: problem.spaceComplexity || "O(1)" }
       ]
     }
   };
@@ -1865,9 +1890,21 @@ function generateMultiTierSolutions({ problem, language, studentCode, verdict })
       tradeoffs: [...packageData.comparison.tradeoffs],
       table: [...packageData.comparison.table]
     };
+  } else if (problem?.solutions && problem.solutions.optimal?.code && !isPlaceholderCode(problem.solutions.optimal.code)) {
+    // Re-use pre-validated AI-generated solutions package if provided in problem context
+    bruteForce = problem.solutions.bruteForce;
+    improved = problem.solutions.improved || { available: false, unavailableReason: "No distinct intermediate approach between brute force and optimal." };
+    optimal = problem.solutions.optimal;
+    comparison = problem.comparison || {
+      summary: "Optimal approach achieves superior asymptotic runtime.",
+      preferredApproach: optimal.approachName || "Optimal Solution",
+      reason: "Provides lowest time complexity while respecting problem constraints.",
+      tradeoffs: [],
+      table: []
+    };
   } else {
     // Dynamic generation for custom or curriculum problems without hardcoded 8-lang maps
-    const dynamic = buildDynamicSolutions({ problem: resolvedProblem, language: normLang });
+    const dynamic = buildDynamicSolutions({ problem: { ...resolvedProblem, ...(problem || {}) }, language: normLang });
     bruteForce = dynamic.bruteForce;
     improved = dynamic.improved;
     optimal = dynamic.optimal;
@@ -1934,6 +1971,7 @@ function generateMultiTierSolutions({ problem, language, studentCode, verdict })
 
 /**
  * Server-side validation of generated solution package.
+ * Strictly rejects placeholder stubs, TODO comments, and incomplete implementations.
  */
 function validateGeneratedSolutions(packageObj, problem, language = "python3", { throwOnError = false } = {}) {
   const fail = (reason) => {
@@ -1955,6 +1993,9 @@ function validateGeneratedSolutions(packageObj, problem, language = "python3", {
     if (!solutions.bruteForce.code || typeof solutions.bruteForce.code !== "string" || !solutions.bruteForce.code.trim()) {
       return fail(`Brute force code must be a non-empty string in ${normLang}.`);
     }
+    if (isPlaceholderCode(solutions.bruteForce.code)) {
+      return fail("Brute force code contains placeholder or TODO stubs.");
+    }
     if (!solutions.bruteForce.timeComplexity || !/^O\(.+\)$/i.test(solutions.bruteForce.timeComplexity.trim())) {
       return fail("Brute force time complexity must use valid Big-O notation.");
     }
@@ -1964,6 +2005,9 @@ function validateGeneratedSolutions(packageObj, problem, language = "python3", {
   if (solutions.improved && solutions.improved.available) {
     if (!solutions.improved.code || typeof solutions.improved.code !== "string" || !solutions.improved.code.trim()) {
       return fail(`Improved approach code must be a non-empty string in ${normLang}.`);
+    }
+    if (isPlaceholderCode(solutions.improved.code)) {
+      return fail("Improved approach code contains placeholder or TODO stubs.");
     }
     if (!solutions.improved.timeComplexity || !/^O\(.+\)$/i.test(solutions.improved.timeComplexity.trim())) {
       return fail("Improved approach time complexity must use valid Big-O notation.");
@@ -1980,6 +2024,9 @@ function validateGeneratedSolutions(packageObj, problem, language = "python3", {
   }
   if (!solutions.optimal.code || typeof solutions.optimal.code !== "string" || !solutions.optimal.code.trim()) {
     return fail(`Optimal solution code must be a non-empty string in ${normLang}.`);
+  }
+  if (isPlaceholderCode(solutions.optimal.code)) {
+    return fail("Optimal solution code contains placeholder or TODO stubs.");
   }
   if (!solutions.optimal.timeComplexity || !/^O\(.+\)$/i.test(solutions.optimal.timeComplexity.trim())) {
     return fail("Optimal solution time complexity must use valid Big-O notation.");
@@ -2000,6 +2047,7 @@ module.exports = {
   EXECUTION_DISCLAIMER,
   CANONICAL_SOLUTIONS,
   normalizeLanguage,
+  isPlaceholderCode,
   compareStudentImplementation,
   generateMultiTierSolutions,
   validateGeneratedSolutions

@@ -114,6 +114,35 @@ function createAiCodeMentorRouter({ memberOnly, serviceFor, reviewRateLimit, aud
     }
   });
 
+  router.post("/execute", reviewRateLimit, async (req, res) => {
+    try {
+      const result = await serviceFor().executeCode(req.member, req.body);
+      audit(req, "ai-code-mentor-executed", result.executionId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/verify-solutions", reviewRateLimit, async (req, res) => {
+    try {
+      const result = await serviceFor().verifySolutions(req.member, req.body);
+      audit(req, "ai-code-mentor-solutions-verified", req.body?.problemSlug || "unknown");
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/executions/:executionId", async (req, res) => {
+    try {
+      const result = await serviceFor().getExecution(req.member, req.params.executionId);
+      res.json({ execution: result });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.post("/reviews", reviewRateLimit, async (req, res) => {
     try {
       const review = await serviceFor().createReview(req.member, req.body);

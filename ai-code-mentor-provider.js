@@ -929,15 +929,11 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
               timeComplexity: codeIntel.complexity.timeComplexity,
               spaceComplexity: codeIntel.complexity.auxiliarySpace,
               explanation: codeIntel.complexity.timeDerivation
-            } : (verified.studentComplexity || (codeIntel.complexity ? {
-              timeComplexity: codeIntel.complexity.timeComplexity,
-              spaceComplexity: codeIntel.complexity.auxiliarySpace,
-              explanation: codeIntel.complexity.timeDerivation
-            } : {
-              timeComplexity: verified.timeComplexity || "O(n)",
-              spaceComplexity: verified.spaceComplexity || "O(1)",
-              explanation: verified.timeExplain || "Linear sequence traversal."
-            })),
+            } : (verified.studentComplexity || {
+              timeComplexity: verified.timeComplexity || codeIntel.complexity?.timeComplexity || "O(n)",
+              spaceComplexity: verified.spaceComplexity || codeIntel.complexity?.auxiliarySpace || "O(1)",
+              explanation: verified.timeExplain || codeIntel.complexity?.timeDerivation || "Linear sequence traversal."
+            }),
             sourceUnderstanding: codeIntel.overview,
             codeStructure: {
               signatures: codeIntel.signatures,
@@ -1043,9 +1039,9 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
         };
       }
 
-      // If unverified, clearly report lack of local curated solution rather than fabricating
+      // If unverified, clearly report lack of local curated solution rather than fabricating fake code
       const fallbackMultiTier = generateMultiTierSolutions({
-        problem: { title: "Unverified LeetCode Problem", slug },
+        problem: { title: verified?.title || "Non-Curriculum Problem", slug },
         language: lang,
         studentCode: rawCode,
         verdict: verdict || "Accepted"
@@ -1054,6 +1050,7 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
       return {
         provider: "local",
         model: "local-curriculum-v1",
+        fallbackNotice: "Local fallback knowledge engine active. Dynamic solutions and deep reasoning for arbitrary non-curriculum problems require a configured live AI provider (Gemini or OpenAI).",
         analysis: {
           provider: "local",
           model: "local-curriculum-v1",
@@ -1062,9 +1059,15 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
           solutions: fallbackMultiTier.solutions,
           solutionComparison: fallbackMultiTier.solutionComparison,
           studentComparison: fallbackMultiTier.studentComparison,
-          studentApproach: "Unverified problem in local curriculum",
+          studentApproach: codeIntel.overview || "Student submission analyzed via local static code intelligence engine.",
           correctnessStatus: "Unanalyzed",
-          mistakeDiagnosis: { hasMistake: false },
+          mistakeDiagnosis: { hasMistake: codeIntel.diagnosis?.hasMistake || false },
+          studentComplexity: {
+            timeComplexity: codeIntel.complexity?.timeComplexity || "—",
+            spaceComplexity: codeIntel.complexity?.auxiliarySpace || "—",
+            explanation: codeIntel.complexity?.timeDerivation || "Static code flow complexity derivation."
+          },
+          algorithmPattern: codeIntel.algorithmPattern,
           bruteForce: {
             title: "Unavailable",
             algorithm: "Connect Gemini or OpenAI API key to analyze arbitrary problems dynamically.",
@@ -1078,13 +1081,13 @@ function createLocalKnowledgeProvider({ knowledgeBase = CANONICAL_PROBLEMS } = {
             whyItWorks: "Configure GEMINI_API_KEY or OPENAI_API_KEY in server .env to enable real-time dynamic analysis.",
             keyInvariants: "None"
           },
-          optimalCode: "// Problem-specific optimal code requires GEMINI_API_KEY or OPENAI_API_KEY on the server.",
+          optimalCode: null,
           optimalComplexity: {
-            timeComplexity: "—",
-            spaceComplexity: "—",
-            auxiliarySpace: "—",
+            timeComplexity: codeIntel.complexity?.timeComplexity || "—",
+            spaceComplexity: codeIntel.complexity?.auxiliarySpace || "—",
+            auxiliarySpace: codeIntel.complexity?.auxiliarySpace || "—",
             totalSpace: "—",
-            explanation: "Requires live AI mentor"
+            explanation: "Static code flow analysis."
           },
           summary: "This problem is not part of the verified offline curriculum. Configure GEMINI_API_KEY to enable live AI analysis.",
           problemUnderstanding: {

@@ -981,7 +981,24 @@ function retrieveProblem({
     });
   }
 
-  // 8. Standalone / Code-Only review: No external problem statement supplied
+  // 8. Problem identified by number only without statement or title
+  if (normNumber) {
+    return createCanonicalProblemModel({
+      number: normNumber,
+      slug: `problem-${normNumber}`,
+      title: `Problem #${normNumber}`,
+      source: "leetcode",
+      sourceUrl: `https://leetcode.com/problemset/all/?search=${normNumber}`,
+      url: `https://leetcode.com/problemset/all/?search=${normNumber}`,
+      statement: "",
+      metadataVerificationStatus: VERIFICATION_STATUSES.INSUFFICIENT_CONTEXT,
+      retrievalMethod: "id_lookup",
+      isCanonical: false,
+      ambiguityReason: `Problem #${normNumber} identified by number only. Provide the problem title, slug, or problem statement for full metadata hydration.`
+    });
+  }
+
+  // 9. Standalone / Code-Only review: No external problem statement supplied
   return createCanonicalProblemModel({
     number: null,
     slug: "custom-code-review",
