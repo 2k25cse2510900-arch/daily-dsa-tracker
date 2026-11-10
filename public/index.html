@@ -609,6 +609,8 @@
         <p id="routeProfileDailyStatus" class="profile-daily-status" role="status" hidden></p>
         <div id="routeProfileDailyContent" class="profile-daily-content" aria-live="polite"></div>
       </section>
+
+      
     </div>
   </main>
 
@@ -650,6 +652,10 @@
             <button id="mentorModeLearningBtn" class="mentor-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="mentorLearningWorkspace">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z"/></svg>
               My Learning Journey
+            </button>
+            <button id="mentorModeInterviewBtn" class="mentor-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="mentorInterviewWorkspace">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clip-rule="evenodd"/></svg>
+              Mock Interview
             </button>
           </div>
           <a id="mentorLeetCodeLink" class="btn btn-light mentor-leetcode-link" href="https://leetcode.com/problems/two-sum/" target="_blank" rel="noopener noreferrer">
@@ -1624,6 +1630,358 @@
             </div>
             <div id="tutorLessonContent" class="tutor-lesson-content">
               <!-- Rendered markdown / lesson text -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Module 7: AI Mock Interview & Assessment Engine Workspace -->
+      <section id="mentorInterviewWorkspace" class="mentor-workspace-section mentor-interview-workspace" role="tabpanel" aria-labelledby="mentorModeInterviewBtn" hidden>
+        <!-- Top Toolbar -->
+        <div class="interview-workspace-toolbar">
+          <div class="interview-toolbar-meta">
+            <span class="badge-provider">AI Interviewer: Ada (Staff Engineer)</span>
+            <span id="interviewActiveStatusBadge" class="interview-status-badge badge-idle">Ready</span>
+          </div>
+          <div class="interview-toolbar-nav">
+            <button id="navInterviewSetupBtn" class="btn btn-sm btn-light active" type="button">Setup</button>
+            <button id="navInterviewRoomBtn" class="btn btn-sm btn-light" type="button" disabled>Live Room</button>
+            <button id="navInterviewReportBtn" class="btn btn-sm btn-light" type="button" disabled>Scorecard</button>
+            <button id="navInterviewHistoryBtn" class="btn btn-sm btn-light" type="button">History</button>
+          </div>
+        </div>
+
+        <!-- View 1: Setup & Configuration -->
+        <div id="interviewSetupView" class="interview-view-panel">
+          <div class="interview-hero-card mentor-card">
+            <div class="interview-hero-content">
+              <div class="interview-hero-badge">MODULE 7 — ASSESSMENT ENGINE</div>
+              <h2 class="interview-hero-title">Technical Mock Interview with Ada</h2>
+              <p class="interview-hero-desc">
+                Experience realistic Big Tech coding interviews. Ada assesses problem clarification, algorithmic trade-offs, live code implementation, execution test verification, edge cases, and time/space complexity before delivering an 8-dimension rubric evaluation report.
+              </p>
+            </div>
+            <div class="interview-stats-overview" id="interviewSummaryMiniStats">
+              <div class="mini-stat-item">
+                <span class="mini-stat-num" id="statCompletedInterviews">0</span>
+                <span class="mini-stat-lbl">Interviews</span>
+              </div>
+              <div class="mini-stat-item">
+                <span class="mini-stat-num" id="statAverageScore">--</span>
+                <span class="mini-stat-lbl">Avg Score</span>
+              </div>
+              <div class="mini-stat-item">
+                <span class="mini-stat-num" id="statLatestVerdict">--</span>
+                <span class="mini-stat-lbl">Latest Verdict</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="interview-setup-grid">
+            <!-- Mode Selection Card -->
+            <div class="mentor-card setup-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">CONFIGURATION</span>
+                  <h3 class="mentor-card-title">1. Select Interview Mode</h3>
+                </div>
+              </div>
+              <div class="interview-mode-selector" role="radiogroup" aria-label="Interview Mode">
+                <label class="mode-radio-label active" data-mode="standard-mock">
+                  <input type="radio" name="interviewMode" value="standard-mock" checked>
+                  <div class="mode-card-body">
+                    <strong>Standard DSA Interview</strong>
+                    <span>Balanced core algorithms &amp; data structures with realistic time pressure.</span>
+                  </div>
+                </label>
+                <label class="mode-radio-label" data-mode="weak-area-focused">
+                  <input type="radio" name="interviewMode" value="weak-area-focused">
+                  <div class="mode-card-body">
+                    <strong>🎯 Weak-Area Focused</strong>
+                    <span>Directly targets your lowest-mastery concepts identified by Module 6.</span>
+                  </div>
+                </label>
+                <label class="mode-radio-label" data-mode="company-focused">
+                  <input type="radio" name="interviewMode" value="company-focused">
+                  <div class="mode-card-body">
+                    <strong>FAANG Big Tech Bar</strong>
+                    <span>High-bar evaluation emphasizing optimal Big-O reasoning and edge case resilience.</span>
+                  </div>
+                </label>
+                <label class="mode-radio-label" data-mode="rapid-fire">
+                  <input type="radio" name="interviewMode" value="rapid-fire">
+                  <div class="mode-card-body">
+                    <strong>Rapid Problem Formulation</strong>
+                    <span>Accelerated 20-min session focusing on instant approach breakdown and clarifying questions.</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Parameters Card -->
+            <div class="mentor-card setup-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">PARAMETERS</span>
+                  <h3 class="mentor-card-title">2. Interview Parameters</h3>
+                </div>
+              </div>
+              <div class="interview-params-form">
+                <div class="param-row">
+                  <label for="interviewDifficultySelect">Difficulty Level:</label>
+                  <select id="interviewDifficultySelect" class="form-control">
+                    <option value="Adaptive" selected>Adaptive (Matches Your Progress)</option>
+                    <option value="Easy">Easy (Warm-up / Fundamental)</option>
+                    <option value="Medium">Medium (Standard Industry Bar)</option>
+                    <option value="Hard">Hard (Senior / Advanced)</option>
+                  </select>
+                </div>
+                <div class="param-row">
+                  <label for="interviewStyleSelect">Interviewer Persona:</label>
+                  <select id="interviewStyleSelect" class="form-control">
+                    <option value="collaborative" selected>Collaborative &amp; Supportive Guide</option>
+                    <option value="faang">FAANG Strict &amp; Rigorous</option>
+                    <option value="strict">Minimal Hand-Holding (Senior Bar)</option>
+                  </select>
+                </div>
+                <div class="param-row">
+                  <label for="interviewLangSelect">Programming Language:</label>
+                  <select id="interviewLangSelect" class="form-control">
+                    <option value="javascript" selected>JavaScript (Node.js)</option>
+                    <option value="python">Python 3</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                  </select>
+                </div>
+                <div class="param-row">
+                  <label for="interviewDurationSelect">Duration Target:</label>
+                  <select id="interviewDurationSelect" class="form-control">
+                    <option value="30">30 Minutes</option>
+                    <option value="45" selected>45 Minutes (Standard)</option>
+                    <option value="60">60 Minutes (In-Depth)</option>
+                  </select>
+                </div>
+                <div class="param-row custom-problem-row">
+                  <label for="interviewCustomProblemInput">Custom Problem or Slug (Optional):</label>
+                  <input id="interviewCustomProblemInput" type="text" class="form-control" placeholder="e.g. 3sum, merge-k-sorted-lists, or leave blank for dynamic selection">
+                </div>
+
+                <div class="setup-action-wrap">
+                  <button id="startInterviewSessionBtn" class="btn btn-primary btn-lg btn-block" type="button">
+                    🚀 Launch Live Interview Session
+                  </button>
+                  <div id="setupErrorMsg" class="security-error" role="alert" hidden></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- View 2: Live Interview Room -->
+        <div id="interviewRoomView" class="interview-view-panel" hidden>
+          <!-- Top Room Status Bar -->
+          <div class="interview-room-header mentor-card">
+            <div class="room-header-left">
+              <span class="room-problem-title" id="roomProblemTitle">Problem Title</span>
+              <span class="badge-difficulty badge-difficulty-medium" id="roomProblemDifficulty">Medium</span>
+              <span class="stage-pill-current" id="roomCurrentStagePill">Phase: Clarification</span>
+            </div>
+            <div class="room-header-center">
+              <div class="stage-progress-indicator">
+                <span class="stage-step active" data-stage="clarification">1. Clarify</span>
+                <span class="stage-step" data-stage="approach">2. Approach</span>
+                <span class="stage-step" data-stage="coding">3. Code</span>
+                <span class="stage-step" data-stage="optimization">4. Optimize</span>
+                <span class="stage-step" data-stage="review">5. Review</span>
+              </div>
+            </div>
+            <div class="room-header-right">
+              <div class="timer-display" id="roomTimerDisplay">
+                <span class="timer-icon">⏱️</span>
+                <span class="timer-digits" id="roomTimerDigits">45:00</span>
+              </div>
+              <button id="roomSubmitFinalBtn" class="btn btn-sm btn-success" type="button">Finish &amp; Evaluate</button>
+              <button id="roomCancelBtn" class="btn btn-sm btn-light" type="button">Quit</button>
+            </div>
+          </div>
+
+          <!-- Split Pane Workspace -->
+          <div class="interview-split-room">
+            <!-- Left Pane: Interviewer Chat & Dialogue -->
+            <div class="interview-left-pane mentor-card">
+              <div class="interview-pane-head">
+                <div class="interviewer-profile">
+                  <div class="interviewer-avatar">👩‍💻</div>
+                  <div class="interviewer-info">
+                    <strong>Ada</strong>
+                    <span id="interviewerStatusText" class="interviewer-status">Online &middot; Senior Staff Interviewer</span>
+                  </div>
+                </div>
+                <div class="interview-hint-control">
+                  <button id="requestHintBtn" class="btn btn-sm btn-warning" type="button" title="Request a progressive hint from Ada">
+                    💡 Request Hint (<span id="hintLevelBadge">Level 1/3</span>)
+                  </button>
+                </div>
+              </div>
+
+              <!-- Chat Message Stream -->
+              <div class="interview-chat-stream" id="interviewChatStream" role="log" aria-live="polite">
+                <!-- Dialogue bubbles populated dynamically -->
+              </div>
+
+              <!-- Message Input Form -->
+              <div class="interview-input-wrap">
+                <div id="chatTypingIndicator" class="typing-indicator" hidden>
+                  <span></span><span></span><span></span> Ada is evaluating your response...
+                </div>
+                <div class="input-row">
+                  <textarea id="interviewMessageInput" placeholder="Clarify constraints, discuss algorithmic tradeoffs, or answer Ada's question... (Press Enter to send, Shift+Enter for new line)" rows="2"></textarea>
+                  <button id="sendInterviewMessageBtn" class="btn btn-primary" type="button">Send</button>
+                </div>
+                <div class="input-hints-bar">
+                  <small>💡 Pro Tip: Ask clarifying questions about input bounds, duplicate values, and memory constraints before jumping to code!</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Pane: Code Editor & Execution Runner -->
+            <div class="interview-right-pane mentor-card">
+              <div class="interview-editor-head">
+                <div class="editor-head-left">
+                  <span class="editor-title">Candidate Solution Code</span>
+                  <select id="roomLanguageSelect" class="form-control form-control-sm">
+                    <option value="javascript">JavaScript</option>
+                    <option value="python">Python</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                  </select>
+                </div>
+                <div class="editor-head-actions">
+                  <button id="interviewRunCodeBtn" class="btn btn-sm btn-secondary" type="button">
+                    ▶ Run Test Cases
+                  </button>
+                  <button id="interviewResetCodeBtn" class="btn btn-sm btn-light" type="button" title="Reset starter code">
+                    ↺ Reset
+                  </button>
+                </div>
+              </div>
+
+              <!-- Code Editor Textarea -->
+              <div class="interview-editor-container">
+                <textarea id="interviewCodeEditor" class="interview-code-textarea" spellcheck="false" placeholder="// Write your solution here..."></textarea>
+              </div>
+
+              <!-- Execution Output Drawer -->
+              <div class="interview-test-drawer" id="interviewTestDrawer">
+                <div class="test-drawer-header">
+                  <span class="test-drawer-title">Test Harness Verification (Module 5 Engine)</span>
+                  <span id="testSummaryBadge" class="badge-test-status badge-neutral">Not Run Yet</span>
+                </div>
+                <div class="test-drawer-body" id="testDrawerBody">
+                  <p class="test-drawer-placeholder">Click <strong>▶ Run Test Cases</strong> to verify your solution against canonical test suites before final submission.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- View 3: Scorecard & Rubric Evaluation Report -->
+        <div id="interviewReportView" class="interview-view-panel" hidden>
+          <div class="mentor-card report-hero-card">
+            <div class="report-hero-grid">
+              <div class="report-verdict-box">
+                <span class="report-kicker">ASSESSMENT VERDICT</span>
+                <h2 class="report-verdict-title" id="reportVerdictTitle">Strong Hire</h2>
+                <div class="report-score-ring">
+                  <span class="report-score-val" id="reportScoreVal">88</span>
+                  <span class="report-score-denom">/ 100</span>
+                </div>
+                <span class="report-verdict-badge" id="reportVerdictBadge">High Big-Tech Bar Passed</span>
+              </div>
+              <div class="report-overview-box">
+                <h3 class="report-summary-title" id="reportProblemTitle">Problem: Two Sum</h3>
+                <p class="report-summary-text" id="reportSummaryText">
+                  Candidate demonstrated strong problem-solving proficiency, proactively asked key clarifying questions, implemented optimal time complexity, and cleanly handled edge cases.
+                </p>
+                <div class="report-meta-tags">
+                  <span class="meta-tag" id="reportDurationTag">⏱️ Duration: 34 mins</span>
+                  <span class="meta-tag" id="reportModeTag">🎯 Mode: Standard Mock</span>
+                  <span class="meta-tag" id="reportHintsTag">💡 Hints Used: 1</span>
+                  <span class="meta-tag" id="reportTestsTag">✅ Tests Passed: 3/3</span>
+                </div>
+                <div class="report-disclaimer">
+                  <small>⚖️ <em>DSAverse Assessment Engine delivers evidence-grounded educational evaluations based on transparent rubric dimensions, test execution suites, and algorithmic heuristics.</em></small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 8 Dimension Rubric Breakdown Grid -->
+          <div class="mentor-card report-rubric-card">
+            <div class="mentor-card-head">
+              <div class="mentor-card-title-wrap">
+                <span class="mentor-card-kicker">8-DIMENSION EVALUATION RUBRIC</span>
+                <h3 class="mentor-card-title">Performance Dimension Breakdown</h3>
+              </div>
+            </div>
+            <div class="rubric-dimension-grid" id="rubricDimensionGrid">
+              <!-- Populated dynamically: 8 dimensions with score bars and explanations -->
+            </div>
+          </div>
+
+          <!-- Strengths & Actionable Improvements -->
+          <div class="report-feedback-grid">
+            <div class="mentor-card feedback-card strengths-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">HIGHLIGHTS</span>
+                  <h3 class="mentor-card-title">Key Demonstrated Strengths</h3>
+                </div>
+              </div>
+              <ul class="feedback-list" id="reportStrengthsList">
+                <!-- Dynamically populated -->
+              </ul>
+            </div>
+
+            <div class="mentor-card feedback-card improvements-card">
+              <div class="mentor-card-head">
+                <div class="mentor-card-title-wrap">
+                  <span class="mentor-card-kicker">RECOMMENDED GROWTH</span>
+                  <h3 class="mentor-card-title">Areas for Targeted Improvement</h3>
+                </div>
+              </div>
+              <ul class="feedback-list" id="reportImprovementsList">
+                <!-- Dynamically populated -->
+              </ul>
+            </div>
+          </div>
+
+          <!-- Action Bar -->
+          <div class="report-action-bar">
+            <button id="reportPracticeWeakAreasBtn" class="btn btn-primary btn-lg" type="button">
+              🎯 Practice Weak Areas in Learning Coach
+            </button>
+            <button id="reportNewInterviewBtn" class="btn btn-secondary btn-lg" type="button">
+              ↺ Start Another Interview
+            </button>
+            <button id="reportViewHistoryBtn" class="btn btn-light btn-lg" type="button">
+              📜 View Past Interview History
+            </button>
+          </div>
+        </div>
+
+        <!-- View 4: Interview History & Past Scorecards -->
+        <div id="interviewHistoryView" class="interview-view-panel" hidden>
+          <div class="mentor-card">
+            <div class="mentor-card-head">
+              <div class="mentor-card-title-wrap">
+                <span class="mentor-card-kicker">PERFORMANCE RECORD</span>
+                <h3 class="mentor-card-title">Interview History &amp; Scorecards</h3>
+              </div>
+              <button id="historyRefreshBtn" class="btn btn-sm btn-light" type="button">↻ Refresh</button>
+            </div>
+            <div class="interview-history-list" id="interviewHistoryList">
+              <!-- Populated dynamically -->
             </div>
           </div>
         </div>

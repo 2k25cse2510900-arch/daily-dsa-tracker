@@ -25,6 +25,20 @@ const {
   buildStudentLearningProfile,
   buildTutorLessonContent
 } = require("./personalized-learning-engine");
+const {
+  INTERVIEW_MODES,
+  SESSION_STATUS,
+  INTERVIEW_STAGES,
+  INTERVIEW_STYLES,
+  EVALUATION_DIMENSIONS,
+  selectInterviewProblem,
+  createInterviewSession,
+  startInterviewSession,
+  processStudentResponse,
+  requestInterviewHint,
+  runInterviewCode,
+  evaluateInterviewSession
+} = require("./mock-interview-engine");
 
 const MODES = Object.freeze([
   "explain", "mistake", "hint", "complexity", "optimize", "dry-run", "teach",
@@ -466,6 +480,9 @@ function createAiCodeMentorService({
     : null;
   const learningProfiles = (db && typeof db.collection === "function")
     ? db.collection("aiLearningProfiles")
+    : null;
+  const interviewSessions = (db && typeof db.collection === "function")
+    ? db.collection("aiInterviewSessions")
     : null;
 
   const executionProvider = externalExecutionProvider || createExecutionProvider(process.env);
@@ -1903,6 +1920,193 @@ function createAiCodeMentorService({
     };
   }
 
+  // ==========================================
+  // Module 7: AI Mock Interview & Assessment
+  // ==========================================
+
+  async function createInterview(user, body = {}) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+
+    let learningProfile = null;
+    try {
+      learningProfile = await getLearningProfile(user);
+    } catch (_err) {
+      // Non-blocking
+    }
+
+    const session = createInterviewSession({
+      userId: user.id,
+      config: body.config || {},
+      learningProfile,
+      customProblem: body.customProblem || null,
+      now: now()
+    });
+
+    if (interviewSessions && typeof interviewSessions.insertOne === "function") {
+      await interviewSessions.insertOne(session);
+    }
+
+    return session;
+  }
+
+  async function listInterviews(user, { limit = 20 } = {}) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    const sessions = await safeFindAll(interviewSessions, { userId: user.id }, Math.min(50, limit));
+    return sessions.map(s => ({
+      id: s._id || s.id,
+      status: s.status,
+      currentStage: s.currentStage,
+      mode: s.config?.mode,
+      difficulty: s.config?.difficulty,
+      problemTitle: s.problem?.title,
+      problemSlug: s.problem?.slug,
+      finalScore: s.report?.finalScore || null,
+      verdict: s.report?.verdict || null,
+      hintsCount: s.hintsUsed?.length || 0,
+      createdAt: s.createdAt,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt
+    }));
+  }
+
+  async function getInterview(user, sessionId) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    if (!sessionId) throw mentorError("SESSION_ID_REQUIRED", "Interview session ID is required.", 400);
+
+    let session = null;
+    if (interviewSessions && typeof interviewSessions.findOne === "function") {
+      session = await interviewSessions.findOne({ _id: sessionId });
+      if (!session) session = await interviewSessions.findOne({ id: sessionId });
+    }
+
+    if (!session) {
+      throw mentorError("SESSION_NOT_FOUND", "Interview session was not found.", 404);
+    }
+    if (session.userId && session.userId !== user.id) {
+      throw mentorError("SESSION_FORBIDDEN", "You do not have permission to view this interview.", 403);
+    }
+
+    return session;
+  }
+
+  async function startInterview(user, sessionId) {
+    const session = await getInterview(user, sessionId);
+    startInterviewSession(session, { now: now() });
+
+    if (interviewSessions && typeof interviewSessions.updateOne === "function") {
+      await interviewSessions.updateOne(
+        { _id: session._id },
+        { $set: { status: session.status, currentStage: session.currentStage, startedAt: session.startedAt, messages: session.messages, updatedAt: now() } }
+      );
+    }
+
+    return session;
+  }
+
+  async function respondToInterview(user, sessionId, body = {}) {
+    const session = await getInterview(user, sessionId);
+    const result = await processStudentResponse({
+      session,
+      messageText: body.message,
+      currentCode: body.code,
+      provider,
+      now: now()
+    });
+
+    if (interviewSessions && typeof interviewSessions.updateOne === "function") {
+      await interviewSessions.updateOne(
+        { _id: session._id },
+        { $set: { currentStage: session.currentStage, code: session.code, messages: session.messages, updatedAt: now() } }
+      );
+    }
+
+    return result;
+  }
+
+  async function requestInterviewSessionHint(user, sessionId, body = {}) {
+    const session = await getInterview(user, sessionId);
+    const result = requestInterviewHint({
+      session,
+      hintLevel: body.hintLevel,
+      now: now()
+    });
+
+    if (interviewSessions && typeof interviewSessions.updateOne === "function") {
+      await interviewSessions.updateOne(
+        { _id: session._id },
+        { $set: { hintsUsed: session.hintsUsed, messages: session.messages, updatedAt: now() } }
+      );
+    }
+
+    return result;
+  }
+
+  async function runInterviewExecution(user, sessionId, body = {}) {
+    const session = await getInterview(user, sessionId);
+    const result = await runInterviewCode({
+      session,
+      code: body.code,
+      language: body.language,
+      executionProvider,
+      now: now()
+    });
+
+    if (interviewSessions && typeof interviewSessions.updateOne === "function") {
+      await interviewSessions.updateOne(
+        { _id: session._id },
+        { $set: { code: session.code, executions: session.executions, updatedAt: now() } }
+      );
+    }
+
+    return result;
+  }
+
+  async function submitInterview(user, sessionId, body = {}) {
+    const session = await getInterview(user, sessionId);
+    if (body.code) {
+      session.code = body.code;
+    }
+
+    const evalResult = evaluateInterviewSession({ session, now: now() });
+    const report = evalResult.report || evalResult;
+
+    if (interviewSessions && typeof interviewSessions.updateOne === "function") {
+      await interviewSessions.updateOne(
+        { _id: session._id },
+        { $set: { status: session.status, currentStage: session.currentStage, code: session.code, report: session.report, endedAt: session.endedAt, updatedAt: now() } }
+      );
+    }
+
+    return {
+      session,
+      report
+    };
+  }
+
+  async function cancelInterview(user, sessionId) {
+    const session = await getInterview(user, sessionId);
+    session.status = SESSION_STATUS.CANCELLED;
+    session.endedAt = now();
+    session.updatedAt = now();
+
+    if (interviewSessions && typeof interviewSessions.updateOne === "function") {
+      await interviewSessions.updateOne(
+        { _id: session._id },
+        { $set: { status: session.status, endedAt: session.endedAt, updatedAt: now() } }
+      );
+    }
+
+    return session;
+  }
+
+  async function getInterviewReport(user, sessionId) {
+    const session = await getInterview(user, sessionId);
+    if (!session.report) {
+      throw mentorError("REPORT_NOT_FOUND", "Interview report has not been generated yet. Please submit the interview.", 404);
+    }
+    return session.report;
+  }
+
   return {
     cache,
     createReview,
@@ -1917,6 +2121,16 @@ function createAiCodeMentorService({
     getRevisionSchedule,
     completeRevision,
     generateTutorLesson,
+    createInterview,
+    listInterviews,
+    getInterview,
+    startInterview,
+    respondToInterview,
+    requestInterviewSessionHint,
+    runInterviewExecution,
+    submitInterview,
+    cancelInterview,
+    getInterviewReport,
     listReviews,
     reviewFor,
     deleteReview,
@@ -1935,6 +2149,11 @@ module.exports = {
   QUOTA_TIMEZONE,
   CONCEPT_TAXONOMY,
   MASTERY_LEVELS,
+  INTERVIEW_MODES,
+  SESSION_STATUS,
+  INTERVIEW_STAGES,
+  INTERVIEW_STYLES,
+  EVALUATION_DIMENSIONS,
   mentorError,
   validateRequest,
   validateAnalysis,

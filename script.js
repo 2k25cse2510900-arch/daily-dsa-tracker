@@ -6393,36 +6393,55 @@ function switchMentorLearningTab(tabName) {
   const normalBtn = $("mentorModeNormalBtn");
   const animaticBtn = $("mentorModeAnimaticBtn");
   const learningBtn = $("mentorModeLearningBtn");
+  const interviewBtn = $("mentorModeInterviewBtn");
   const normalWorkspace = $("mentorNormalWorkspace");
   const animaticWorkspace = $("mentorAnimaticWorkspace");
   const learningWorkspace = $("mentorLearningWorkspace");
+  const interviewWorkspace = $("mentorInterviewWorkspace");
 
   if (tabName === "animatic") {
     stopAnimaticPlayback();
     if (normalBtn) { normalBtn.classList.remove("active"); normalBtn.setAttribute("aria-selected", "false"); }
     if (animaticBtn) { animaticBtn.classList.add("active"); animaticBtn.setAttribute("aria-selected", "true"); }
     if (learningBtn) { learningBtn.classList.remove("active"); learningBtn.setAttribute("aria-selected", "false"); }
+    if (interviewBtn) { interviewBtn.classList.remove("active"); interviewBtn.setAttribute("aria-selected", "false"); }
     if (normalWorkspace) normalWorkspace.hidden = true;
     if (animaticWorkspace) animaticWorkspace.hidden = false;
     if (learningWorkspace) learningWorkspace.hidden = true;
+    if (interviewWorkspace) interviewWorkspace.hidden = true;
     renderAnimaticStep(animaticState.currentStep);
   } else if (tabName === "learning") {
     stopAnimaticPlayback();
     if (normalBtn) { normalBtn.classList.remove("active"); normalBtn.setAttribute("aria-selected", "false"); }
     if (animaticBtn) { animaticBtn.classList.remove("active"); animaticBtn.setAttribute("aria-selected", "false"); }
     if (learningBtn) { learningBtn.classList.add("active"); learningBtn.setAttribute("aria-selected", "true"); }
+    if (interviewBtn) { interviewBtn.classList.remove("active"); interviewBtn.setAttribute("aria-selected", "false"); }
     if (normalWorkspace) normalWorkspace.hidden = true;
     if (animaticWorkspace) animaticWorkspace.hidden = true;
     if (learningWorkspace) learningWorkspace.hidden = false;
+    if (interviewWorkspace) interviewWorkspace.hidden = true;
     loadMentorLearningJourney();
+  } else if (tabName === "interview") {
+    stopAnimaticPlayback();
+    if (normalBtn) { normalBtn.classList.remove("active"); normalBtn.setAttribute("aria-selected", "false"); }
+    if (animaticBtn) { animaticBtn.classList.remove("active"); animaticBtn.setAttribute("aria-selected", "false"); }
+    if (learningBtn) { learningBtn.classList.remove("active"); learningBtn.setAttribute("aria-selected", "false"); }
+    if (interviewBtn) { interviewBtn.classList.add("active"); interviewBtn.setAttribute("aria-selected", "true"); }
+    if (normalWorkspace) normalWorkspace.hidden = true;
+    if (animaticWorkspace) animaticWorkspace.hidden = true;
+    if (learningWorkspace) learningWorkspace.hidden = true;
+    if (interviewWorkspace) interviewWorkspace.hidden = false;
+    initInterviewWorkspace();
   } else {
     stopAnimaticPlayback();
     if (normalBtn) { normalBtn.classList.add("active"); normalBtn.setAttribute("aria-selected", "true"); }
     if (animaticBtn) { animaticBtn.classList.remove("active"); animaticBtn.setAttribute("aria-selected", "false"); }
     if (learningBtn) { learningBtn.classList.remove("active"); learningBtn.setAttribute("aria-selected", "false"); }
+    if (interviewBtn) { interviewBtn.classList.remove("active"); interviewBtn.setAttribute("aria-selected", "false"); }
     if (normalWorkspace) normalWorkspace.hidden = false;
     if (animaticWorkspace) animaticWorkspace.hidden = true;
     if (learningWorkspace) learningWorkspace.hidden = true;
+    if (interviewWorkspace) interviewWorkspace.hidden = true;
   }
 }
 
@@ -6853,6 +6872,791 @@ async function openTutorDrawer({ type = "explain_weak_concept", conceptId, mista
   } catch (err) {
     contentEl.innerHTML = `<div class="mentor-alert-card mistake-alert">${escapeHtml(err.message || "Failed to generate AI tutor lesson.")}</div>`;
   }
+}
+
+
+/* ==========================================================================
+   Module 7: AI Mock Interview & Assessment Engine Client Implementation
+   ========================================================================== */
+
+const mentorInterviewState = {
+  activeSession: null,
+  activeReport: null,
+  activeView: "setup", // 'setup' | 'room' | 'report' | 'history'
+  timerInterval: null,
+  secondsRemaining: 45 * 60,
+  history: [],
+  isLoading: false,
+  isSendingMessage: false,
+  isRunningCode: false,
+  listenersBound: false
+};
+
+function initInterviewWorkspace() {
+  bindInterviewEventsOnce();
+
+  if (mentorInterviewState.activeSession && mentorInterviewState.activeSession.status === "in_progress") {
+    switchInterviewView("room");
+  } else if (mentorInterviewState.activeReport) {
+    switchInterviewView("report");
+  } else {
+    switchInterviewView("setup");
+    loadInterviewSetup();
+  }
+}
+
+function switchInterviewView(viewName) {
+  mentorInterviewState.activeView = viewName;
+
+  const setupView = $("interviewSetupView");
+  const roomView = $("interviewRoomView");
+  const reportView = $("interviewReportView");
+  const historyView = $("interviewHistoryView");
+
+  if (setupView) setupView.hidden = (viewName !== "setup");
+  if (roomView) roomView.hidden = (viewName !== "room");
+  if (reportView) reportView.hidden = (viewName !== "report");
+  if (historyView) historyView.hidden = (viewName !== "history");
+
+  const navSetup = $("navInterviewSetupBtn");
+  const navRoom = $("navInterviewRoomBtn");
+  const navReport = $("navInterviewReportBtn");
+  const navHistory = $("navInterviewHistoryBtn");
+
+  [navSetup, navRoom, navReport, navHistory].forEach(btn => {
+    if (btn) btn.classList.remove("active");
+  });
+
+  if (viewName === "setup" && navSetup) navSetup.classList.add("active");
+  if (viewName === "room" && navRoom) navRoom.classList.add("active");
+  if (viewName === "report" && navReport) navReport.classList.add("active");
+  if (viewName === "history" && navHistory) navHistory.classList.add("active");
+
+  const hasActiveSession = !!(mentorInterviewState.activeSession && mentorInterviewState.activeSession.status === "in_progress");
+  if (navRoom) navRoom.disabled = !hasActiveSession;
+
+  const hasReport = !!mentorInterviewState.activeReport;
+  if (navReport) navReport.disabled = !hasReport;
+
+  const statusBadge = $("interviewActiveStatusBadge");
+  if (statusBadge) {
+    if (hasActiveSession) {
+      statusBadge.className = "interview-status-badge badge-in-progress";
+      statusBadge.textContent = "Live Session Active";
+    } else if (hasReport) {
+      statusBadge.className = "interview-status-badge badge-completed";
+      statusBadge.textContent = "Evaluated";
+    } else {
+      statusBadge.className = "interview-status-badge badge-idle";
+      statusBadge.textContent = "Ready";
+    }
+  }
+
+  if (viewName === "history") {
+    loadInterviewHistory();
+  }
+}
+
+async function loadInterviewSetup() {
+  try {
+    const res = await apiRequest("/api/ai-code-mentor/interviews?limit=50");
+    const sessions = res.sessions || [];
+    mentorInterviewState.history = sessions;
+
+    const completed = sessions.filter(s => s.status === "completed" && s.evaluationReport);
+    const countEl = $("statCompletedInterviews");
+    const avgEl = $("statAverageScore");
+    const verdictEl = $("statLatestVerdict");
+
+    if (countEl) countEl.textContent = String(completed.length);
+    if (completed.length > 0) {
+      const sum = completed.reduce((acc, s) => acc + (s.evaluationReport?.overallScore || 0), 0);
+      const avg = Math.round(sum / completed.length);
+      if (avgEl) avgEl.textContent = avg + "/100";
+      if (verdictEl) verdictEl.textContent = completed[0].evaluationReport?.verdict || "Evaluated";
+    } else {
+      if (avgEl) avgEl.textContent = "--";
+      if (verdictEl) verdictEl.textContent = "--";
+    }
+  } catch (err) {
+    console.warn("Failed to load interview stats:", err);
+  }
+}
+
+async function startNewInterviewSession() {
+  const errorEl = $("setupErrorMsg");
+  if (errorEl) { errorEl.hidden = true; errorEl.textContent = ""; }
+
+  const startBtn = $("startInterviewSessionBtn");
+  if (startBtn) { startBtn.disabled = true; startBtn.textContent = "Initializing Interview Session with Ada..."; }
+
+  const selectedModeInput = document.querySelector('input[name="interviewMode"]:checked');
+  const mode = selectedModeInput ? selectedModeInput.value : "standard-mock";
+  const difficulty = $("interviewDifficultySelect")?.value || "Adaptive";
+  const interviewStyle = $("interviewStyleSelect")?.value || "collaborative";
+  const language = $("interviewLangSelect")?.value || "javascript";
+  const durationMinutes = parseInt($("interviewDurationSelect")?.value || "45", 10);
+  const customProblem = $("interviewCustomProblemInput")?.value?.trim() || undefined;
+
+  try {
+    // 1. Create interview session
+    const createRes = await apiRequest("/api/ai-code-mentor/interviews", {
+      method: "POST",
+      body: JSON.stringify({
+        mode,
+        difficulty,
+        interviewStyle,
+        language,
+        durationMinutes,
+        customProblem
+      })
+    });
+
+    const sessionId = createRes.sessionId;
+
+    // 2. Start the session to initiate Ada's opening greeting
+    const startRes = await apiRequest(`/api/ai-code-mentor/interviews/${sessionId}/start`, {
+      method: "POST"
+    });
+
+    mentorInterviewState.activeSession = startRes;
+    mentorInterviewState.activeReport = null;
+
+    // 3. Populate Room UI
+    const prob = startRes.problem || {};
+    const titleEl = $("roomProblemTitle");
+    const diffEl = $("roomProblemDifficulty");
+    const pillEl = $("roomCurrentStagePill");
+
+    if (titleEl) titleEl.textContent = prob.title || "Technical Problem";
+    if (diffEl) {
+      diffEl.textContent = prob.difficulty || "Medium";
+      diffEl.className = `badge-difficulty badge-difficulty-${String(prob.difficulty || "medium").toLowerCase()}`;
+    }
+    if (pillEl) pillEl.textContent = "Phase: Problem Understanding & Clarification";
+
+    // Set code editor
+    const roomLangSelect = $("roomLanguageSelect");
+    if (roomLangSelect) roomLangSelect.value = language;
+
+    const editor = $("interviewCodeEditor");
+    if (editor) {
+      const starterCode = prob.starterCode?.[language] || getDefaultStarterCode(prob, language);
+      editor.value = starterCode;
+    }
+
+    // Reset test drawer
+    const testBadge = $("testSummaryBadge");
+    const testBody = $("testDrawerBody");
+    if (testBadge) { testBadge.className = "badge-test-status badge-neutral"; testBadge.textContent = "Not Run Yet"; }
+    if (testBody) testBody.innerHTML = '<p class="test-drawer-placeholder">Click <strong>▶ Run Test Cases</strong> to verify your solution against canonical test suites before final submission.</p>';
+
+    // Render dialogue
+    const stream = $("interviewChatStream");
+    if (stream) stream.innerHTML = "";
+
+    const greetingMsg = (startRes.messages || []).find(m => m.role === "interviewer")?.text
+      || `Hello! I'm Ada, your interviewer today. We'll be working on "${prob.title || "this problem"}". Take a minute to read the requirements, and feel free to ask any clarifying questions about inputs, edge cases, or constraints!`;
+
+    appendInterviewMessage("interviewer", greetingMsg);
+
+    // Update hints badge
+    const hintBadge = $("hintLevelBadge");
+    if (hintBadge) hintBadge.textContent = "Level 1/3";
+    const hintBtn = $("requestHintBtn");
+    if (hintBtn) hintBtn.disabled = false;
+
+    // Start timer
+    startInterviewTimer(durationMinutes * 60);
+
+    // Switch to room view
+    switchInterviewView("room");
+  } catch (err) {
+    if (errorEl) {
+      errorEl.hidden = false;
+      errorEl.textContent = err.message || "Failed to start interview session. Please try again.";
+    }
+  } finally {
+    if (startBtn) {
+      startBtn.disabled = false;
+      startBtn.textContent = "🚀 Launch Live Interview Session";
+    }
+  }
+}
+
+function getDefaultStarterCode(problem, lang) {
+  const name = problem?.slug ? problem.slug.replace(/-([a-z])/g, (_, c) => c.toUpperCase()) : "solution";
+  if (lang === "python") return `def ${name}(*args):\n    # Write your solution here\n    pass\n`;
+  if (lang === "java") return `class Solution {\n    public void solve() {\n        // Write your solution here\n    }\n}\n`;
+  if (lang === "cpp") return `#include <vector>\n\nclass Solution {\npublic:\n    void solve() {\n        // Write your solution here\n    }\n};\n`;
+  return `function ${name}() {\n  // Write your solution here\n}\n`;
+}
+
+function startInterviewTimer(seconds) {
+  if (mentorInterviewState.timerInterval) {
+    clearInterval(mentorInterviewState.timerInterval);
+  }
+
+  mentorInterviewState.secondsRemaining = seconds;
+  updateTimerDisplay();
+
+  mentorInterviewState.timerInterval = setInterval(() => {
+    mentorInterviewState.secondsRemaining -= 1;
+    updateTimerDisplay();
+
+    if (mentorInterviewState.secondsRemaining <= 0) {
+      clearInterval(mentorInterviewState.timerInterval);
+      mentorInterviewState.timerInterval = null;
+      appendInterviewMessage("interviewer", "⏱️ Time is up for this interview session! Please finalize your thoughts and click 'Finish & Evaluate' to submit your solution.");
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const timerDigits = $("roomTimerDigits");
+  if (!timerDigits) return;
+
+  const totalSecs = Math.max(0, mentorInterviewState.secondsRemaining);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  const formatted = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  timerDigits.textContent = formatted;
+
+  if (totalSecs < 300) {
+    timerDigits.style.color = "#f87171";
+  } else {
+    timerDigits.style.color = "#38bdf8";
+  }
+}
+
+function appendInterviewMessage(role, text, title) {
+  const stream = $("interviewChatStream");
+  if (!stream) return;
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble " + (
+    role === "interviewer" ? "chat-msg-ada" :
+    role === "hint" ? "chat-msg-hint" :
+    "chat-msg-candidate"
+  );
+
+  let headerText = "";
+  if (role === "interviewer") {
+    headerText = "<strong>Ada &middot; Senior Staff Interviewer</strong>";
+  } else if (role === "candidate") {
+    headerText = "<strong>You (Candidate)</strong>";
+  } else if (role === "hint") {
+    headerText = `<strong>💡 Hint (${escapeHTML(title || "Guidance")})</strong>`;
+  }
+
+  bubble.innerHTML = headerText + `<div>${escapeHTML(text)}</div>`;
+  stream.appendChild(bubble);
+  stream.scrollTop = stream.scrollHeight;
+}
+
+async function sendInterviewMessage() {
+  if (mentorInterviewState.isSendingMessage) return;
+
+  const input = $("interviewMessageInput");
+  if (!input) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  const session = mentorInterviewState.activeSession;
+  if (!session || !session.sessionId) return;
+
+  input.value = "";
+  appendInterviewMessage("candidate", message);
+
+  const typing = $("chatTypingIndicator");
+  if (typing) typing.hidden = false;
+  mentorInterviewState.isSendingMessage = true;
+
+  try {
+    const editor = $("interviewCodeEditor");
+    const currentCode = editor ? editor.value : "";
+
+    const res = await apiRequest(`/api/ai-code-mentor/interviews/${session.sessionId}/respond`, {
+      method: "POST",
+      body: JSON.stringify({ message, currentCode })
+    });
+
+    if (res.session) {
+      mentorInterviewState.activeSession = res.session;
+      updateStagePill(res.session.stage);
+    } else if (res.stage) {
+      updateStagePill(res.stage);
+    }
+
+    const replyText = res.reply || res.message || "Thank you. Let's continue exploring your approach.";
+    appendInterviewMessage("interviewer", replyText);
+  } catch (err) {
+    appendInterviewMessage("interviewer", `[Note: Message could not be processed: ${err.message || "Network error"}]`);
+  } finally {
+    if (typing) typing.hidden = true;
+    mentorInterviewState.isSendingMessage = false;
+  }
+}
+
+function updateStagePill(stage) {
+  const pill = $("roomCurrentStagePill");
+  const stageMap = {
+    clarification: "Phase: Problem Clarification",
+    approach: "Phase: Approach Formulation & Tradeoffs",
+    coding: "Phase: Implementation & Live Coding",
+    optimization: "Phase: Big-O Optimization",
+    review: "Phase: Verification & Edge Cases",
+    completed: "Phase: Evaluation & Review"
+  };
+
+  if (pill && stage) {
+    pill.textContent = stageMap[stage] || `Phase: ${stage}`;
+  }
+
+  // Update progress indicator steps
+  const steps = document.querySelectorAll(".stage-progress-indicator .stage-step");
+  const stagesOrder = ["clarification", "approach", "coding", "optimization", "review"];
+  const currentIdx = stagesOrder.indexOf(stage);
+
+  steps.forEach(step => {
+    const stepStage = step.dataset.stage;
+    const stepIdx = stagesOrder.indexOf(stepStage);
+    step.classList.remove("active", "done");
+    if (stepIdx < currentIdx) step.classList.add("done");
+    else if (stepIdx === currentIdx) step.classList.add("active");
+  });
+}
+
+async function requestInterviewHint() {
+  const session = mentorInterviewState.activeSession;
+  if (!session || !session.sessionId) return;
+
+  const hintBtn = $("requestHintBtn");
+  if (hintBtn) hintBtn.disabled = true;
+
+  try {
+    const res = await apiRequest(`/api/ai-code-mentor/interviews/${session.sessionId}/hint`, {
+      method: "POST"
+    });
+
+    const hintText = res.hint?.text || res.hint || "Consider how a hash table or two pointers might reduce your time complexity.";
+    const hintLevel = res.hint?.level || (session.hints?.usedCount || 0) + 1;
+    const hintTitle = res.hint?.title || `Level ${hintLevel}`;
+
+    appendInterviewMessage("hint", hintText, hintTitle);
+
+    const hintBadge = $("hintLevelBadge");
+    const nextLevel = Math.min(3, hintLevel + 1);
+    if (hintBadge) {
+      if (res.maxReached || hintLevel >= 3) {
+        hintBadge.textContent = "Max 3/3 Used";
+      } else {
+        hintBadge.textContent = `Level ${nextLevel}/3`;
+      }
+    }
+
+    if (res.session) mentorInterviewState.activeSession = res.session;
+    if (hintBtn && !(res.maxReached || hintLevel >= 3)) {
+      hintBtn.disabled = false;
+    }
+  } catch (err) {
+    appendInterviewMessage("interviewer", `[Could not retrieve hint: ${err.message || "Error"}]`);
+    if (hintBtn) hintBtn.disabled = false;
+  }
+}
+
+async function runInterviewCode() {
+  const session = mentorInterviewState.activeSession;
+  if (!session || !session.sessionId) return;
+
+  const editor = $("interviewCodeEditor");
+  const langSelect = $("roomLanguageSelect");
+  const code = editor ? editor.value : "";
+  const language = langSelect ? langSelect.value : "javascript";
+
+  const runBtn = $("interviewRunCodeBtn");
+  const testBadge = $("testSummaryBadge");
+  const testBody = $("testDrawerBody");
+
+  if (runBtn) runBtn.disabled = true;
+  if (testBadge) { testBadge.className = "badge-test-status badge-neutral"; testBadge.textContent = "Running Tests..."; }
+  if (testBody) testBody.innerHTML = '<p class="test-drawer-placeholder">Executing code against test suites in sandboxed harness...</p>';
+
+  try {
+    const res = await apiRequest(`/api/ai-code-mentor/interviews/${session.sessionId}/run`, {
+      method: "POST",
+      body: JSON.stringify({ code, language })
+    });
+
+    const execution = res.execution || res;
+    mentorInterviewState.lastExecution = execution;
+
+    const passCount = execution.passCount ?? (execution.success ? 1 : 0);
+    const totalCount = execution.totalCount ?? 1;
+    const allPassed = execution.allPassed ?? (passCount === totalCount && totalCount > 0);
+
+    if (testBadge) {
+      if (allPassed) {
+        testBadge.className = "badge-test-status badge-test-pass";
+        testBadge.textContent = `Passed (${passCount}/${totalCount})`;
+      } else {
+        testBadge.className = "badge-test-status badge-test-fail";
+        testBadge.textContent = `Failed (${passCount}/${totalCount})`;
+      }
+    }
+
+    if (testBody) {
+      const results = execution.testResults || execution.cases || [];
+      if (results.length > 0) {
+        testBody.innerHTML = `
+          <div class="test-results-grid">
+            ${results.map((c, i) => {
+              const passed = c.passed || c.status === "pass";
+              return `
+                <div class="test-case-row ${passed ? "pass" : "fail"}">
+                  <div class="test-case-title">
+                    <span>Test Case #${i + 1}: ${escapeHTML(c.name || c.description || "Sample Input")}</span>
+                    <strong style="color: ${passed ? "#34d399" : "#f87171"};">${passed ? "PASS" : "FAIL"}</strong>
+                  </div>
+                  <div class="test-case-io">
+                    <div>Expected: <code>${escapeHTML(JSON.stringify(c.expected ?? c.expectedOutput ?? ""))}</code></div>
+                    <div>Actual: <code>${escapeHTML(JSON.stringify(c.actual ?? c.actualOutput ?? ""))}</code></div>
+                  </div>
+                  ${c.error ? `<div style="color:#fca5a5; margin-top:4px;">Error: ${escapeHTML(c.error)}</div>` : ""}
+                </div>
+              `;
+            }).join("")}
+          </div>
+        `;
+      } else {
+        testBody.innerHTML = `
+          <div style="color: ${execution.success ? "#34d399" : "#fca5a5"};">
+            ${escapeHTML(execution.output || execution.stdout || (execution.success ? "Code executed with no errors." : "Execution produced error: " + (execution.error || "Unknown error")))}
+          </div>
+        `;
+      }
+    }
+  } catch (err) {
+    if (testBadge) { testBadge.className = "badge-test-status badge-test-fail"; testBadge.textContent = "Error"; }
+    if (testBody) testBody.innerHTML = `<div style="color:#fca5a5;">Test runner failure: ${escapeHTML(err.message || "Network error")}</div>`;
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+async function submitFinalInterview() {
+  const session = mentorInterviewState.activeSession;
+  if (!session || !session.sessionId) return;
+
+  const confirmed = confirm("Are you ready to finalize your solution and receive your 8-dimension assessment evaluation from Ada?");
+  if (!confirmed) return;
+
+  const submitBtn = $("roomSubmitFinalBtn");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Evaluating..."; }
+
+  const editor = $("interviewCodeEditor");
+  const langSelect = $("roomLanguageSelect");
+  const finalCode = editor ? editor.value : "";
+  const language = langSelect ? langSelect.value : "javascript";
+
+  try {
+    const res = await apiRequest(`/api/ai-code-mentor/interviews/${session.sessionId}/submit`, {
+      method: "POST",
+      body: JSON.stringify({ finalCode, language })
+    });
+
+    if (mentorInterviewState.timerInterval) {
+      clearInterval(mentorInterviewState.timerInterval);
+      mentorInterviewState.timerInterval = null;
+    }
+
+    const report = res.report || res.evaluationReport || res;
+    mentorInterviewState.activeReport = report;
+    mentorInterviewState.activeSession = res.session || session;
+
+    renderInterviewScorecard(report);
+    switchInterviewView("report");
+  } catch (err) {
+    alert("Evaluation error: " + (err.message || "Failed to submit interview."));
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Finish & Evaluate"; }
+  }
+}
+
+function renderInterviewScorecard(report) {
+  if (!report) return;
+
+  const scoreValEl = $("reportScoreVal");
+  const verdictTitleEl = $("reportVerdictTitle");
+  const verdictBadgeEl = $("reportVerdictBadge");
+  const probTitleEl = $("reportProblemTitle");
+  const summaryTextEl = $("reportSummaryText");
+
+  const score = report.overallScore ?? report.score ?? 80;
+  if (scoreValEl) scoreValEl.textContent = String(score);
+  if (verdictTitleEl) verdictTitleEl.textContent = report.verdict || (score >= 80 ? "Strong Hire" : (score >= 65 ? "Hire" : "Needs Practice"));
+
+  if (verdictBadgeEl) {
+    const verdict = report.verdict || "";
+    if (verdict.includes("Strong") || score >= 85) {
+      verdictBadgeEl.textContent = "High Big-Tech Bar Passed";
+      verdictBadgeEl.style.color = "#059669";
+      verdictBadgeEl.style.background = "#ecfdf5";
+      verdictBadgeEl.style.borderColor = "#a7f3d0";
+    } else if (verdict.includes("Hire") || score >= 70) {
+      verdictBadgeEl.textContent = "Industry Benchmark Met";
+      verdictBadgeEl.style.color = "#2563eb";
+      verdictBadgeEl.style.background = "#eff6ff";
+      verdictBadgeEl.style.borderColor = "#bfdbfe";
+    } else {
+      verdictBadgeEl.textContent = "Recommended for Further Practice";
+      verdictBadgeEl.style.color = "#d97706";
+      verdictBadgeEl.style.background = "#fffbeb";
+      verdictBadgeEl.style.borderColor = "#fde68a";
+    }
+  }
+
+  if (probTitleEl) {
+    const title = report.problemTitle || mentorInterviewState.activeSession?.problem?.title || "DSA Interview Problem";
+    probTitleEl.textContent = "Problem: " + title;
+  }
+
+  if (summaryTextEl) {
+    summaryTextEl.textContent = report.summary || "Candidate completed the interview demonstrating strong algorithmic reasoning and problem-solving capability.";
+  }
+
+  // Meta tags
+  const durationTag = $("reportDurationTag");
+  const modeTag = $("reportModeTag");
+  const hintsTag = $("reportHintsTag");
+  const testsTag = $("reportTestsTag");
+
+  const durationMin = report.durationMinutes || Math.round((report.durationSeconds || 1800) / 60);
+  if (durationTag) durationTag.textContent = `⏱️ Duration: ${durationMin} mins`;
+  if (modeTag) modeTag.textContent = `🎯 Mode: ${escapeHTML(report.mode || mentorInterviewState.activeSession?.mode || "Standard")}`;
+  if (hintsTag) hintsTag.textContent = `💡 Hints Used: ${report.hintsUsed ?? (mentorInterviewState.activeSession?.hints?.usedCount ?? 0)}`;
+  if (testsTag) testsTag.textContent = `✅ Tests Passed: ${report.testsPassed ?? "Passed"}`;
+
+  // 8 Dimensions Grid
+  const rubricGrid = $("rubricDimensionGrid");
+  if (rubricGrid) {
+    const dimensions = report.dimensions || [
+      { id: "problemUnderstanding", name: "Problem Understanding & Clarification", weight: "10%", score: 90, feedback: "Asked insightful clarifying questions about constraints." },
+      { id: "approachSelection", name: "Approach Selection & Trade-offs", weight: "15%", score: 85, feedback: "Identified optimal strategy and contrasted with brute force." },
+      { id: "algorithmicReasoning", name: "Algorithmic Reasoning & Correctness", weight: "20%", score: 85, feedback: "Clear step-by-step logic and mathematical reasoning." },
+      { id: "implementationCorrectness", name: "Implementation & Code Quality", weight: "20%", score: 80, feedback: "Clean naming, modular structure, and working solution." },
+      { id: "complexityAnalysis", name: "Complexity Analysis (Time & Space)", weight: "10%", score: 90, feedback: "Accurate asymptotic Big-O derivation." },
+      { id: "edgeCaseResilience", name: "Edge Cases & Input Boundary Handling", weight: "10%", score: 80, feedback: "Handled boundary inputs and empty arrays safely." },
+      { id: "optimizationProficiency", name: "Optimization & Performance", weight: "10%", score: 85, feedback: "Minimized auxiliary space and eliminated redundant work." },
+      { id: "independenceHintUsage", name: "Independence & Hint Reliance", weight: "5%", score: 90, feedback: "Strong problem solving with minimal guidance required." }
+    ];
+
+    rubricGrid.innerHTML = dimensions.map(d => {
+      const dimScore = typeof d.score === "number" ? d.score : 80;
+      return `
+        <div class="rubric-dim-card">
+          <div class="dim-card-head">
+            <span class="dim-name">${escapeHTML(d.name || d.id)} <small style="color:#64748b;">(${escapeHTML(String(d.weight || ""))})</small></span>
+            <span class="dim-score-badge">${dimScore}%</span>
+          </div>
+          <div class="dim-bar-track">
+            <div class="dim-bar-fill" style="width: ${dimScore}%;"></div>
+          </div>
+          <p class="dim-feedback">${escapeHTML(d.feedback || d.notes || "")}</p>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Strengths
+  const strengthsEl = $("reportStrengthsList");
+  if (strengthsEl) {
+    const strengths = report.strengths || [
+      "Proactive clarification of problem inputs, boundary values, and constraints.",
+      "Optimal algorithmic time complexity achieved using efficient data structures.",
+      "Clean, readable variable naming and idiomatic code structure."
+    ];
+    strengthsEl.innerHTML = strengths.map(s => `
+      <li class="feedback-item">
+        <span class="icon">✅</span>
+        <span>${escapeHTML(s)}</span>
+      </li>
+    `).join("");
+  }
+
+  // Improvements
+  const improvementsEl = $("reportImprovementsList");
+  if (improvementsEl) {
+    const improvements = report.improvements || [
+      "Consider testing with extreme scale constraints (e.g. n >= 10^5) early in design.",
+      "Explicitly mention space complexity constants and memory overhead during review."
+    ];
+    improvementsEl.innerHTML = improvements.map(imp => `
+      <li class="feedback-item">
+        <span class="icon">💡</span>
+        <span>${escapeHTML(imp)}</span>
+      </li>
+    `).join("");
+  }
+}
+
+async function loadInterviewHistory() {
+  const listEl = $("interviewHistoryList");
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div style="padding:16px; text-align:center; color:#64748b;">Loading past interviews...</div>';
+
+  try {
+    const res = await apiRequest("/api/ai-code-mentor/interviews?limit=50");
+    const sessions = res.sessions || [];
+    mentorInterviewState.history = sessions;
+
+    if (!sessions.length) {
+      listEl.innerHTML = '<div class="empty-state-notice">No mock interview sessions recorded yet. Launch your first session above!</div>';
+      return;
+    }
+
+    listEl.innerHTML = sessions.map(s => {
+      const title = s.problem?.title || s.problemTitle || "Coding Interview";
+      const mode = s.mode || "standard-mock";
+      const dateStr = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "Recent";
+      const score = s.evaluationReport?.overallScore ?? "--";
+      const verdict = s.evaluationReport?.verdict || s.status;
+
+      return `
+        <div class="history-session-card">
+          <div class="history-info">
+            <span class="history-title">${escapeHTML(title)}</span>
+            <span class="history-meta">Mode: ${escapeHTML(mode)} &middot; ${escapeHTML(dateStr)} &middot; ${escapeHTML(s.durationMinutes || 45)} mins</span>
+          </div>
+          <div class="history-results">
+            <div class="history-score">${score !== "--" ? score + "/100" : ""}</div>
+            <span class="report-verdict-badge">${escapeHTML(verdict)}</span>
+            ${s.evaluationReport ? `<button class="btn btn-sm btn-light" type="button" onclick="viewHistoricalReport('${escapeHTML(s.sessionId)}')">View Scorecard</button>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state-notice">Failed to load history: ${escapeHTML(err.message || "Error")}</div>`;
+  }
+}
+
+async function viewHistoricalReport(sessionId) {
+  try {
+    const res = await apiRequest(`/api/ai-code-mentor/interviews/${sessionId}/report`);
+    const report = res.report || res;
+    mentorInterviewState.activeReport = report;
+    renderInterviewScorecard(report);
+    switchInterviewView("report");
+  } catch (err) {
+    alert("Could not load scorecard: " + (err.message || "Error"));
+  }
+}
+
+async function cancelActiveInterview() {
+  const session = mentorInterviewState.activeSession;
+  if (!session || !session.sessionId) {
+    switchInterviewView("setup");
+    return;
+  }
+
+  const confirmed = confirm("Are you sure you want to end this interview session? Your progress in this session will be closed.");
+  if (!confirmed) return;
+
+  try {
+    await apiRequest(`/api/ai-code-mentor/interviews/${session.sessionId}/cancel`, {
+      method: "POST"
+    });
+  } catch (e) {
+    console.warn("Cancel session failed:", e);
+  } finally {
+    if (mentorInterviewState.timerInterval) {
+      clearInterval(mentorInterviewState.timerInterval);
+      mentorInterviewState.timerInterval = null;
+    }
+    mentorInterviewState.activeSession = null;
+    switchInterviewView("setup");
+    loadInterviewSetup();
+  }
+}
+
+function bindInterviewEventsOnce() {
+  if (mentorInterviewState.listenersBound) return;
+  mentorInterviewState.listenersBound = true;
+
+  // Toolbar navigation buttons
+  $("navInterviewSetupBtn")?.addEventListener("click", () => switchInterviewView("setup"));
+  $("navInterviewRoomBtn")?.addEventListener("click", () => switchInterviewView("room"));
+  $("navInterviewReportBtn")?.addEventListener("click", () => switchInterviewView("report"));
+  $("navInterviewHistoryBtn")?.addEventListener("click", () => switchInterviewView("history"));
+
+  // Mode radio cards
+  const modeLabels = document.querySelectorAll(".interview-mode-selector .mode-radio-label");
+  modeLabels.forEach(label => {
+    label.addEventListener("click", () => {
+      modeLabels.forEach(l => l.classList.remove("active"));
+      label.classList.add("active");
+      const radio = label.querySelector('input[type="radio"]');
+      if (radio) radio.checked = true;
+    });
+  });
+
+  // Setup start button
+  $("startInterviewSessionBtn")?.addEventListener("click", startNewInterviewSession);
+
+  // Chat message send & Enter key
+  $("sendInterviewMessageBtn")?.addEventListener("click", sendInterviewMessage);
+  const msgInput = $("interviewMessageInput");
+  if (msgInput) {
+    msgInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendInterviewMessage();
+      }
+    });
+  }
+
+  // Request hint
+  $("requestHintBtn")?.addEventListener("click", requestInterviewHint);
+
+  // Run code
+  $("interviewRunCodeBtn")?.addEventListener("click", runInterviewCode);
+
+  // Reset starter code
+  $("interviewResetCodeBtn")?.addEventListener("click", () => {
+    const prob = mentorInterviewState.activeSession?.problem;
+    const lang = $("roomLanguageSelect")?.value || "javascript";
+    const editor = $("interviewCodeEditor");
+    if (editor && prob) {
+      const code = prob.starterCode?.[lang] || getDefaultStarterCode(prob, lang);
+      editor.value = code;
+    }
+  });
+
+  // Finish & Submit
+  $("roomSubmitFinalBtn")?.addEventListener("click", submitFinalInterview);
+
+  // Cancel / Quit
+  $("roomCancelBtn")?.addEventListener("click", cancelActiveInterview);
+
+  // Report actions
+  $("reportPracticeWeakAreasBtn")?.addEventListener("click", () => {
+    switchMentorLearningTab("learning");
+  });
+
+  $("reportNewInterviewBtn")?.addEventListener("click", () => {
+    switchInterviewView("setup");
+    loadInterviewSetup();
+  });
+
+  $("reportViewHistoryBtn")?.addEventListener("click", () => {
+    switchInterviewView("history");
+  });
+
+  // History refresh
+  $("historyRefreshBtn")?.addEventListener("click", loadInterviewHistory);
 }
 
 function setupAnimaticMode(animaticData) {
@@ -7858,6 +8662,11 @@ function initializeAiCodeMentor() {
   if (learningTabBtn && !learningTabBtn.dataset.bound) {
     learningTabBtn.dataset.bound = "true";
     learningTabBtn.addEventListener("click", () => switchMentorLearningTab("learning"));
+  }
+  const interviewTabBtn = $("mentorModeInterviewBtn");
+  if (interviewTabBtn && !interviewTabBtn.dataset.bound) {
+    interviewTabBtn.dataset.bound = "true";
+    interviewTabBtn.addEventListener("click", () => switchMentorLearningTab("interview"));
   }
 
   // 3. Code Editor interactions

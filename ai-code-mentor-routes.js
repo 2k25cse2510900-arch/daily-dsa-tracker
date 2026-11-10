@@ -227,6 +227,100 @@ function createAiCodeMentorRouter({ memberOnly, serviceFor, reviewRateLimit, aud
     }
   });
 
+  // Module 7: AI Mock Interview & Assessment Engine Endpoints
+  router.post("/interviews", async (req, res) => {
+    try {
+      const session = await serviceFor().createInterview(req.member, req.body);
+      audit(req, "ai-code-mentor-interview-created", session.sessionId);
+      res.status(201).json(session);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/interviews", async (req, res) => {
+    try {
+      const sessions = await serviceFor().listInterviews(req.member, { limit: req.query.limit });
+      res.json({ sessions });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/interviews/:sessionId", async (req, res) => {
+    try {
+      const session = await serviceFor().getInterview(req.member, req.params.sessionId);
+      res.json(session);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/interviews/:sessionId/start", async (req, res) => {
+    try {
+      const session = await serviceFor().startInterview(req.member, req.params.sessionId);
+      res.json(session);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/interviews/:sessionId/respond", reviewRateLimit, async (req, res) => {
+    try {
+      const result = await serviceFor().respondToInterview(req.member, req.params.sessionId, req.body);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/interviews/:sessionId/hint", reviewRateLimit, async (req, res) => {
+    try {
+      const result = await serviceFor().requestInterviewSessionHint(req.member, req.params.sessionId, req.body);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/interviews/:sessionId/run", reviewRateLimit, async (req, res) => {
+    try {
+      const result = await serviceFor().runInterviewExecution(req.member, req.params.sessionId, req.body);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/interviews/:sessionId/submit", reviewRateLimit, async (req, res) => {
+    try {
+      const result = await serviceFor().submitInterview(req.member, req.params.sessionId, req.body);
+      audit(req, "ai-code-mentor-interview-submitted", req.params.sessionId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/interviews/:sessionId/report", async (req, res) => {
+    try {
+      const report = await serviceFor().getInterviewReport(req.member, req.params.sessionId);
+      res.json({ report });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/interviews/:sessionId/cancel", async (req, res) => {
+    try {
+      const result = await serviceFor().cancelInterview(req.member, req.params.sessionId);
+      audit(req, "ai-code-mentor-interview-cancelled", req.params.sessionId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.post("/reviews", reviewRateLimit, async (req, res) => {
     try {
       const review = await serviceFor().createReview(req.member, req.body);
