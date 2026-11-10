@@ -550,8 +550,14 @@ function showPage(pageName) {
   if (pageName === "daily" && isAdmin) loadDailyActivityStatus();
   if (pageName === "arena") {
     loadAndMountArenaPage(viewerPageData?.arena || null);
+    if (typeof initCodingRaceArenaPage === "function") {
+      initCodingRaceArenaPage();
+    }
   } else {
     cleanupArenaPage();
+    if (typeof cleanupCodingRaceTimers === "function") {
+      cleanupCodingRaceTimers();
+    }
   }
 
   animatePageAchievements(pageName);
@@ -12941,6 +12947,1160 @@ window.closeResourceEditorModal = closeResourceEditorModal;
 window.deleteCollection = deleteCollection;
 window.reviewEditSuggestion = reviewEditSuggestion;
 window.resolveModerationReport = resolveModerationReport;
+
+
+/* ==========================================================================
+   MODULE 10: DSA CODING RACE ARENA CLIENT CONTROLLER
+   ========================================================================== */
+
+const codingRaceState = {
+  activeTab: "coding-race", // "coding-race" | "3d-track"
+  activePanel: "browse", // "browse" | "lobby" | "workspace" | "results"
+  races: [],
+  currentRace: null,
+  activeProblemIndex: 0,
+  problemCodeMap: {},
+  liveTimerInterval: null,
+  remainingSeconds: 0,
+  sseSource: null,
+  isReady: false,
+  initialized: false
+};
+
+function cleanupCodingRaceTimers() {
+  if (codingRaceState.liveTimerInterval) {
+    clearInterval(codingRaceState.liveTimerInterval);
+    codingRaceState.liveTimerInterval = null;
+  }
+  if (codingRaceState.sseSource) {
+    codingRaceState.sseSource.close();
+    codingRaceState.sseSource = null;
+  }
+}
+
+function initCodingRaceArenaPage() {
+  if (codingRaceState.initialized) {
+    fetchAvailableRaces();
+    fetchUserRaceStats();
+    return;
+  }
+  codingRaceState.initialized = true;
+
+  // 1. Top Mode Switcher (Coding Race vs 3D Olympic Track)
+  const tabCodingRace = $("arenaTabCodingRace");
+  const tab3DTrack = $("arenaTab3DTrack");
+  const codingRaceContainer = $("codingRaceContainer");
+  const track3DContainer = $("arena3DTrackContainer");
+
+  if (tabCodingRace && tab3DTrack) {
+    tabCodingRace.addEventListener("click", () => {
+      tabCodingRace.classList.add("active");
+      tab3DTrack.classList.remove("active");
+      if (codingRaceContainer) codingRaceContainer.style.display = "block";
+      if (track3DContainer) track3DContainer.style.display = "none";
+      codingRaceState.activeTab = "coding-race";
+      fetchAvailableRaces();
+    });
+
+    tab3DTrack.addEventListener("click", () => {
+      tab3DTrack.classList.add("active");
+      tabCodingRace.classList.remove("active");
+      if (codingRaceContainer) codingRaceContainer.style.display = "none";
+      if (track3DContainer) track3DContainer.style.display = "block";
+      codingRaceState.activeTab = "3d-track";
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(new Event("resize"));
+      }
+    });
+  }
+
+  // 2. Hub Header Action Buttons
+  const quickBtn = $("crQuickMatchBtn");
+  if (quickBtn) {
+    quickBtn.addEventListener("click", quickMatchRace);
+  }
+
+  const createBtn = $("crCreateRaceBtn");
+  if (createBtn) {
+    createBtn.addEventListener("click", openCreateRaceModal);
+  }
+
+  const statsBtn = $("crStatsModalBtn");
+  if (statsBtn) {
+    statsBtn.addEventListener("click", openUserRaceStatsModal);
+  }
+
+  // 3. Subnavigation Tabs (Browse, Lobby, Workspace, Results)
+  document.querySelectorAll(".cr-subnav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const panel = btn.dataset.panel;
+      if (panel) switchCodingRacePanel(panel);
+    });
+  });
+
+  // 4. Browse Filters & Search
+  const filterMode = $("crFilterMode");
+  const filterTopic = $("crFilterTopic");
+  const filterDiff = $("crFilterDiff");
+  const searchInput = $("crSearchInput");
+  const refreshBtn = $("crRefreshBtn");
+
+  [filterMode, filterTopic, filterDiff].forEach(el => {
+    if (el) el.addEventListener("change", fetchAvailableRaces);
+  });
+
+  if (searchInput) {
+    let sTimer = null;
+    searchInput.addEventListener("input", () => {
+      clearTimeout(sTimer);
+      sTimer = setTimeout(fetchAvailableRaces, 300);
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", fetchAvailableRaces);
+  }
+
+  // 5. Lobby Action Buttons
+  const leaveBtn = $("crLobbyLeaveBtn");
+  if (leaveBtn) {
+    leaveBtn.addEventListener("click", leaveRaceRoom);
+  }
+
+  const readyBtn = $("crLobbyReadyBtn");
+  if (readyBtn) {
+    readyBtn.addEventListener("click", toggleReadyStatus);
+  }
+
+  const startBtn = $("crLobbyStartBtn");
+  if (startBtn) {
+    startBtn.addEventListener("click", hostStartRace);
+  }
+
+  const copyInviteBtn = $("crCopyInviteBtn");
+  if (copyInviteBtn) {
+    copyInviteBtn.addEventListener("click", () => {
+      const code = $("crLobbyInviteCode")?.textContent;
+      if (code && navigator.clipboard) {
+        navigator.clipboard.writeText(code).then(() => {
+          showToast("Room invite code copied!", "success");
+        });
+      }
+    });
+  }
+
+  // 6. Workspace Buttons
+  const runTestBtn = $("crRunSampleBtn");
+  if (runTestBtn) {
+    runTestBtn.addEventListener("click", runSampleTests);
+  }
+
+  const submitBtn = $("crOfficialSubmitBtn");
+  if (submitBtn) {
+    submitBtn.addEventListener("click", submitRaceSolution);
+  }
+
+  const resetCodeBtn = $("crResetCodeBtn");
+  if (resetCodeBtn) {
+    resetCodeBtn.addEventListener("click", resetCurrentProblemCode);
+  }
+
+  const surrenderBtn = $("crSurrenderBtn");
+  if (surrenderBtn) {
+    surrenderBtn.addEventListener("click", () => {
+      if (confirm("Are you sure you want to exit this live contest?")) {
+        cleanupCodingRaceTimers();
+        switchCodingRacePanel("browse");
+      }
+    });
+  }
+
+  const langSelect = $("crLangSelect");
+  if (langSelect) {
+    langSelect.addEventListener("change", (e) => {
+      const curProb = getCurrentRaceProblem();
+      if (curProb) {
+        const lang = e.target.value;
+        const starter = curProb.starterCode?.[lang] || curProb.starterCode?.python3 || "";
+        const textarea = $("crCodeTextarea");
+        if (textarea) textarea.value = starter;
+        codingRaceState.problemCodeMap[curProb.problemId] = starter;
+      }
+    });
+  }
+
+  // 7. Results Actions
+  const triggerAiBtn = $("crTriggerAiCoachBtn");
+  if (triggerAiBtn) {
+    triggerAiBtn.addEventListener("click", triggerAiRaceCoach);
+  }
+
+  const backToHubBtn = $("crBackToHubBtn");
+  if (backToHubBtn) {
+    backToHubBtn.addEventListener("click", () => {
+      switchCodingRacePanel("browse");
+    });
+  }
+
+  // 8. Modals Close Handlers
+  const closeCreateBtn = $("crCloseCreateBtn");
+  const cancelCreateBtn = $("crCancelCreateBtn");
+  const createModal = $("crCreateModal");
+  [closeCreateBtn, cancelCreateBtn].forEach(b => {
+    if (b) b.addEventListener("click", () => {
+      if (createModal) createModal.classList.remove("active");
+    });
+  });
+
+  const submitCreateBtn = $("crSubmitCreateBtn");
+  if (submitCreateBtn) {
+    submitCreateBtn.addEventListener("click", submitCreateRace);
+  }
+
+  const newModeSelect = $("crNewMode");
+  const groupWrap = $("crGroupSelectWrap");
+  if (newModeSelect && groupWrap) {
+    newModeSelect.addEventListener("change", (e) => {
+      groupWrap.style.display = e.target.value === "group" ? "block" : "none";
+    });
+  }
+
+  const closeStatsBtn = $("crCloseStatsBtn");
+  const statsModal = $("crStatsModal");
+  if (closeStatsBtn && statsModal) {
+    closeStatsBtn.addEventListener("click", () => {
+      statsModal.classList.remove("active");
+    });
+  }
+
+  // Initial Fetch
+  fetchAvailableRaces();
+  fetchUserRaceStats();
+}
+
+function switchCodingRacePanel(panelName) {
+  codingRaceState.activePanel = panelName;
+
+  document.querySelectorAll(".cr-subnav-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.panel === panelName);
+  });
+
+  const panels = {
+    browse: $("crBrowsePanel"),
+    lobby: $("crLobbyPanel"),
+    workspace: $("crWorkspacePanel"),
+    results: $("crResultsPanel")
+  };
+
+  Object.entries(panels).forEach(([pKey, pEl]) => {
+    if (pEl) pEl.style.display = (pKey === panelName) ? "block" : "none";
+  });
+}
+
+async function fetchAvailableRaces() {
+  const grid = $("crRoomsGrid");
+  if (!grid) return;
+  grid.innerHTML = '<div class="cr-empty-state"><i class="fa fa-spinner fa-spin cr-empty-icon"></i><div class="cr-empty-title">Loading available coding races...</div></div>';
+
+  try {
+    const params = new URLSearchParams();
+    const mode = $("crFilterMode")?.value;
+    const topic = $("crFilterTopic")?.value;
+    const diff = $("crFilterDiff")?.value;
+
+    if (mode) params.set("mode", mode);
+    if (topic) params.set("topic", topic);
+    if (diff) params.set("difficulty", diff);
+
+    const res = await apiRequest('/api/races?' + params.toString());
+    const races = res.races || [];
+    codingRaceState.races = races;
+
+    const search = $("crSearchInput")?.value?.trim().toLowerCase();
+    const filtered = search
+      ? races.filter(r => (r.title || "").toLowerCase().includes(search))
+      : races;
+
+    renderRaceRoomsGrid(filtered);
+  } catch (err) {
+    grid.innerHTML = '<div class="cr-empty-state"><i class="fa fa-exclamation-triangle cr-empty-icon" style="color:#ef4444;"></i><div class="cr-empty-title">Failed to load races</div><p>' + (err.message || "") + '</p></div>';
+  }
+}
+
+function renderRaceRoomsGrid(races) {
+  const grid = $("crRoomsGrid");
+  if (!grid) return;
+
+  if (!races || races.length === 0) {
+    grid.innerHTML = `
+      <div class="cr-empty-state" style="grid-column: 1 / -1;">
+        <i class="fa fa-flag-checkered cr-empty-icon"></i>
+        <div class="cr-empty-title">No Active Races Found</div>
+        <p>No open rooms match your filters. Launch a Quick Race or create your own custom contest!</p>
+        <div style="display:flex; gap:0.6rem; justify-content:center; margin-top:1rem;">
+          <button class="btn btn-primary" onclick="quickMatchRace()"><i class="fa fa-bolt"></i> Quick Match</button>
+          <button class="btn btn-secondary" onclick="openCreateRaceModal()"><i class="fa fa-plus"></i> Create Race</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+  grid.innerHTML = races.map(r => {
+    const isLive = r.status === "live";
+    const modeClass = r.mode || "quick";
+    const diffClass = (r.difficulty || "medium").toLowerCase();
+    const currentUid = typeof viewerProfile !== "undefined" && viewerProfile?.id ? viewerProfile.id : (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : null);
+    const isHost = currentUid && (r.host?.id === currentUid);
+
+    return `
+      <div class="cr-room-card" data-race-id="${r._id || r.id}">
+        <div class="cr-room-top">
+          <div class="cr-badge-row">
+            <span class="badge-lib-type">${escapeFn(r.mode).toUpperCase()}</span>
+            <span class="badge-lib-level ${diffClass}">${escapeFn(r.difficulty)}</span>
+            <span class="badge-lib-topic">${escapeFn(r.topic)}</span>
+            ${isLive ? '<span class="cr-live-pill"><span class="cr-live-dot"></span> LIVE</span>' : ''}
+          </div>
+          <h3 class="cr-room-title">${escapeFn(r.title)}</h3>
+          <div class="cr-room-meta">
+            Host: <strong>${escapeFn(r.host?.name || "Racer")}</strong>
+          </div>
+          <div class="cr-room-stats">
+            <span><i class="fa fa-clock-o"></i> ${r.durationMinutes || 30} mins</span>
+            <span><i class="fa fa-question-circle"></i> ${r.questionCount || 3} problems</span>
+            <span><i class="fa fa-users"></i> ${r.participantCount || 1} / ${r.maxParticipants || 10}</span>
+          </div>
+        </div>
+        <div class="cr-room-footer">
+          <span style="font-size:0.75rem; color:#64748b;">${isLive ? 'In progress' : 'Waiting in lobby'}</span>
+          <button type="button" class="btn btn-sm btn-primary" onclick="joinRaceRoom('${r._id || r.id}')">
+            ${isLive ? 'Enter Contest' : 'Join Room'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function quickMatchRace() {
+  try {
+    // 1. Try to find an existing waiting quick race
+    const res = await apiRequest('/api/races?mode=quick&status=waiting');
+    const available = (res.races || []).find(r => (r.participantCount || 0) < (r.maxParticipants || 10));
+
+    if (available) {
+      await joinRaceRoom(available._id || available.id);
+      return;
+    }
+
+    // 2. Otherwise create a fresh quick contest
+    const created = await apiRequest('/api/races', {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Sprint Match " + Math.floor(100 + Math.random() * 900),
+        mode: "quick",
+        topic: "Mixed",
+        difficulty: "Mixed",
+        questionCount: 3,
+        durationMinutes: 30,
+        maxParticipants: 10
+      })
+    });
+
+    if (created.race) {
+      enterLobbyView(created.race);
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to start quick race", "error");
+  }
+}
+
+function openCreateRaceModal() {
+  const modal = $("crCreateModal");
+  if (!modal) return;
+
+  // Populate active group options if available
+  const groupSelect = $("crNewGroupSelect");
+  if (groupSelect && typeof groupManagementState !== "undefined" && Array.isArray(groupManagementState.groups)) {
+    groupSelect.innerHTML = groupManagementState.groups.map(g => `
+      <option value="${g.id}">${typeof escapeHTML === "function" ? escapeHTML(g.name) : g.name}</option>
+    `).join("");
+  }
+
+  modal.classList.add("active");
+}
+
+async function submitCreateRace() {
+  const title = $("crNewTitle")?.value?.trim();
+  const mode = $("crNewMode")?.value || "quick";
+  const topic = $("crNewTopic")?.value || "Mixed";
+  const difficulty = $("crNewDifficulty")?.value || "Mixed";
+  const questionCount = Number($("crNewCount")?.value || 3);
+  const durationMinutes = Number($("crNewDuration")?.value || 30);
+  const groupId = mode === "group" ? $("crNewGroupSelect")?.value : null;
+
+  if (!title) {
+    showToast("Please enter a title for the race", "error");
+    return;
+  }
+
+  try {
+    const res = await apiRequest('/api/races', {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        mode,
+        topic,
+        difficulty,
+        questionCount,
+        durationMinutes,
+        groupId
+      })
+    });
+
+    const modal = $("crCreateModal");
+    if (modal) modal.classList.remove("active");
+
+    showToast("Race room created!", "success");
+    if (res.race) {
+      enterLobbyView(res.race);
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to create race", "error");
+  }
+}
+
+async function joinRaceRoom(raceId, inviteCode = null) {
+  try {
+    const res = await apiRequest('/api/races/' + raceId + '/join', {
+      method: "POST",
+      body: JSON.stringify({ inviteCode })
+    });
+
+    // Fetch full authoritative race details
+    const raceDetails = await apiRequest('/api/races/' + raceId);
+    if (!raceDetails.race) throw new Error("Could not load race room");
+
+    if (raceDetails.race.status === "live") {
+      enterRaceWorkspace(raceDetails.race);
+    } else {
+      enterLobbyView(raceDetails.race);
+    }
+  } catch (err) {
+    if (err.message && err.message.includes("Valid 6-character room invite code")) {
+      const code = prompt("This is a private contest. Please enter the 6-character Room Invite Code:");
+      if (code) {
+        joinRaceRoom(raceId, code.trim());
+        return;
+      }
+    }
+    showToast(err.message || "Could not join race", "error");
+  }
+}
+
+function enterLobbyView(race) {
+  codingRaceState.currentRace = race;
+  codingRaceState.isReady = false;
+
+  const lobbyTab = $("crNavLobby");
+  if (lobbyTab) lobbyTab.style.display = "flex";
+
+  renderLobbyView(race);
+  switchCodingRacePanel("lobby");
+
+  // Connect live SSE events
+  connectRaceSSE(race._id || race.id);
+}
+
+function renderLobbyView(race) {
+  if (!race) return;
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+  const titleEl = $("crLobbyTitle");
+  if (titleEl) titleEl.textContent = race.title || "Race Lobby";
+
+  const modeBadge = $("crLobbyModeBadge");
+  if (modeBadge) modeBadge.textContent = (race.mode || "quick").toUpperCase();
+
+  const topicBadge = $("crLobbyTopicBadge");
+  if (topicBadge) topicBadge.textContent = race.topic || "Mixed";
+
+  const diffBadge = $("crLobbyDiffBadge");
+  if (diffBadge) {
+    diffBadge.textContent = race.difficulty || "Medium";
+    diffBadge.className = `badge-lib-level ${(race.difficulty || "medium").toLowerCase()}`;
+  }
+
+  const inviteBox = $("crLobbyInviteBox");
+  const inviteCodeEl = $("crLobbyInviteCode");
+  if (race.mode === "private" && race.inviteCode) {
+    if (inviteBox) inviteBox.style.display = "block";
+    if (inviteCodeEl) inviteCodeEl.textContent = race.inviteCode;
+  } else {
+    if (inviteBox) inviteBox.style.display = "none";
+  }
+
+  // Participants Grid
+  const countEl = $("crLobbyCount");
+  const maxEl = $("crLobbyMax");
+  const readyCountEl = $("crLobbyReadyCount");
+  const participantsGrid = $("crLobbyParticipantsGrid");
+
+  const participants = race.participants || [];
+  if (countEl) countEl.textContent = String(participants.length);
+  if (maxEl) maxEl.textContent = String(race.maxParticipants || 10);
+
+  const readyRacers = participants.filter(p => p.isReady).length;
+  if (readyCountEl) readyCountEl.textContent = `${readyRacers} Ready`;
+
+  if (participantsGrid) {
+    participantsGrid.innerHTML = participants.map(p => {
+      const isReady = Boolean(p.isReady);
+      const isHost = Boolean(p.isHost);
+      const initial = escapeFn((p.name || "R")[0].toUpperCase());
+
+      return `
+        <div class="cr-participant-card ${isReady ? 'ready' : ''}">
+          <div class="cr-p-avatar">${initial}</div>
+          <div style="flex:1; overflow:hidden;">
+            <div class="cr-p-name">${escapeFn(p.name)} ${isHost ? '<span style="font-size:0.7rem; color:#ca8a04;">(Host)</span>' : ''}</div>
+            <div class="cr-p-status">
+              ${isReady ? '<i class="fa fa-check-circle" style="color:#16a34a;"></i> Ready to race' : '<i class="fa fa-clock-o"></i> Getting ready...'}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Host Controls
+  const currentUid = typeof viewerProfile !== "undefined" && viewerProfile?.id ? viewerProfile.id : (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : null);
+  const isHost = currentUid && (race.host?.id === currentUid);
+  const startBtn = $("crLobbyStartBtn");
+  if (startBtn) {
+    startBtn.style.display = isHost ? "inline-flex" : "none";
+  }
+}
+
+async function toggleReadyStatus() {
+  if (!codingRaceState.currentRace) return;
+  const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+  const newReady = !codingRaceState.isReady;
+
+  try {
+    await apiRequest('/api/races/' + raceId + '/ready', {
+      method: "POST",
+      body: JSON.stringify({ isReady: newReady })
+    });
+
+    codingRaceState.isReady = newReady;
+    const btn = $("crLobbyReadyBtn");
+    if (btn) {
+      btn.innerHTML = newReady
+        ? '<i class="fa fa-times"></i> Unmark Ready'
+        : '<i class="fa fa-check"></i> Mark Ready';
+    }
+  } catch (err) {
+    showToast(err.message || "Could not update status", "error");
+  }
+}
+
+async function hostStartRace() {
+  if (!codingRaceState.currentRace) return;
+  const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+
+  try {
+    const res = await apiRequest('/api/races/' + raceId + '/start', { method: "POST" });
+    if (res.status === "live") {
+      const fullRace = await apiRequest('/api/races/' + raceId);
+      enterRaceWorkspace(fullRace.race);
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to start race", "error");
+  }
+}
+
+async function leaveRaceRoom() {
+  if (!codingRaceState.currentRace) return;
+  const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+
+  try {
+    await apiRequest('/api/races/' + raceId + '/leave', { method: "POST" });
+    cleanupCodingRaceTimers();
+    codingRaceState.currentRace = null;
+    const lobbyTab = $("crNavLobby");
+    if (lobbyTab) lobbyTab.style.display = "none";
+    switchCodingRacePanel("browse");
+    fetchAvailableRaces();
+  } catch (err) {
+    showToast(err.message || "Could not leave race", "error");
+  }
+}
+
+// ---------------- LIVE WORKSPACE LOGIC ----------------
+
+function enterRaceWorkspace(race) {
+  codingRaceState.currentRace = race;
+  codingRaceState.activeProblemIndex = 0;
+
+  const wsTab = $("crNavWorkspace");
+  if (wsTab) wsTab.style.display = "flex";
+
+  const lobbyTab = $("crNavLobby");
+  if (lobbyTab) lobbyTab.style.display = "none";
+
+  switchCodingRacePanel("workspace");
+
+  const titleEl = $("crWorkspaceRaceTitle");
+  if (titleEl) titleEl.textContent = race.title || "Live Contest";
+
+  // Build Problem Tabs
+  renderProblemTabs(race.problems || []);
+
+  // Select First Problem
+  selectRaceProblem(0);
+
+  // Start Server-Synchronized Timer
+  startLiveTimer(race.remainingSeconds || (race.durationMinutes || 30) * 60);
+
+  // Update Mini Leaderboard
+  updateLiveLeaderboard(race.participants || []);
+
+  // Connect SSE if not already
+  connectRaceSSE(race._id || race.id);
+}
+
+function renderProblemTabs(problems) {
+  const container = $("crProblemTabsBar");
+  if (!container) return;
+
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+  container.innerHTML = problems.map((p, idx) => `
+    <button type="button" class="cr-prob-tab ${idx === codingRaceState.activeProblemIndex ? 'active' : ''}" data-index="${idx}" onclick="selectRaceProblem(${idx})">
+      <span>Q${idx + 1}: ${escapeFn(p.title)}</span>
+    </button>
+  `).join("");
+}
+
+function getCurrentRaceProblem() {
+  const race = codingRaceState.currentRace;
+  if (!race || !Array.isArray(race.problems)) return null;
+  return race.problems[codingRaceState.activeProblemIndex] || null;
+}
+
+function selectRaceProblem(index) {
+  const race = codingRaceState.currentRace;
+  if (!race || !Array.isArray(race.problems) || !race.problems[index]) return;
+
+  codingRaceState.activeProblemIndex = index;
+  const prob = race.problems[index];
+
+  // Update tabs active state
+  document.querySelectorAll(".cr-prob-tab").forEach(tab => {
+    tab.classList.toggle("active", Number(tab.dataset.index) === index);
+  });
+
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+  // Problem details
+  const titleEl = $("crProbTitle");
+  if (titleEl) titleEl.textContent = `${index + 1}. ${prob.title}`;
+
+  const diffBadge = $("crProbDiffBadge");
+  if (diffBadge) {
+    diffBadge.textContent = prob.difficulty || "Medium";
+    diffBadge.className = `badge-lib-level ${(prob.difficulty || "medium").toLowerCase()}`;
+  }
+
+  const topicBadge = $("crProbTopicBadge");
+  if (topicBadge) topicBadge.textContent = prob.topic || "Algorithms";
+
+  const descEl = $("crProbDescription");
+  if (descEl) descEl.innerHTML = renderSafeMarkdown(prob.description || "");
+
+  // Examples
+  const exEl = $("crProbExamples");
+  if (exEl) {
+    const examples = prob.examples || [];
+    exEl.innerHTML = examples.map((ex, i) => `
+      <div class="cr-example-box">
+        <strong>Example ${i + 1}:</strong><br>
+        <strong>Input:</strong> ${escapeFn(ex.input || "")}<br>
+        <strong>Output:</strong> ${escapeFn(ex.output || "")}
+        ${ex.explanation ? `<br><strong>Explanation:</strong> ${escapeFn(ex.explanation)}` : ''}
+      </div>
+    `).join("");
+  }
+
+  // Constraints
+  const constEl = $("crProbConstraints");
+  if (constEl) {
+    const rawConstraints = prob.constraints;
+    const constraintsList = Array.isArray(rawConstraints)
+      ? rawConstraints
+      : (typeof rawConstraints === "string" ? rawConstraints.split("\n").filter(Boolean) : []);
+    constEl.innerHTML = constraintsList.length
+      ? '<strong>Constraints:</strong><ul>' + constraintsList.map(c => `<li>${escapeFn(c)}</li>`).join("") + '</ul>'
+      : '';
+  }
+
+  // Load starter code or cached code
+  const lang = $("crLangSelect")?.value || "python3";
+  const cachedCode = codingRaceState.problemCodeMap[prob.problemId];
+  const textarea = $("crCodeTextarea");
+  if (textarea) {
+    textarea.value = cachedCode || (prob.starterCode?.[lang] || prob.starterCode?.python3 || "def solution():\n    pass");
+  }
+
+  // Reset Console output
+  const consoleBody = $("crConsoleBody");
+  const verdictChip = $("crVerdictChip");
+  if (consoleBody) consoleBody.innerHTML = '<p class="cr-console-placeholder">Run sample tests or submit solution to view execution output.</p>';
+  if (verdictChip) {
+    verdictChip.className = "cr-verdict-chip ready";
+    verdictChip.textContent = "Ready";
+  }
+}
+
+function resetCurrentProblemCode() {
+  const prob = getCurrentRaceProblem();
+  if (!prob) return;
+  const lang = $("crLangSelect")?.value || "python3";
+  const textarea = $("crCodeTextarea");
+  if (textarea) {
+    const starter = prob.starterCode?.[lang] || prob.starterCode?.python3 || "";
+    textarea.value = starter;
+    codingRaceState.problemCodeMap[prob.problemId] = starter;
+    showToast("Code reset to starter template", "info");
+  }
+}
+
+async function runSampleTests() {
+  const prob = getCurrentRaceProblem();
+  if (!prob || !codingRaceState.currentRace) return;
+
+  const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+  const code = $("crCodeTextarea")?.value;
+  const language = $("crLangSelect")?.value || "python3";
+
+  // Cache code
+  codingRaceState.problemCodeMap[prob.problemId] = code;
+
+  const consoleBody = $("crConsoleBody");
+  const verdictChip = $("crVerdictChip");
+  if (consoleBody) consoleBody.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Running sample test cases in sandbox...';
+  if (verdictChip) {
+    verdictChip.className = "cr-verdict-chip ready";
+    verdictChip.textContent = "Executing...";
+  }
+
+  try {
+    const res = await apiRequest('/api/races/' + raceId + '/run-test', {
+      method: "POST",
+      body: JSON.stringify({
+        problemId: prob.problemId,
+        code,
+        language
+      })
+    });
+
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+    if (verdictChip) {
+      verdictChip.className = res.allPassed ? "cr-verdict-chip accepted" : "cr-verdict-chip rejected";
+      verdictChip.textContent = res.allPassed ? "All Samples Passed" : "Sample Failed";
+    }
+
+    if (consoleBody) {
+      consoleBody.innerHTML = (res.results || []).map((t, idx) => `
+        <div style="margin-bottom:0.6rem; padding-bottom:0.5rem; border-bottom:1px dashed #cbd5e1;">
+          <span style="font-weight:700; color:${t.passed ? '#16a34a' : '#dc2626'};">${t.passed ? '✓ Test ' + (idx + 1) + ' Passed' : '✗ Test ' + (idx + 1) + ' Failed'}</span>
+          <span style="font-size:0.75rem; color:#64748b; margin-left:0.5rem;">(${t.executionTimeMs}ms)</span>
+          <div style="margin-top:0.25rem;">Input: <code>${escapeFn(t.input)}</code></div>
+          <div>Expected: <code>${escapeFn(t.expected)}</code> | Actual: <code>${escapeFn(t.actual)}</code></div>
+          ${t.stderr ? `<div style="color:#ef4444; margin-top:0.2rem;">Stderr: ${escapeFn(t.stderr)}</div>` : ''}
+        </div>
+      `).join("");
+    }
+  } catch (err) {
+    if (consoleBody) consoleBody.innerHTML = '<span style="color:#ef4444;">Error: ' + (err.message || "Failed to run tests") + '</span>';
+  }
+}
+
+async function submitRaceSolution() {
+  const prob = getCurrentRaceProblem();
+  if (!prob || !codingRaceState.currentRace) return;
+
+  const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+  const code = $("crCodeTextarea")?.value;
+  const language = $("crLangSelect")?.value || "python3";
+
+  if (!code || !code.trim()) {
+    showToast("Please write code before submitting", "error");
+    return;
+  }
+
+  // Cache code
+  codingRaceState.problemCodeMap[prob.problemId] = code;
+
+  const submitBtn = $("crOfficialSubmitBtn");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting...';
+  }
+
+  const consoleBody = $("crConsoleBody");
+  const verdictChip = $("crVerdictChip");
+
+  try {
+    const res = await apiRequest('/api/races/' + raceId + '/submit', {
+      method: "POST",
+      body: JSON.stringify({
+        problemId: prob.problemId,
+        code,
+        language
+      })
+    });
+
+    const isAccepted = Boolean(res.isAccepted);
+
+    if (verdictChip) {
+      verdictChip.className = isAccepted ? "cr-verdict-chip accepted" : "cr-verdict-chip rejected";
+      verdictChip.textContent = isAccepted ? `Accepted! (+${res.pointsAwarded} pts)` : "Wrong Answer";
+    }
+
+    if (consoleBody) {
+      if (isAccepted) {
+        consoleBody.innerHTML = `
+          <div style="color:#15803d; font-size:1.05rem; font-weight:800; margin-bottom:0.4rem;">
+            <i class="fa fa-check-circle"></i> Solution Accepted!
+          </div>
+          <p style="margin:0; color:#334155;">
+            Passed ${res.testsPassed} / ${res.totalTests} verification test cases.<br>
+            Points Earned: <strong>+${res.pointsAwarded}</strong> (Time Bonus: ${res.timeBonus} pts).<br>
+            Current Total Score: <strong>${res.totalScore} pts</strong>.
+          </p>
+        `;
+        showToast(`Accepted! +${res.pointsAwarded} points`, "success");
+
+        // Mark problem tab as solved
+        const activeTab = document.querySelector(`.cr-prob-tab[data-index="${codingRaceState.activeProblemIndex}"]`);
+        if (activeTab) activeTab.classList.add("solved");
+      } else {
+        const fail = res.failureDetails || {};
+        consoleBody.innerHTML = `
+          <div style="color:#b91c1c; font-size:1.05rem; font-weight:800; margin-bottom:0.4rem;">
+            <i class="fa fa-times-circle"></i> Verification Failed
+          </div>
+          <p style="margin:0 0 0.5rem 0; color:#334155;">Passed ${res.testsPassed} / ${res.totalTests} test cases.</p>
+          ${fail.input ? `<div>Input: <code>${escapeHTML(fail.input)}</code></div>` : ''}
+          ${fail.expected ? `<div>Expected: <code>${escapeHTML(fail.expected)}</code> | Actual: <code>${escapeHTML(fail.actual || "")}</code></div>` : ''}
+          ${fail.stderr ? `<div style="color:#ef4444; margin-top:0.25rem;">Error: ${escapeHTML(fail.stderr)}</div>` : ''}
+        `;
+        showToast("Incorrect solution. Review test failure and try again!", "error");
+      }
+    }
+
+    // Refresh Live Leaderboard
+    const lb = await apiRequest('/api/races/' + raceId + '/leaderboard');
+    if (lb.standings) {
+      updateLiveLeaderboard(lb.standings);
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to submit solution", "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fa fa-paper-plane"></i> Submit Solution';
+    }
+  }
+}
+
+function startLiveTimer(seconds) {
+  if (codingRaceState.liveTimerInterval) {
+    clearInterval(codingRaceState.liveTimerInterval);
+  }
+
+  codingRaceState.remainingSeconds = Math.max(0, Math.floor(seconds));
+  updateTimerDisplay(codingRaceState.remainingSeconds);
+
+  codingRaceState.liveTimerInterval = setInterval(() => {
+    codingRaceState.remainingSeconds--;
+    if (codingRaceState.remainingSeconds <= 0) {
+      clearInterval(codingRaceState.liveTimerInterval);
+      codingRaceState.liveTimerInterval = null;
+      updateTimerDisplay(0);
+      onRaceTimerExpired();
+    } else {
+      updateTimerDisplay(codingRaceState.remainingSeconds);
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay(remaining) {
+  const timerEl = $("crLiveTimer");
+  if (!timerEl) return;
+
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const str = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+  timerEl.textContent = str;
+
+  if (remaining < 120) {
+    timerEl.classList.add("warning");
+  } else {
+    timerEl.classList.remove("warning");
+  }
+}
+
+async function onRaceTimerExpired() {
+  showToast("Time expired! Submitting final contest results...", "info");
+  if (codingRaceState.currentRace) {
+    const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+    try {
+      const res = await apiRequest('/api/races/' + raceId);
+      showRaceResults(res.race);
+    } catch (_) {}
+  }
+}
+
+function updateLiveLeaderboard(standings) {
+  const list = $("crMiniLeaderboardList");
+  const countEl = $("crLiveRacerCount");
+  if (!list) return;
+
+  const currentUid = typeof viewerProfile !== "undefined" && viewerProfile?.id ? viewerProfile.id : (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : null);
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+  if (countEl) countEl.textContent = `${standings.length} Racers`;
+
+  list.innerHTML = standings.map(s => {
+    const isMe = currentUid && (s.userId === currentUid);
+    return `
+      <div class="cr-mini-lb-row ${isMe ? 'me' : ''}">
+        <span class="cr-lb-rank">#${s.rank}</span>
+        <span class="cr-lb-name">${escapeFn(s.name)}</span>
+        <span class="cr-lb-score">${s.score} pts</span>
+      </div>
+    `;
+  }).join("");
+}
+
+// ---------------- RESULTS VIEW & AI COACH ----------------
+
+function showRaceResults(race) {
+  cleanupCodingRaceTimers();
+  codingRaceState.currentRace = race;
+
+  const resTab = $("crNavResults");
+  if (resTab) resTab.style.display = "flex";
+
+  const wsTab = $("crNavWorkspace");
+  if (wsTab) wsTab.style.display = "none";
+
+  switchCodingRacePanel("results");
+
+  const currentUid = typeof viewerProfile !== "undefined" && viewerProfile?.id ? viewerProfile.id : (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : null);
+  const standings = race.participants || [];
+  const myStanding = standings.find(s => s.userId === currentUid) || standings[0] || {};
+
+  const rankEl = $("crResMyRank");
+  if (rankEl) rankEl.textContent = `#${myStanding.rank || 1}`;
+
+  const scoreEl = $("crResMyScore");
+  if (scoreEl) scoreEl.textContent = `${myStanding.score || 0} pts`;
+
+  const solvedEl = $("crResMySolved");
+  if (solvedEl) solvedEl.textContent = `${myStanding.solvedCount || 0} / ${race.questionCount || 3}`;
+
+  const timeEl = $("crResMyTime");
+  if (timeEl) timeEl.textContent = `${myStanding.totalTimeSeconds || 0}s`;
+
+  // Populate Standings Table
+  const tableBody = $("crFinalStandingsTableBody");
+  if (tableBody) {
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+    tableBody.innerHTML = standings.map(s => `
+      <tr style="${s.userId === currentUid ? 'background:#f0f9ff; font-weight:700;' : ''}">
+        <td>#${s.rank}</td>
+        <td>${escapeFn(s.name)}</td>
+        <td style="color:#0284c7; font-family:monospace;">${s.score} pts</td>
+        <td>${s.solvedCount || 0}</td>
+        <td>${s.totalTimeSeconds || 0}s</td>
+      </tr>
+    `).join("");
+  }
+
+  // Reset AI Coach Card
+  const aiBody = $("crAiCoachBody");
+  if (aiBody) {
+    aiBody.innerHTML = '<p class="cr-ai-placeholder">Click \'Analyze My Performance\' for a personalized breakdown of your pacing, strengths, error root-causes, and targeted concepts to revise.</p>';
+  }
+}
+
+async function triggerAiRaceCoach() {
+  if (!codingRaceState.currentRace) return;
+  const raceId = codingRaceState.currentRace._id || codingRaceState.currentRace.id;
+
+  const btn = $("crTriggerAiCoachBtn");
+  const aiBody = $("crAiCoachBody");
+  if (!aiBody) return;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Analyzing...';
+  }
+
+  aiBody.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Synthesizing real competition evidence and pattern recognition...';
+
+  try {
+    const res = await apiRequest('/api/races/' + raceId + '/coach-analysis', { method: "POST" });
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+    let html = `<p><strong>Performance Summary:</strong> ${escapeFn(res.performanceSummary || "Completed race contest.")}</p>`;
+
+    if (Array.isArray(res.strengths) && res.strengths.length) {
+      html += '<strong>Algorithmic Strengths:</strong><ul>' + res.strengths.map(s => `<li>${escapeFn(s)}</li>`).join('') + '</ul>';
+    }
+
+    if (Array.isArray(res.mistakeRetrospective) && res.mistakeRetrospective.length) {
+      html += '<strong>Mistake Retrospective:</strong><ul>' + res.mistakeRetrospective.map(m => `<li>${escapeFn(m)}</li>`).join('') + '</ul>';
+    }
+
+    if (Array.isArray(res.actionablePlan) && res.actionablePlan.length) {
+      html += '<strong>Actionable Revision Plan:</strong><ul>' + res.actionablePlan.map(a => `<li>${escapeFn(a)}</li>`).join('') + '</ul>';
+    }
+
+    aiBody.innerHTML = html;
+  } catch (err) {
+    aiBody.innerHTML = '<span style="color:#ef4444;">Could not generate AI coach feedback: ' + (err.message || "") + '</span>';
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa fa-magic"></i> Re-Analyze Performance';
+    }
+  }
+}
+
+// ---------------- REAL-TIME SSE CONNECTION ----------------
+
+function connectRaceSSE(raceId) {
+  if (codingRaceState.sseSource) {
+    codingRaceState.sseSource.close();
+  }
+
+  try {
+    const source = new EventSource('/api/races/' + raceId + '/events');
+    codingRaceState.sseSource = source;
+
+    source.addEventListener("race:started", (e) => {
+      showToast("Contest has started! Good luck!", "info");
+      apiRequest('/api/races/' + raceId).then(res => {
+        if (res.race) enterRaceWorkspace(res.race);
+      });
+    });
+
+    source.addEventListener("race:joined", (e) => {
+      apiRequest('/api/races/' + raceId).then(res => {
+        if (res.race) {
+          codingRaceState.currentRace = res.race;
+          if (codingRaceState.activePanel === "lobby") {
+            renderLobbyView(res.race);
+          }
+        }
+      });
+    });
+
+    source.addEventListener("race:ready", (e) => {
+      apiRequest('/api/races/' + raceId).then(res => {
+        if (res.race && codingRaceState.activePanel === "lobby") {
+          renderLobbyView(res.race);
+        }
+      });
+    });
+
+    source.addEventListener("race:submission", (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const data = payload.data || {};
+        if (data.isAccepted) {
+          showToast(`${data.userName || 'A racer'} accepted ${data.problemTitle} (+${data.pointsAwarded} pts)!`, "info");
+        }
+        apiRequest('/api/races/' + raceId + '/leaderboard').then(lb => {
+          if (lb.standings) updateLiveLeaderboard(lb.standings);
+        });
+      } catch (_) {}
+    });
+
+    source.addEventListener("race:completed", (e) => {
+      showToast("Contest completed!", "info");
+      apiRequest('/api/races/' + raceId).then(res => {
+        if (res.race) showRaceResults(res.race);
+      });
+    });
+
+    source.addEventListener("race:cancelled", (e) => {
+      showToast("The race was cancelled by host.", "error");
+      cleanupCodingRaceTimers();
+      switchCodingRacePanel("browse");
+      fetchAvailableRaces();
+    });
+  } catch (_) {
+    // SSE not supported or blocked; graceful fallback to interval polling
+  }
+}
+
+// ---------------- PERSONAL STATS MODAL ----------------
+
+async function fetchUserRaceStats() {
+  try {
+    const res = await apiRequest('/api/races/user/stats');
+    const stats = res.stats || {};
+
+    const scoreChip = $("userTotalRaceScore");
+    if (scoreChip) scoreChip.textContent = String(stats.totalScore || 0);
+
+    const solvedChip = $("userTotalRaceSolved");
+    if (solvedChip) solvedChip.textContent = String(stats.totalSolved || 0);
+
+    const winsChip = $("userTotalRaceWins");
+    if (winsChip) winsChip.textContent = String(stats.wins || 0);
+  } catch (_) {}
+}
+
+async function openUserRaceStatsModal() {
+  const modal = $("crStatsModal");
+  if (!modal) return;
+
+  try {
+    const res = await apiRequest('/api/races/user/stats');
+    const stats = res.stats || {};
+
+    const totalRacesEl = $("crStatTotalRaces");
+    if (totalRacesEl) totalRacesEl.textContent = String(stats.totalRaces || 0);
+
+    const winsEl = $("crStatWins");
+    if (winsEl) winsEl.textContent = String(stats.wins || 0);
+
+    const solvedEl = $("crStatSolved");
+    if (solvedEl) solvedEl.textContent = String(stats.totalSolved || 0);
+
+    const scoreEl = $("crStatScore");
+    if (scoreEl) scoreEl.textContent = `${stats.totalScore || 0} pts`;
+  } catch (_) {}
+
+  modal.classList.add("active");
+}
+
+// Global window exposures for inline onclick handlers
+window.quickMatchRace = quickMatchRace;
+window.openCreateRaceModal = openCreateRaceModal;
+window.joinRaceRoom = joinRaceRoom;
+window.selectRaceProblem = selectRaceProblem;
 
 initializeAiCodeMentor();
 initializeApp();

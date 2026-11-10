@@ -346,7 +346,362 @@
         </section>
       </section>
       <!-- RACE ARENA -->
-      <section id="arenaPage" class="page">
+      <section id="arenaPage" class="page arena-page-root">
+        <!-- Top Mode Switcher Bar -->
+        <div class="arena-mode-switcher-bar">
+          <div class="arena-mode-tabs" role="tablist">
+            <button type="button" class="btn btn-sm arena-mode-tab active" id="arenaTabCodingRace" data-tab="coding-race">
+              <span class="arena-tab-icon">🏁</span>
+              <strong>Competitive Coding Races</strong>
+              <span class="arena-mode-pill">MODULE 10</span>
+            </button>
+            <button type="button" class="btn btn-sm arena-mode-tab" id="arenaTab3DTrack" data-tab="3d-track">
+              <span class="arena-tab-icon">🏟️</span>
+              <span>3D Olympic Track</span>
+            </button>
+          </div>
+          <div class="arena-mode-quick-stats" id="arenaQuickStatsBar">
+            <span class="arena-stat-chip" title="Your Total Race Points"><strong id="userTotalRaceScore">0</strong> pts</span>
+            <span class="arena-stat-chip" title="Races Solved"><strong id="userTotalRaceSolved">0</strong> solved</span>
+            <span class="arena-stat-chip" title="Race Wins"><strong id="userTotalRaceWins">0</strong> wins</span>
+          </div>
+        </div>
+
+        <!-- ========================================================
+             CONTAINER 1: MODULE 10 COMPETITIVE CODING RACE ARENA
+             ======================================================== -->
+        <div id="codingRaceContainer" class="coding-race-container">
+          <!-- Hub Header Bar -->
+          <div class="coding-race-header-bar">
+            <div class="cr-header-content">
+              <h2>DSA Coding Race Arena</h2>
+              <p>Real-time competitive DSA battles. Solve curated algorithmic challenges under timed conditions, climb the live standings, and review your performance with an AI Race Coach.</p>
+            </div>
+            <div class="cr-header-actions">
+              <button id="crQuickMatchBtn" class="btn btn-primary cr-quick-btn" type="button">
+                <i class="fa fa-bolt"></i> Quick Race
+              </button>
+              <button id="crCreateRaceBtn" class="btn btn-secondary cr-create-btn" type="button">
+                <i class="fa fa-plus"></i> Create Race
+              </button>
+              <button id="crStatsModalBtn" class="btn btn-secondary" type="button" title="View Personal Race Stats">
+                <i class="fa fa-trophy"></i> My Stats
+              </button>
+            </div>
+          </div>
+
+          <!-- Navigation Subtabs -->
+          <div class="cr-subnav-cluster" role="tablist">
+            <button type="button" class="cr-subnav-btn active" id="crNavBrowse" data-panel="browse">
+              <i class="fa fa-list"></i> Available Races
+            </button>
+            <button type="button" class="cr-subnav-btn" id="crNavLobby" data-panel="lobby" style="display:none;">
+              <i class="fa fa-users"></i> Race Lobby <span class="cr-badge-pulse" id="crLobbyBadge"></span>
+            </button>
+            <button type="button" class="cr-subnav-btn" id="crNavWorkspace" data-panel="workspace" style="display:none;">
+              <i class="fa fa-code"></i> Live Workspace <span class="cr-live-dot"></span>
+            </button>
+            <button type="button" class="cr-subnav-btn" id="crNavResults" data-panel="results" style="display:none;">
+              <i class="fa fa-flag-checkered"></i> Race Results
+            </button>
+          </div>
+
+          <!-- PANEL A: BROWSE RACES -->
+          <div id="crBrowsePanel" class="cr-panel active">
+            <!-- Filter Toolbar -->
+            <div class="cr-toolbar-card">
+              <div class="cr-filter-group">
+                <select id="crFilterMode" class="cr-select">
+                  <option value="">All Modes</option>
+                  <option value="quick">Quick Match</option>
+                  <option value="private">Private Contest</option>
+                  <option value="group">Group Race</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="practice">Practice Solo</option>
+                </select>
+                <select id="crFilterTopic" class="cr-select">
+                  <option value="">All Topics</option>
+                  <option value="Arrays">Arrays</option>
+                  <option value="Strings">Strings</option>
+                  <option value="Two Pointers">Two Pointers</option>
+                  <option value="Binary Search">Binary Search</option>
+                  <option value="Dynamic Programming">Dynamic Programming</option>
+                  <option value="Graphs">Graphs</option>
+                  <option value="Trees">Trees</option>
+                </select>
+                <select id="crFilterDiff" class="cr-select">
+                  <option value="">All Difficulties</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                  <option value="Mixed">Mixed</option>
+                </select>
+              </div>
+              <div class="cr-search-group">
+                <input type="text" id="crSearchInput" class="cr-input" placeholder="Search races by title..." />
+                <button type="button" id="crRefreshBtn" class="btn btn-secondary btn-sm" title="Refresh available races">
+                  <i class="fa fa-refresh"></i> Refresh
+                </button>
+              </div>
+            </div>
+
+            <!-- Race Rooms Grid -->
+            <div id="crRoomsGrid" class="cr-rooms-grid">
+              <div class="cr-empty-state">
+                <i class="fa fa-spinner fa-spin cr-empty-icon"></i>
+                <div class="cr-empty-title">Loading available coding races...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PANEL B: RACE LOBBY -->
+          <div id="crLobbyPanel" class="cr-panel" style="display:none;">
+            <div class="cr-lobby-card">
+              <div class="cr-lobby-header">
+                <div>
+                  <div class="cr-badge-row">
+                    <span class="badge-lib-type" id="crLobbyModeBadge">QUICK</span>
+                    <span class="badge-lib-topic" id="crLobbyTopicBadge">Arrays</span>
+                    <span class="badge-lib-level medium" id="crLobbyDiffBadge">Medium</span>
+                  </div>
+                  <h3 id="crLobbyTitle" class="cr-lobby-title">Competitive DSA Arena</h3>
+                  <p id="crLobbyDesc" class="cr-lobby-desc">Waiting for racers to join and mark ready.</p>
+                </div>
+                <div class="cr-lobby-invite-box" id="crLobbyInviteBox" style="display:none;">
+                  <span class="cr-invite-label">ROOM INVITE CODE</span>
+                  <div class="cr-invite-code-row">
+                    <strong id="crLobbyInviteCode">RACE99</strong>
+                    <button type="button" class="btn btn-sm btn-secondary" id="crCopyInviteBtn" title="Copy Room Invite Code">
+                      <i class="fa fa-copy"></i> Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Lobby Participant Grid -->
+              <div class="cr-lobby-body">
+                <div class="cr-lobby-section-title">
+                  <h4>Racers in Room (<span id="crLobbyCount">1</span>/<span id="crLobbyMax">10</span>)</h4>
+                  <span id="crLobbyReadyCount" class="cr-ready-indicator">0 Ready</span>
+                </div>
+                <div id="crLobbyParticipantsGrid" class="cr-participants-grid">
+                  <!-- Injected dynamically -->
+                </div>
+              </div>
+
+              <!-- Lobby Footer Controls -->
+              <div class="cr-lobby-footer">
+                <div class="cr-lobby-left-actions">
+                  <button type="button" class="btn btn-secondary" id="crLobbyLeaveBtn">
+                    <i class="fa fa-sign-out"></i> Leave Room
+                  </button>
+                </div>
+                <div class="cr-lobby-right-actions">
+                  <button type="button" class="btn btn-secondary" id="crLobbyReadyBtn">
+                    <i class="fa fa-check"></i> Mark Ready
+                  </button>
+                  <button type="button" class="btn btn-primary" id="crLobbyStartBtn" style="display:none;">
+                    <i class="fa fa-flag-checkered"></i> Start Contest Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PANEL C: LIVE RACE WORKSPACE -->
+          <div id="crWorkspacePanel" class="cr-panel" style="display:none;">
+            <!-- Live Top Navigation Bar -->
+            <div class="cr-workspace-topbar">
+              <div class="cr-ws-title-group">
+                <span class="cr-live-pill"><span class="cr-live-dot"></span> LIVE CONTEST</span>
+                <h3 id="crWorkspaceRaceTitle">Race Arena Live</h3>
+              </div>
+              <div class="cr-timer-card">
+                <span class="cr-timer-label">TIME REMAINING</span>
+                <span id="crLiveTimer" class="cr-timer-value">29:59</span>
+              </div>
+              <div class="cr-ws-actions">
+                <span class="cr-ws-status-chip" id="crLiveConnectionStatus"><i class="fa fa-circle" style="color:#10b981;"></i> Synced</span>
+                <button type="button" class="btn btn-sm btn-secondary cr-surrender-btn" id="crSurrenderBtn">
+                  Exit Contest
+                </button>
+              </div>
+            </div>
+
+            <!-- Problem Tabs Bar -->
+            <div class="cr-problem-tabs-bar" id="crProblemTabsBar" role="tablist">
+              <!-- Dynamically populated: Q1, Q2, Q3 with status badges -->
+            </div>
+
+            <!-- Main Split Workspace Layout -->
+            <div class="cr-workspace-split">
+              <!-- Left Pane: Problem Intelligence -->
+              <div class="cr-problem-pane">
+                <div class="cr-pane-card">
+                  <div class="cr-prob-header">
+                    <div class="cr-prob-badges">
+                      <span class="badge-lib-level medium" id="crProbDiffBadge">Medium</span>
+                      <span class="badge-lib-topic" id="crProbTopicBadge">Binary Search</span>
+                    </div>
+                    <h2 id="crProbTitle" class="cr-prob-title">1. Search in Rotated Sorted Array</h2>
+                  </div>
+                  <div class="cr-prob-body" id="crProbDescription">
+                    <!-- Markdown rendered description -->
+                  </div>
+                  <div class="cr-prob-examples" id="crProbExamples">
+                    <!-- Injected examples -->
+                  </div>
+                  <div class="cr-prob-constraints" id="crProbConstraints">
+                    <!-- Injected constraints -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Pane: Code Editor & Test Runner -->
+              <div class="cr-editor-pane">
+                <div class="cr-pane-card editor-card">
+                  <div class="cr-editor-toolbar">
+                    <div class="cr-lang-picker">
+                      <label for="crLangSelect">Language:</label>
+                      <select id="crLangSelect" class="cr-select btn-sm">
+                        <option value="python3">Python 3</option>
+                        <option value="javascript">JavaScript (Node.js)</option>
+                        <option value="typescript">TypeScript</option>
+                        <option value="java">Java (OpenJDK)</option>
+                        <option value="cpp">C++ (GCC)</option>
+                        <option value="go">Go</option>
+                        <option value="rust">Rust</option>
+                      </select>
+                    </div>
+                    <div class="cr-editor-actions">
+                      <button type="button" class="btn btn-sm btn-secondary" id="crResetCodeBtn" title="Reset starter code">
+                        <i class="fa fa-undo"></i> Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Code Editor Textarea -->
+                  <div class="cr-code-wrap">
+                    <textarea id="crCodeTextarea" class="cr-code-textarea" spellcheck="false" placeholder="Write your solution here..."></textarea>
+                  </div>
+
+                  <!-- Execution & Submit Buttons -->
+                  <div class="cr-run-bar">
+                    <button type="button" class="btn btn-secondary" id="crRunSampleBtn">
+                      <i class="fa fa-play"></i> Run Sample Tests
+                    </button>
+                    <button type="button" class="btn btn-primary cr-submit-btn" id="crOfficialSubmitBtn">
+                      <i class="fa fa-paper-plane"></i> Submit Solution
+                    </button>
+                  </div>
+
+                  <!-- Test Console & Verdict Banner -->
+                  <div class="cr-console-card" id="crConsoleCard">
+                    <div class="cr-console-header">
+                      <span>Execution Feedback</span>
+                      <span id="crVerdictChip" class="cr-verdict-chip ready">Ready</span>
+                    </div>
+                    <div class="cr-console-body" id="crConsoleBody">
+                      <p class="cr-console-placeholder">Run sample tests or submit solution to view execution output.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Side Pane: Live Contest Standings -->
+              <aside class="cr-mini-leaderboard-pane">
+                <div class="cr-pane-card mini-leaderboard-card">
+                  <div class="cr-mini-lb-header">
+                    <h4>Live Standings</h4>
+                    <span class="cr-racer-count" id="crLiveRacerCount">1 Racers</span>
+                  </div>
+                  <div class="cr-mini-lb-list" id="crMiniLeaderboardList">
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- PANEL D: POST-RACE RESULTS & REVIEW -->
+          <div id="crResultsPanel" class="cr-panel" style="display:none;">
+            <div class="cr-results-card">
+              <div class="cr-results-header">
+                <h2>Contest Concluded</h2>
+                <p id="crResultsSubtitle">Review your standing, final score breakdown, and personalized AI Coach analysis.</p>
+              </div>
+
+              <!-- Podium Summary Cards -->
+              <div class="cr-results-summary-row" id="crResultsSummaryRow">
+                <div class="cr-summary-card rank-card">
+                  <span class="cr-sum-label">YOUR RANK</span>
+                  <div class="cr-sum-val" id="crResMyRank">#1</div>
+                </div>
+                <div class="cr-summary-card score-card">
+                  <span class="cr-sum-label">FINAL SCORE</span>
+                  <div class="cr-sum-val" id="crResMyScore">0 pts</div>
+                </div>
+                <div class="cr-summary-card solved-card">
+                  <span class="cr-sum-label">SOLVED QUESTIONS</span>
+                  <div class="cr-sum-val" id="crResMySolved">0 / 3</div>
+                </div>
+                <div class="cr-summary-card time-card">
+                  <span class="cr-sum-label">TOTAL TIME</span>
+                  <div class="cr-sum-val" id="crResMyTime">0s</div>
+                </div>
+              </div>
+
+              <!-- Full Standings Table -->
+              <div class="cr-results-table-section">
+                <h3>Final Official Standings</h3>
+                <div class="cr-table-wrap">
+                  <table class="cr-standings-table">
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Participant</th>
+                        <th>Score</th>
+                        <th>Problems Solved</th>
+                        <th>Total Time</th>
+                      </tr>
+                    </thead>
+                    <tbody id="crFinalStandingsTableBody">
+                      <!-- Dynamically populated -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- AI Race Coach Performance Analysis -->
+              <div class="cr-ai-coach-card" id="crAiCoachCard">
+                <div class="cr-ai-coach-header">
+                  <div class="cr-ai-title-wrap">
+                    <span class="cr-coach-badge"><i class="fa fa-graduation-cap"></i> AI RACE COACH</span>
+                    <h4>Personalized Performance Review</h4>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary" id="crTriggerAiCoachBtn">
+                    <i class="fa fa-magic"></i> Analyze My Performance
+                  </button>
+                </div>
+                <div class="cr-ai-coach-body" id="crAiCoachBody">
+                  <p class="cr-ai-placeholder">Click 'Analyze My Performance' for a personalized breakdown of your pacing, strengths, error root-causes, and targeted concepts to revise.</p>
+                </div>
+              </div>
+
+              <!-- Back Actions -->
+              <div class="cr-results-footer">
+                <button type="button" class="btn btn-secondary" id="crBackToHubBtn">
+                  <i class="fa fa-arrow-left"></i> Back to Race Arena Hub
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================
+             CONTAINER 2: PRESERVED 3D OLYMPIC TRACK VIEW
+             ======================================================== -->
+        <div id="arena3DTrackContainer" class="arena-3d-track-container" style="display:none;">
         <div class="arena-header-bar">
           <div class="arena-title-group">
             <div class="arena-badge-row">
@@ -429,6 +784,7 @@
               <!-- Populated dynamically -->
             </div>
           </aside>
+        </div>
         </div>
       </section>
 
@@ -2935,5 +3291,132 @@
   <script src="/firebase-client.js"></script>
   <script src="/characterverse-embed/characterverse-embed.js"></script>
   <script src="/script.js"></script>
+
+  <!-- MODULE 10: CREATE RACE MODAL -->
+  <div id="crCreateModal" class="lib-modal cr-modal">
+    <div class="lib-modal-overlay cr-modal-overlay"></div>
+    <div class="lib-modal-card">
+      <div class="lib-modal-header">
+        <h3 id="crCreateModalTitle"><i class="fa fa-trophy"></i> Create Competitive Race</h3>
+        <button type="button" class="lib-modal-close-btn" id="crCloseCreateBtn">&times;</button>
+      </div>
+      <div class="lib-modal-body">
+        <form id="crCreateForm" class="lib-editor-form" onsubmit="return false;">
+          <div class="lib-form-row">
+            <div class="lib-form-group full">
+              <label class="lib-form-label" for="crNewTitle">Race Title *</label>
+              <input type="text" id="crNewTitle" class="lib-form-input" placeholder="e.g. Weekly Graph & Tree Sprint" required />
+            </div>
+          </div>
+          <div class="lib-form-row">
+            <div class="lib-form-group">
+              <label class="lib-form-label" for="crNewMode">Mode</label>
+              <select id="crNewMode" class="lib-form-select">
+                <option value="quick">Quick Match (Public)</option>
+                <option value="private">Private (Invite Code)</option>
+                <option value="group">Group Only (Verified Cohort)</option>
+                <option value="practice">Practice Solo (Unranked)</option>
+              </select>
+            </div>
+            <div class="lib-form-group">
+              <label class="lib-form-label" for="crNewTopic">Topic</label>
+              <select id="crNewTopic" class="lib-form-select">
+                <option value="Mixed">Mixed Topics</option>
+                <option value="Arrays">Arrays</option>
+                <option value="Strings">Strings</option>
+                <option value="Two Pointers">Two Pointers</option>
+                <option value="Binary Search">Binary Search</option>
+                <option value="Dynamic Programming">Dynamic Programming</option>
+                <option value="Graphs">Graphs</option>
+                <option value="Trees">Trees</option>
+              </select>
+            </div>
+          </div>
+          <div class="lib-form-row">
+            <div class="lib-form-group">
+              <label class="lib-form-label" for="crNewDifficulty">Difficulty</label>
+              <select id="crNewDifficulty" class="lib-form-select">
+                <option value="Mixed">Mixed (Standard)</option>
+                <option value="Easy">Easy Tier</option>
+                <option value="Medium">Medium Tier</option>
+                <option value="Hard">Hard Tier</option>
+              </select>
+            </div>
+            <div class="lib-form-group">
+              <label class="lib-form-label" for="crNewCount">Problems Count</label>
+              <select id="crNewCount" class="lib-form-select">
+                <option value="1">1 Problem (Speedrun)</option>
+                <option value="2">2 Problems</option>
+                <option value="3" selected>3 Problems (Standard)</option>
+                <option value="4">4 Problems</option>
+                <option value="5">5 Problems (Grand Prix)</option>
+              </select>
+            </div>
+            <div class="lib-form-group">
+              <label class="lib-form-label" for="crNewDuration">Duration (Mins)</label>
+              <select id="crNewDuration" class="lib-form-select">
+                <option value="15">15 Minutes</option>
+                <option value="30" selected>30 Minutes</option>
+                <option value="45">45 Minutes</option>
+                <option value="60">60 Minutes</option>
+              </select>
+            </div>
+          </div>
+          <div class="lib-form-row" id="crGroupSelectWrap" style="display:none;">
+            <div class="lib-form-group full">
+              <label class="lib-form-label" for="crNewGroupSelect">Select Group</label>
+              <select id="crNewGroupSelect" class="lib-form-select">
+                <!-- Injected from user active groups -->
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="lib-modal-footer">
+        <button type="button" class="btn btn-secondary" id="crCancelCreateBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="crSubmitCreateBtn">Create Contest</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODULE 10: USER RACE STATS & ACHIEVEMENTS MODAL -->
+  <div id="crStatsModal" class="lib-modal cr-modal">
+    <div class="lib-modal-overlay cr-modal-overlay"></div>
+    <div class="lib-modal-card">
+      <div class="lib-modal-header">
+        <h3><i class="fa fa-trophy"></i> Personal Competitive Statistics</h3>
+        <button type="button" class="lib-modal-close-btn" id="crCloseStatsBtn">&times;</button>
+      </div>
+      <div class="lib-modal-body">
+        <div class="cr-stats-grid">
+          <div class="cr-stat-box">
+            <span class="cr-stat-label">RACES RUN</span>
+            <span class="cr-stat-num" id="crStatTotalRaces">0</span>
+          </div>
+          <div class="cr-stat-box">
+            <span class="cr-stat-label">VICTORIES</span>
+            <span class="cr-stat-num" id="crStatWins">0</span>
+          </div>
+          <div class="cr-stat-box">
+            <span class="cr-stat-label">SOLVED</span>
+            <span class="cr-stat-num" id="crStatSolved">0</span>
+          </div>
+          <div class="cr-stat-box">
+            <span class="cr-stat-label">TOTAL SCORE</span>
+            <span class="cr-stat-num" id="crStatScore">0 pts</span>
+          </div>
+        </div>
+        <div class="cr-achievements-section">
+          <h4>Achievements</h4>
+          <div class="cr-achievements-list">
+            <div class="cr-achieve-pill unlocked"><i class="fa fa-flag-checkered"></i> First Race Joined</div>
+            <div class="cr-achieve-pill unlocked"><i class="fa fa-check-circle"></i> Clean Test Submission</div>
+            <div class="cr-achieve-pill"><i class="fa fa-bolt"></i> Speed Demon (Sub-5m Solve)</div>
+            <div class="cr-achieve-pill"><i class="fa fa-trophy"></i> Podium Champion (Rank #1)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

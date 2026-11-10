@@ -276,7 +276,7 @@ function parseInputArguments(inputStr) {
 function buildExecutableHarness({ code, language, problem, testCases }) {
   const lang = normalizeExecutionLanguage(language);
   const cleanCode = (code || "").trim();
-  const methodName = problem?.methodName?.[lang] || problem?.methodName?.python3 || "solve";
+  const methodName = (typeof problem?.methodName === "string" ? problem.methodName : null) || problem?.methodName?.[lang] || problem?.methodName?.python3 || "solve";
 
   // If code already contains an entry point (e.g. main() or standalone execution), do not double-wrap
   if (lang === "python3" || lang === "python") {

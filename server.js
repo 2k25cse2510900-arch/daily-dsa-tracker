@@ -42,6 +42,8 @@ const { createAlgorithmVisualizerService } = require("./algorithm-visualizer");
 const { createAlgorithmVisualizerRouter } = require("./algorithm-visualizer-routes");
 const { createCommunityLibraryService } = require("./community-library");
 const { createCommunityLibraryRouter } = require("./community-library-routes");
+const { createCodingRaceArenaService } = require("./coding-race-arena");
+const { createCodingRaceArenaRouter } = require("./coding-race-arena-routes");
 const { groupDailySubmissions, fetchLeetCodeQuestionDetail } = require("./daily-activity-helper");
 
 const PAGES = ["overview", "daily", "concepts", "members", "arena", "report", "leaderboard", "visualizer", "library"];
@@ -318,6 +320,11 @@ const aiMentorNumber = (name, fallback, min, max) => { const value = Number(proc
 const aiCodeMentorService = () => createAiCodeMentorService({ db, provider: createUnifiedMentorProvider({ env: process.env }), dailyQuota: aiMentorNumber("AI_MENTOR_DAILY_QUOTA", 10, 1, 100), reviewRetentionDays: aiMentorNumber("AI_MENTOR_REVIEW_RETENTION_DAYS", 180, 1, 3650), sourceRetentionDays: aiMentorNumber("AI_MENTOR_SOURCE_RETENTION_DAYS", 30, 1, 365), maxSourceChars: Math.min(40_000, aiMentorNumber("AI_MENTOR_MAX_INPUT_TOKENS", 10_000, 1_000, 10_000) * 4), maxDescriptionChars: 8_000 });
 const algorithmVisualizerService = () => createAlgorithmVisualizerService({ db, provider: createUnifiedMentorProvider({ env: process.env }) });
 const communityLibraryService = () => createCommunityLibraryService({ db, provider: createUnifiedMentorProvider({ env: process.env }) });
+const codingRaceArenaService = () => createCodingRaceArenaService({
+  db,
+  provider: createUnifiedMentorProvider({ env: process.env }),
+  executionProvider: typeof createExecutionProvider === "function" ? createExecutionProvider({ env: process.env }) : null
+});
 
 app.disable("x-powered-by");
 app.set("trust proxy", production ? 1 : false);
@@ -381,6 +388,11 @@ app.use("/api/library", createCommunityLibraryRouter({
   memberOnly,
   serviceFor: communityLibraryService,
   aiRateLimit: aiMentorReviewLimit,
+  audit
+}));
+app.use("/api/races", createCodingRaceArenaRouter({
+  memberOnly,
+  serviceFor: codingRaceArenaService,
   audit
 }));
 
