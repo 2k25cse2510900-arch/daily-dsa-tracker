@@ -21,7 +21,8 @@ const PAGE_INFO = {
   arena: { title: "Race Arena", id: "arenaPage" },
   leaderboard: { title: "Leaderboard", id: "leaderboardPage" },
   report: { title: "Weekly Report", id: "reportPage" },
-  aimentor: { title: "AI Code Mentor", id: "aiMentorPage" }
+  aimentor: { title: "AI Code Mentor", id: "aiMentorPage" },
+  visualizer: { title: "Algorithm Visualizer", id: "visualizerPage" }
 };
 
 let state = { members: [], weeks: {}, currentWeek: 1 };
@@ -538,6 +539,9 @@ function showPage(pageName) {
 
   if (pageName === "report") {
     renderReport();
+  }
+  if (pageName === "visualizer") {
+    initVisualizerPage();
   }
   if (pageName === "daily" && isAdmin) loadDailyActivityStatus();
   if (pageName === "arena") {
@@ -2537,6 +2541,12 @@ function initializeMemberDashboardNavigation() {
       openAiCodeMentorWorkspace({ isStandalone: true });
     });
   }
+  const memberVisualizerNav = $("memberVisualizerNav");
+  if (memberVisualizerNav) {
+    memberVisualizerNav.addEventListener("click", () => {
+      showPage("visualizer");
+    });
+  }
   $("memberProgressNav").addEventListener("click", async () => {
     showMemberProgressView();
     try { await loadMemberProgress(memberWeek); } catch (error) { showToast(error.message, "error"); }
@@ -3218,6 +3228,10 @@ async function navigatePage(page) {
   }
   if (page === "aimentor") {
     openAiCodeMentorWorkspace({ isStandalone: true });
+    return true;
+  }
+  if (page === "visualizer") {
+    showPage("visualizer");
     return true;
   }
   if (isAdmin) { showPage(page); return true; }
@@ -8668,6 +8682,14 @@ function initializeAiCodeMentor() {
     interviewTabBtn.dataset.bound = "true";
     interviewTabBtn.addEventListener("click", () => switchMentorLearningTab("interview"));
   }
+  const mentorVisualizeBtn = $("mentorVisualizeBtn");
+  if (mentorVisualizeBtn && !mentorVisualizeBtn.dataset.bound) {
+    mentorVisualizeBtn.dataset.bound = "true";
+    mentorVisualizeBtn.addEventListener("click", () => {
+      const curProb = currentMentorProblem?.title || currentMentorProblem?.slug || "";
+      openVisualizerFromMentor(curProb);
+    });
+  }
 
   // 3. Code Editor interactions
   const codeInput = $("mentorCodeInput");
@@ -9666,6 +9688,1922 @@ function normalizeMentorMode(rawMode) {
     }
   } catch {}
 }
+
+
+/* ==========================================================================
+   MODULE 8: AI ALGORITHM VISUALIZER CONTROLLER
+   ========================================================================== */
+
+const BUILTIN_ALGORITHMS = [
+  {
+    "id": "binary-search",
+    "title": "Binary Search",
+    "name": "Binary Search",
+    "category": "Searching",
+    "difficulty": "Easy",
+    "timeComplexity": "O(log N)",
+    "timeComplexityDetails": {
+      "best": "O(1)",
+      "average": "O(log N)",
+      "worst": "O(log N)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Search a sorted collection by repeatedly dividing the search interval in half.",
+    "whenToUse": "The input array is sorted, or a monotonic condition function exists over an answer space.",
+    "observations": [
+      "Requires sorted order or monotonic decision function.",
+      "mid = low + Math.floor((high - low) / 2) safely prevents integer overflow.",
+      "Time complexity decreases exponentially with each halving operation."
+    ],
+    "pseudocode": [
+      "function binarySearch(arr, target):",
+      "  low = 0, high = arr.length - 1",
+      "  while low <= high:",
+      "    mid = low + floor((high - low) / 2)",
+      "    if arr[mid] == target:",
+      "      return mid",
+      "    else if arr[mid] < target:",
+      "      low = mid + 1",
+      "    else:",
+      "      high = mid - 1",
+      "  return -1"
+    ],
+    "defaultInput": {
+      "array": [
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15
+      ],
+      "target": 7
+    }
+  },
+  {
+    "id": "linear-search",
+    "title": "Linear Search",
+    "name": "Linear Search",
+    "category": "Searching",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(1)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Sequential search checking every element from left to right until the target is found.",
+    "whenToUse": "The array is unsorted and no indexing or hashing data structures exist.",
+    "observations": [
+      "Works on any collection regardless of ordering.",
+      "Best case O(1) when target is at the first index; worst case O(N) when absent."
+    ],
+    "pseudocode": [
+      "function linearSearch(arr, target):",
+      "  for i from 0 to arr.length - 1:",
+      "    if arr[i] == target:",
+      "      return i",
+      "  return -1"
+    ],
+    "defaultInput": {
+      "array": [
+        14,
+        9,
+        27,
+        4,
+        18,
+        42,
+        6
+      ],
+      "target": 18
+    }
+  },
+  {
+    "id": "bubble-sort",
+    "title": "Bubble Sort",
+    "name": "Bubble Sort",
+    "category": "Sorting",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N^2)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N^2)",
+      "worst": "O(N^2)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Repeatedly swaps adjacent elements that are in the wrong order.",
+    "whenToUse": "Educational introduction to sorting; small datasets.",
+    "observations": [
+      "Stable sorting algorithm.",
+      "Can terminate early if a pass makes 0 swaps."
+    ],
+    "pseudocode": [
+      "function bubbleSort(arr):",
+      "  for i from 0 to n - 2:",
+      "    for j from 0 to n - i - 2:",
+      "      if arr[j] > arr[j + 1]:",
+      "        swap(arr[j], arr[j + 1])",
+      "  return arr"
+    ],
+    "defaultInput": {
+      "array": [
+        5,
+        1,
+        4,
+        2,
+        8
+      ]
+    }
+  },
+  {
+    "id": "selection-sort",
+    "title": "Selection Sort",
+    "name": "Selection Sort",
+    "category": "Sorting",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N^2)",
+    "timeComplexityDetails": {
+      "best": "O(N^2)",
+      "average": "O(N^2)",
+      "worst": "O(N^2)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Finds the minimum element from the unsorted section and puts it at the beginning.",
+    "whenToUse": "Memory writes are expensive (minimizes total swaps to at most N).",
+    "observations": [
+      "Performs at most N swaps.",
+      "Unstable in standard array implementation."
+    ],
+    "pseudocode": [
+      "function selectionSort(arr):",
+      "  for i from 0 to n - 2:",
+      "    minIdx = i",
+      "    for j from i + 1 to n - 1:",
+      "      if arr[j] < arr[minIdx]:",
+      "        minIdx = j",
+      "    swap(arr[i], arr[minIdx])",
+      "  return arr"
+    ],
+    "defaultInput": {
+      "array": [
+        64,
+        25,
+        12,
+        22,
+        11
+      ]
+    }
+  },
+  {
+    "id": "insertion-sort",
+    "title": "Insertion Sort",
+    "name": "Insertion Sort",
+    "category": "Sorting",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N^2)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N^2)",
+      "worst": "O(N^2)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Builds the final sorted array one item at a time by inserting each element into place.",
+    "whenToUse": "Array is already partially sorted or data arrives in a continuous stream.",
+    "observations": [
+      "Very fast O(N) when array is nearly sorted.",
+      "Stable and in-place."
+    ],
+    "pseudocode": [
+      "function insertionSort(arr):",
+      "  for i from 1 to n - 1:",
+      "    key = arr[i], j = i - 1",
+      "    while j >= 0 and arr[j] > key:",
+      "      arr[j + 1] = arr[j]",
+      "      j = j - 1",
+      "    arr[j + 1] = key",
+      "  return arr"
+    ],
+    "defaultInput": {
+      "array": [
+        12,
+        11,
+        13,
+        5,
+        6
+      ]
+    }
+  },
+  {
+    "id": "merge-sort",
+    "title": "Merge Sort",
+    "name": "Merge Sort",
+    "category": "Sorting",
+    "difficulty": "Medium",
+    "timeComplexity": "O(N log N)",
+    "timeComplexityDetails": {
+      "best": "O(N log N)",
+      "average": "O(N log N)",
+      "worst": "O(N log N)"
+    },
+    "spaceComplexity": "O(N)",
+    "description": "Divide and conquer sorting algorithm that recursively divides the array and merges sorted halves.",
+    "whenToUse": "Guaranteed O(N log N) performance and stability are required.",
+    "observations": [
+      "Guaranteed O(N log N) worst-case time complexity.",
+      "Requires O(N) auxiliary memory."
+    ],
+    "pseudocode": [
+      "function mergeSort(arr):",
+      "  if arr.length <= 1: return arr",
+      "  mid = floor(arr.length / 2)",
+      "  left = mergeSort(arr[0..mid])",
+      "  right = mergeSort(arr[mid..end])",
+      "  return merge(left, right)"
+    ],
+    "defaultInput": {
+      "array": [
+        38,
+        27,
+        43,
+        3,
+        9,
+        82,
+        10
+      ]
+    }
+  },
+  {
+    "id": "quick-sort",
+    "title": "Quick Sort",
+    "name": "Quick Sort",
+    "category": "Sorting",
+    "difficulty": "Medium",
+    "timeComplexity": "O(N log N)",
+    "timeComplexityDetails": {
+      "best": "O(N log N)",
+      "average": "O(N log N)",
+      "worst": "O(N^2)"
+    },
+    "spaceComplexity": "O(log N)",
+    "description": "Picks a pivot and partitions the array around it such that smaller items are left and larger are right.",
+    "whenToUse": "General-purpose in-place sorting with excellent cache locality.",
+    "observations": [
+      "In-place sorting with low memory overhead.",
+      "Worst case O(N^2) avoided by randomized pivot selection."
+    ],
+    "pseudocode": [
+      "function quickSort(arr, low, high):",
+      "  if low < high:",
+      "    pivotIndex = partition(arr, low, high)",
+      "    quickSort(arr, low, pivotIndex - 1)",
+      "    quickSort(arr, pivotIndex + 1, high)"
+    ],
+    "defaultInput": {
+      "array": [
+        10,
+        80,
+        30,
+        90,
+        40,
+        50,
+        70
+      ]
+    }
+  },
+  {
+    "id": "two-sum",
+    "title": "Two Sum (Hash Map)",
+    "name": "Two Sum (Hash Map)",
+    "category": "Hashing",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(N)",
+    "description": "Finds two indices such that their elements sum up to a specific target using an auxiliary hash table.",
+    "whenToUse": "Finding pair relationships or complements in single-pass linear time.",
+    "observations": [
+      "Trades O(N) auxiliary space for O(N) time efficiency.",
+      "Eliminates the O(N^2) quadratic nested loop."
+    ],
+    "pseudocode": [
+      "function twoSum(nums, target):",
+      "  seen = {}",
+      "  for i from 0 to nums.length - 1:",
+      "    complement = target - nums[i]",
+      "    if complement in seen:",
+      "      return [seen[complement], i]",
+      "    seen[nums[i]] = i",
+      "  return []"
+    ],
+    "defaultInput": {
+      "array": [
+        2,
+        7,
+        11,
+        15
+      ],
+      "target": 9
+    }
+  },
+  {
+    "id": "two-pointers",
+    "title": "Two Pointers (Target Sum)",
+    "name": "Two Pointers (Target Sum)",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Uses left and right boundaries converging inward on a sorted sequence.",
+    "whenToUse": "Sorted sequence searching for pairs, palindromes, or container volumes.",
+    "observations": [
+      "Requires sorted array.",
+      "Achieves O(1) auxiliary space."
+    ],
+    "pseudocode": [
+      "function twoPointers(arr, target):",
+      "  left = 0, right = arr.length - 1",
+      "  while left < right:",
+      "    sum = arr[left] + arr[right]",
+      "    if sum == target: return [left, right]",
+      "    else if sum < target: left++",
+      "    else: right--",
+      "  return []"
+    ],
+    "defaultInput": {
+      "array": [
+        1,
+        2,
+        4,
+        6,
+        8,
+        11,
+        15
+      ],
+      "target": 10
+    }
+  },
+  {
+    "id": "sliding-window",
+    "title": "Sliding Window (Max Subarray Sum K)",
+    "name": "Sliding Window (Max Subarray Sum K)",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Maintains a contiguous window over elements, adding the entering item and removing the leaving item.",
+    "whenToUse": "Finding optimal contiguous subarray/substring aggregates (sum, length, frequency).",
+    "observations": [
+      "Converts O(N * K) brute force into clean O(N) single pass.",
+      "Reuses overlap between adjacent windows."
+    ],
+    "pseudocode": [
+      "function maxSubarraySum(arr, k):",
+      "  windowSum = sum(arr[0..k-1])",
+      "  maxSum = windowSum",
+      "  for i from k to arr.length - 1:",
+      "    windowSum += arr[i] - arr[i - k]",
+      "    maxSum = max(maxSum, windowSum)",
+      "  return maxSum"
+    ],
+    "defaultInput": {
+      "array": [
+        2,
+        1,
+        5,
+        1,
+        3,
+        2
+      ],
+      "k": 3
+    }
+  },
+  {
+    "id": "prefix-sum",
+    "title": "Prefix Sum (Range Sum Queries)",
+    "name": "Prefix Sum (Range Sum Queries)",
+    "category": "Prefix Sum",
+    "difficulty": "Easy",
+    "timeComplexity": "O(1) query",
+    "timeComplexityDetails": {
+      "best": "O(1) query, O(N) prep",
+      "average": "O(1) query",
+      "worst": "O(1) query"
+    },
+    "spaceComplexity": "O(N)",
+    "description": "Precomputes cumulative sums to answer arbitrary range sum queries in O(1) constant time.",
+    "whenToUse": "Frequent range sum or subarray balance queries.",
+    "observations": [
+      "1-indexed prefix arrays eliminate boundary edge-case checks for index 0.",
+      "Precomputing takes O(N) time; all subsequent queries are O(1)."
+    ],
+    "pseudocode": [
+      "function prefixSum(arr, left, right):",
+      "  prefix = buildPrefixArray(arr)",
+      "  return prefix[right + 1] - prefix[left]"
+    ],
+    "defaultInput": {
+      "array": [
+        3,
+        1,
+        4,
+        1,
+        5,
+        9,
+        2
+      ],
+      "query": {
+        "left": 2,
+        "right": 5
+      }
+    }
+  },
+  {
+    "id": "stack-operations",
+    "title": "Stack (Push / Pop / Peek)",
+    "name": "Stack (Push / Pop / Peek)",
+    "category": "Stacks",
+    "difficulty": "Easy",
+    "timeComplexity": "O(1)",
+    "timeComplexityDetails": {
+      "best": "O(1)",
+      "average": "O(1)",
+      "worst": "O(1)"
+    },
+    "spaceComplexity": "O(N)",
+    "description": "Visualizes the Last-In, First-Out (LIFO) stack data structure.",
+    "whenToUse": "Bracket matching, backtracking, expression evaluation, monotonic stacks.",
+    "observations": [
+      "All primary operations (push, pop, peek) operate in O(1) time.",
+      "Underpins function call stacks and depth-first searches."
+    ],
+    "pseudocode": [
+      "stack = []",
+      "push(x): stack.append(x)",
+      "pop(): return stack.removeLast()",
+      "peek(): return stack[top]"
+    ],
+    "defaultInput": {
+      "operations": [
+        {
+          "type": "push",
+          "value": 10
+        },
+        {
+          "type": "push",
+          "value": 20
+        },
+        {
+          "type": "peek"
+        },
+        {
+          "type": "push",
+          "value": 30
+        },
+        {
+          "type": "pop"
+        },
+        {
+          "type": "push",
+          "value": 40
+        }
+      ]
+    }
+  },
+  {
+    "id": "queue-operations",
+    "title": "Queue (Enqueue / Dequeue)",
+    "name": "Queue (Enqueue / Dequeue)",
+    "category": "Queues",
+    "difficulty": "Easy",
+    "timeComplexity": "O(1)",
+    "timeComplexityDetails": {
+      "best": "O(1)",
+      "average": "O(1)",
+      "worst": "O(1)"
+    },
+    "spaceComplexity": "O(N)",
+    "description": "Visualizes the First-In, First-Out (FIFO) queue data structure.",
+    "whenToUse": "Breadth-first search, job scheduling, buffer management.",
+    "observations": [
+      "Elements enter at the rear and leave at the front.",
+      "Essential for level-order traversals and unweighted shortest path."
+    ],
+    "pseudocode": [
+      "queue = []",
+      "enqueue(x): queue.append(x)",
+      "dequeue(): return queue.removeFirst()"
+    ],
+    "defaultInput": {
+      "operations": [
+        {
+          "type": "enqueue",
+          "value": "A"
+        },
+        {
+          "type": "enqueue",
+          "value": "B"
+        },
+        {
+          "type": "enqueue",
+          "value": "C"
+        },
+        {
+          "type": "dequeue"
+        },
+        {
+          "type": "enqueue",
+          "value": "D"
+        }
+      ]
+    }
+  },
+  {
+    "id": "linked-list-traversal",
+    "title": "Linked List Traversal",
+    "name": "Linked List Traversal",
+    "category": "Linked Lists",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(1)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Iterates through singly linked list nodes following next pointers until null.",
+    "whenToUse": "Processing sequential, dynamically allocated node chains.",
+    "observations": [
+      "No random access (unlike arrays); indexing is O(N).",
+      "Dynamic allocation allows O(1) insertions once a node pointer is held."
+    ],
+    "pseudocode": [
+      "curr = head",
+      "while curr != null:",
+      "  process(curr.value)",
+      "  curr = curr.next"
+    ],
+    "defaultInput": {
+      "nodes": [
+        10,
+        20,
+        30,
+        40,
+        50
+      ]
+    }
+  },
+  {
+    "id": "reverse-linked-list",
+    "title": "Reverse Linked List",
+    "name": "Reverse Linked List",
+    "category": "Linked Lists",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(1)",
+    "description": "Inverts the direction of next pointers in a singly linked list in a single pass.",
+    "whenToUse": "Reordering lists, palindrome verification, reordering sublists.",
+    "observations": [
+      "Must save curr.next before overwriting curr.next = prev.",
+      "After the loop, prev points to the new head of the reversed list."
+    ],
+    "pseudocode": [
+      "prev = null, curr = head",
+      "while curr != null:",
+      "  nextNode = curr.next",
+      "  curr.next = prev",
+      "  prev = curr",
+      "  curr = nextNode",
+      "return prev"
+    ],
+    "defaultInput": {
+      "nodes": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  },
+  {
+    "id": "tree-inorder-traversal",
+    "title": "Binary Tree Inorder Traversal",
+    "name": "Binary Tree Inorder Traversal",
+    "category": "Trees",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(H) where H is tree height",
+    "description": "Depth-first tree traversal visiting Left Subtree -> Node -> Right Subtree.",
+    "whenToUse": "Extracting sorted order from Binary Search Trees (BSTs).",
+    "observations": [
+      "In a BST, Inorder traversal visits keys in ascending sorted order.",
+      "Auxiliary space is bounded by tree height O(H)."
+    ],
+    "pseudocode": [
+      "function inorder(root):",
+      "  if root == null: return",
+      "  inorder(root.left)",
+      "  visit(root.val)",
+      "  inorder(root.right)"
+    ],
+    "defaultInput": {
+      "nodes": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  },
+  {
+    "id": "tree-level-order",
+    "title": "Binary Tree Level Order Traversal",
+    "name": "Binary Tree Level Order Traversal",
+    "category": "Trees",
+    "difficulty": "Medium",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(W) where W is max tree width",
+    "description": "Breadth-first search traversing binary tree nodes level by level from root to leaves.",
+    "whenToUse": "Finding level groupings, shortest path in tree, or view projections.",
+    "observations": [
+      "Guarantees that nodes at depth d are visited before depth d + 1.",
+      "Queue size peaks at the maximum level width (up to N/2 for full binary tree)."
+    ],
+    "pseudocode": [
+      "queue = [root]",
+      "while queue is not empty:",
+      "  node = queue.popFront()",
+      "  visit(node)",
+      "  if node.left: queue.push(node.left)",
+      "  if node.right: queue.push(node.right)"
+    ],
+    "defaultInput": {
+      "nodes": [
+        3,
+        9,
+        20,
+        15,
+        7
+      ]
+    }
+  },
+  {
+    "id": "graph-bfs",
+    "title": "Graph Breadth-First Search (BFS)",
+    "name": "Graph Breadth-First Search (BFS)",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "timeComplexity": "O(V + E)",
+    "timeComplexityDetails": {
+      "best": "O(V + E)",
+      "average": "O(V + E)",
+      "worst": "O(V + E)"
+    },
+    "spaceComplexity": "O(V)",
+    "description": "Traverses graph outward in concentric layers using a queue and visited set.",
+    "whenToUse": "Finding shortest path in unweighted graphs, connected components, level-distance.",
+    "observations": [
+      "Visited set prevents infinite cycles in cyclic graphs.",
+      "Finds shortest hop-count path in unweighted graphs."
+    ],
+    "pseudocode": [
+      "queue = [start], visited = {start}",
+      "while queue is not empty:",
+      "  u = queue.popFront()",
+      "  for neighbor v in graph[u]:",
+      "    if v not in visited:",
+      "      visited.add(v)",
+      "      queue.push(v)"
+    ],
+    "defaultInput": {
+      "startNode": "0"
+    }
+  },
+  {
+    "id": "graph-dfs",
+    "title": "Graph Depth-First Search (DFS)",
+    "name": "Graph Depth-First Search (DFS)",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "timeComplexity": "O(V + E)",
+    "timeComplexityDetails": {
+      "best": "O(V + E)",
+      "average": "O(V + E)",
+      "worst": "O(V + E)"
+    },
+    "spaceComplexity": "O(V)",
+    "description": "Explores as deeply as possible along each branch before backtracking.",
+    "whenToUse": "Topological sorting, cycle detection, pathfinding, connected components.",
+    "observations": [
+      "Uses recursion stack or explicit LIFO stack.",
+      "Detects back-edges to identify cycles."
+    ],
+    "pseudocode": [
+      "visited = {}",
+      "function dfs(u):",
+      "  visited.add(u)",
+      "  for neighbor v in graph[u]:",
+      "    if v not in visited:",
+      "      dfs(v)"
+    ],
+    "defaultInput": {
+      "startNode": "0"
+    }
+  },
+  {
+    "id": "dp-climbing-stairs",
+    "title": "Dynamic Programming (Climbing Stairs)",
+    "name": "Dynamic Programming (Climbing Stairs)",
+    "category": "Dynamic Programming",
+    "difficulty": "Easy",
+    "timeComplexity": "O(N)",
+    "timeComplexityDetails": {
+      "best": "O(N)",
+      "average": "O(N)",
+      "worst": "O(N)"
+    },
+    "spaceComplexity": "O(N) (or O(1) space optimized)",
+    "description": "Computes total distinct combinations to reach step N taking 1 or 2 steps using memoized subproblems.",
+    "whenToUse": "Overlapping subproblems with optimal substructure.",
+    "observations": [
+      "Direct mathematical bijection to Fibonacci sequence.",
+      "Reduces exponential O(2^N) recursion to linear O(N) by storing subproblem results."
+    ],
+    "pseudocode": [
+      "dp = [1, 1]",
+      "for i from 2 to n:",
+      "  dp[i] = dp[i - 1] + dp[i - 2]",
+      "return dp[n]"
+    ],
+    "defaultInput": {
+      "n": 5
+    }
+  }
+];
+
+const escapeHtml = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+const visualizerState = {
+  algorithms: BUILTIN_ALGORITHMS,
+  initialized: false,
+  currentAlgorithmId: "binary-search",
+  currentAlgorithm: null,
+  currentSteps: [],
+  currentStepIndex: 0,
+  isPlaying: false,
+  playbackTimer: null,
+  playbackSpeed: 900,
+  activeCategory: "ALL",
+  searchQuery: "",
+  currentTab: "explore",
+  dryRunAlgoId: "binary-search",
+  dryRunTrace: null,
+  dryRunIndex: 0,
+  comparisonData: null,
+  userHistory: []
+};
+
+// Map problem names or slugs to registered algorithm IDs
+const MENTOR_TO_VISUALIZER_MAP = {
+  "two-sum": "two-sum",
+  "twosum": "two-sum",
+  "binary-search": "binary-search",
+  "binarysearch": "binary-search",
+  "search-in-rotated-sorted-array": "binary-search",
+  "koko-eating-bananas": "binary-search",
+  "valid-parentheses": "valid-parentheses",
+  "validparentheses": "valid-parentheses",
+  "trapping-rain-water": "trapping-rain-water",
+  "container-with-most-water": "two-sum",
+  "reverse-linked-list": "reverse-linked-list",
+  "reverselinkedlist": "reverse-linked-list",
+  "merge-two-sorted-lists": "reverse-linked-list",
+  "invert-binary-tree": "invert-binary-tree",
+  "invertbinarytree": "invert-binary-tree",
+  "maximum-depth-of-binary-tree": "invert-binary-tree",
+  "climbing-stairs": "climbing-stairs",
+  "climbingstairs": "climbing-stairs",
+  "coin-change": "coin-change",
+  "coinchange": "coin-change",
+  "number-of-islands": "bfs-graph",
+  "numberofislands": "bfs-graph",
+  "sliding-window-maximum": "sliding-window-max",
+  "longest-substring-without-repeating-characters": "sliding-window-max",
+  "bubble-sort": "bubble-sort",
+  "quick-sort": "quick-sort",
+  "merge-sort": "merge-sort",
+  "lru-cache": "lru-cache"
+};
+
+function openVisualizerFromMentor(problemTitleOrSlug) {
+  // If in mentor workspace, hide it and switch to visualizer
+  const mentorPage = $("aiMentorPage");
+  if (mentorPage) mentorPage.hidden = true;
+  const memberHome = $("memberHome");
+  if (memberHome) memberHome.hidden = true;
+
+  showPage("visualizer");
+
+  const normalized = String(problemTitleOrSlug || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  const matchedId = MENTOR_TO_VISUALIZER_MAP[normalized] || MENTOR_TO_VISUALIZER_MAP[problemTitleOrSlug];
+  if (matchedId) {
+    switchVisualizerTab("canvas");
+    loadAlgorithmIntoCanvas(matchedId);
+    showToast(`Visualizing algorithm for ${problemTitleOrSlug || matchedId}!`, "success");
+  } else {
+    // Open AI Code Visualizer tab with pre-filled context
+    switchVisualizerTab("aicode");
+    const problemInput = $("visAiProblemInput");
+    if (problemInput) problemInput.value = problemTitleOrSlug || "";
+    showToast("Opened AI Code Trace for your LeetCode problem!", "info");
+  }
+}
+
+async function initVisualizerPage() {
+  if (!visualizerState.initialized) {
+    setupVisualizerEvents();
+    visualizerState.initialized = true;
+  }
+  renderVisualizerLibrary();
+  populateAlgorithmDropdowns();
+  await fetchVisualizerAlgorithms();
+  renderVisualizerLibrary();
+  populateAlgorithmDropdowns();
+}
+
+async function fetchVisualizerAlgorithms() {
+  if (visualizerState.algorithms.length > 0) return visualizerState.algorithms;
+  try {
+    const res = await apiRequest("/api/algorithm-visualizer/algorithms");
+    if (res && res.algorithms && res.algorithms.length > 0) {
+      visualizerState.algorithms = res.algorithms;
+    }
+  } catch (err) {
+    console.warn("Failed to fetch algorithms from API, using fallback:", err);
+  }
+  return visualizerState.algorithms;
+}
+
+function setupVisualizerEvents() {
+  // Subnav pill switcher
+  document.querySelectorAll(".vis-subnav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetTab = btn.dataset.visTab;
+      if (targetTab) switchVisualizerTab(targetTab);
+    });
+  });
+
+  // Search input
+  const searchInput = $("visSearchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      visualizerState.searchQuery = e.target.value.trim().toLowerCase();
+      renderVisualizerLibrary();
+    });
+  }
+
+  // Category filter pills
+  const catPills = document.querySelectorAll(".vis-filter-pill");
+  catPills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      catPills.forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      visualizerState.activeCategory = pill.dataset.category || "ALL";
+      renderVisualizerLibrary();
+    });
+  });
+
+  // Algorithm select in Canvas
+  const algoSelect = $("visAlgoSelect");
+  if (algoSelect) {
+    algoSelect.addEventListener("change", (e) => {
+      loadAlgorithmIntoCanvas(e.target.value);
+    });
+  }
+
+  // Run Custom Input button
+  const applyInputBtn = $("visApplyInputBtn");
+  if (applyInputBtn) {
+    applyInputBtn.addEventListener("click", () => {
+      const inputVal = $("visCustomInput")?.value?.trim();
+      loadAlgorithmIntoCanvas(visualizerState.currentAlgorithmId, inputVal || null);
+    });
+  }
+
+  // Reset Default button
+  const resetDefaultBtn = $("visResetDefaultBtn");
+  if (resetDefaultBtn) {
+    resetDefaultBtn.addEventListener("click", () => {
+      if ($("visCustomInput")) $("visCustomInput").value = "";
+      loadAlgorithmIntoCanvas(visualizerState.currentAlgorithmId, null);
+    });
+  }
+
+  // Playback Buttons
+  const playPauseBtn = $("visPlayPauseBtn");
+  if (playPauseBtn) playPauseBtn.addEventListener("click", visTogglePlay);
+
+  const prevBtn = $("visPrevBtn");
+  if (prevBtn) prevBtn.addEventListener("click", visPrevStep);
+
+  const nextBtn = $("visNextBtn");
+  if (nextBtn) nextBtn.addEventListener("click", visNextStep);
+
+  const restartBtn = $("visRestartBtn");
+  if (restartBtn) restartBtn.addEventListener("click", visRestart);
+
+  // Timeline Scrubber Slider
+  const slider = $("visTimelineSlider");
+  if (slider) {
+    slider.addEventListener("input", (e) => {
+      visJumpToStep(Number(e.target.value));
+    });
+  }
+
+  // Speed Dropdown
+  const speedSelect = $("visSpeedSelect");
+  if (speedSelect) {
+    speedSelect.addEventListener("change", (e) => {
+      visualizerState.playbackSpeed = Number(e.target.value) || 900;
+      if (visualizerState.isPlaying) {
+        visPause();
+        visPlay();
+      }
+    });
+  }
+
+  // Dry Run Controls
+  const dryRunAlgoSelect = $("visDryRunAlgoSelect");
+  if (dryRunAlgoSelect) {
+    dryRunAlgoSelect.addEventListener("change", (e) => {
+      loadDryRunView(e.target.value);
+    });
+  }
+  const dryRunPrevBtn = $("visDryRunPrevBtn");
+  if (dryRunPrevBtn) dryRunPrevBtn.addEventListener("click", dryRunPrev);
+  const dryRunNextBtn = $("visDryRunNextBtn");
+  if (dryRunNextBtn) dryRunNextBtn.addEventListener("click", dryRunNext);
+  const dryRunResetBtn = $("visDryRunResetBtn");
+  if (dryRunResetBtn) dryRunResetBtn.addEventListener("click", dryRunReset);
+
+  // Comparison Controls
+  const executeCompareBtn = $("visExecuteCompareBtn");
+  if (executeCompareBtn) {
+    executeCompareBtn.addEventListener("click", executeAlgorithmComparison);
+  }
+
+  // AI Code Visualizer Controls
+  const aiAnalyzeBtn = $("visAiAnalyzeBtn");
+  if (aiAnalyzeBtn) {
+    aiAnalyzeBtn.addEventListener("click", handleAiCodeAnalysis);
+  }
+  const sampleBtn1 = $("visAiSampleBtn1");
+  if (sampleBtn1) {
+    sampleBtn1.addEventListener("click", () => {
+      if ($("visAiCodeEditor")) {
+        $("visAiCodeEditor").value = `def twoSum(nums, target):
+    seen = {}
+    for i, n in enumerate(nums):
+        comp = target - n
+        if comp in seen:
+            return [seen[comp], i]
+        seen[n] = i
+    return []`;
+      }
+      if ($("visAiProblemInput")) $("visAiProblemInput").value = "Two Sum";
+      if ($("visAiLangSelect")) $("visAiLangSelect").value = "python";
+    });
+  }
+  const sampleBtn2 = $("visAiSampleBtn2");
+  if (sampleBtn2) {
+    sampleBtn2.addEventListener("click", () => {
+      if ($("visAiCodeEditor")) {
+        $("visAiCodeEditor").value = `def binarySearch(arr, target):
+    low, high = 0, len(arr) - 1
+    while low <= high:
+        mid = (low + high) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            low = mid + 1
+        else:
+            high = mid - 1
+    return -1`;
+      }
+      if ($("visAiProblemInput")) $("visAiProblemInput").value = "Binary Search";
+      if ($("visAiLangSelect")) $("visAiLangSelect").value = "python";
+    });
+  }
+
+  // History Refresh
+  const historyRefreshBtn = $("visHistoryRefreshBtn");
+  if (historyRefreshBtn) {
+    historyRefreshBtn.addEventListener("click", loadVisualizerHistory);
+  }
+
+  // Keyboard Navigation for Canvas: Spacebar = Play/Pause, Left/Right = Prev/Next
+  window.addEventListener("keydown", (e) => {
+    if (activePage !== "visualizer" || visualizerState.currentTab !== "canvas") return;
+    if (["input", "textarea", "select"].includes(e.target.tagName.toLowerCase())) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      visTogglePlay();
+    } else if (e.code === "ArrowRight") {
+      e.preventDefault();
+      visNextStep();
+    } else if (e.code === "ArrowLeft") {
+      e.preventDefault();
+      visPrevStep();
+    } else if (e.code === "Home") {
+      e.preventDefault();
+      visRestart();
+    }
+  });
+}
+
+function switchVisualizerTab(tabId) {
+  visualizerState.currentTab = tabId;
+
+  // Stop playback if leaving canvas
+  if (tabId !== "canvas" && visualizerState.isPlaying) {
+    visPause();
+  }
+
+  // Update pill buttons
+  document.querySelectorAll(".vis-subnav-btn").forEach(btn => {
+    const isActive = btn.dataset.visTab === tabId;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", String(isActive));
+  });
+
+  // Switch panels
+  const panelMap = {
+    explore: "visExplorePanel",
+    canvas: "visCanvasPanel",
+    dryrun: "visDryRunPanel",
+    compare: "visComparePanel",
+    aicode: "visAiCodePanel",
+    history: "visHistoryPanel"
+  };
+
+  Object.entries(panelMap).forEach(([key, panelId]) => {
+    const el = $(panelId);
+    if (!el) return;
+    if (key === tabId) {
+      el.classList.add("active");
+      el.hidden = false;
+    } else {
+      el.classList.remove("active");
+      el.hidden = true;
+    }
+  });
+
+  // Trigger tab-specific loaders
+  if (tabId === "canvas" && (!visualizerState.currentSteps || visualizerState.currentSteps.length === 0)) {
+    loadAlgorithmIntoCanvas(visualizerState.currentAlgorithmId);
+  } else if (tabId === "dryrun") {
+    loadDryRunView(visualizerState.dryRunAlgoId);
+  } else if (tabId === "compare") {
+    populateCompareDropdowns();
+  } else if (tabId === "history") {
+    loadVisualizerHistory();
+  }
+}
+
+function renderVisualizerLibrary() {
+  const grid = $("visAlgorithmsGrid");
+  if (!grid) return;
+
+  const algos = visualizerState.algorithms;
+  const cat = visualizerState.activeCategory;
+  const q = visualizerState.searchQuery;
+
+  const filtered = algos.filter(a => {
+    const matchCat = cat === "ALL" || a.category === cat;
+    const matchQ = !q || a.name.toLowerCase().includes(q) || a.category.toLowerCase().includes(q) || (a.description && a.description.toLowerCase().includes(q));
+    return matchCat && matchQ;
+  });
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1; padding: 2.5rem; text-align: center; color: #64748b;">
+      No algorithms found matching your search. Try adjusting category or keywords.
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(algo => {
+    const diffClass = (algo.difficulty || "Medium").toLowerCase();
+    return `
+      <div class="vis-algo-card" data-algo-id="${algo.id}">
+        <div class="vis-algo-top">
+          <div class="vis-card-badges">
+            <span class="vis-badge vis-badge-cat">${escapeHtml(algo.category)}</span>
+            <span class="vis-badge vis-badge-diff ${diffClass}">${escapeHtml(algo.difficulty || "Medium")}</span>
+            <span class="vis-badge vis-badge-time">${escapeHtml(algo.timeComplexity || "O(N)")}</span>
+            <span class="vis-badge vis-badge-space">${escapeHtml(algo.spaceComplexity || "O(1)")}</span>
+          </div>
+          <h3 class="vis-card-title">${escapeHtml(algo.name)}</h3>
+          <p class="vis-card-desc">${escapeHtml(algo.description || "")}</p>
+        </div>
+        <div class="vis-card-actions">
+          <button class="btn-vis-action primary" onclick="startVisualizingAlgo('${algo.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13"><polygon points="5 3 17 10 5 17 5 3"/></svg>
+            Visualize
+          </button>
+          <button class="btn-vis-action secondary" onclick="startDryRunAlgo('${algo.id}')">
+            Dry Run
+          </button>
+          <button class="btn-vis-action secondary" onclick="startCompareAlgo('${algo.id}')">
+            Compare
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+window.startVisualizingAlgo = function(algoId) {
+  switchVisualizerTab("canvas");
+  loadAlgorithmIntoCanvas(algoId);
+};
+
+window.startDryRunAlgo = function(algoId) {
+  visualizerState.dryRunAlgoId = algoId;
+  switchVisualizerTab("dryrun");
+  loadDryRunView(algoId);
+};
+
+window.startCompareAlgo = function(algoId) {
+  switchVisualizerTab("compare");
+  populateCompareDropdowns(algoId);
+  executeAlgorithmComparison();
+};
+
+function populateAlgorithmDropdowns() {
+  const algos = visualizerState.algorithms;
+  const canvasSelect = $("visAlgoSelect");
+  const dryRunSelect = $("visDryRunAlgoSelect");
+
+  if (canvasSelect) {
+    canvasSelect.innerHTML = algos.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.category)})</option>`).join("");
+    canvasSelect.value = visualizerState.currentAlgorithmId;
+  }
+  if (dryRunSelect) {
+    dryRunSelect.innerHTML = algos.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.category)})</option>`).join("");
+    dryRunSelect.value = visualizerState.dryRunAlgoId;
+  }
+}
+
+function populateCompareDropdowns(preselectA = null) {
+  const algos = visualizerState.algorithms;
+  const selectA = $("visCompareAlgoA");
+  const selectB = $("visCompareAlgoB");
+
+  if (selectA && selectB) {
+    selectA.innerHTML = algos.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.category)})</option>`).join("");
+    selectB.innerHTML = algos.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.category)})</option>`).join("");
+
+    if (preselectA) {
+      selectA.value = preselectA;
+      // Pick a smart counterpart
+      if (preselectA === "bubble-sort") selectB.value = "quick-sort";
+      else if (preselectA === "quick-sort") selectB.value = "merge-sort";
+      else if (preselectA === "bfs-graph") selectB.value = "dfs-graph";
+      else if (preselectA === "binary-search") selectB.value = "linear-search";
+      else selectB.value = algos.find(a => a.id !== preselectA)?.id || algos[0]?.id;
+    } else {
+      selectA.value = "bubble-sort";
+      selectB.value = "quick-sort";
+    }
+  }
+}
+
+async function loadAlgorithmIntoCanvas(algorithmId, customInput = null) {
+  visPause();
+  visualizerState.currentAlgorithmId = algorithmId;
+  const algoSelect = $("visAlgoSelect");
+  if (algoSelect) algoSelect.value = algorithmId;
+
+  // Update header badges
+  const algo = visualizerState.algorithms.find(a => a.id === algorithmId);
+  if (algo) {
+    visualizerState.currentAlgorithm = algo;
+    if ($("visCategoryBadge")) $("visCategoryBadge").textContent = algo.category;
+    if ($("visDifficultyBadge")) {
+      $("visDifficultyBadge").textContent = algo.difficulty || "Medium";
+      $("visDifficultyBadge").className = `vis-badge vis-badge-diff ${(algo.difficulty || 'medium').toLowerCase()}`;
+    }
+    if ($("visTimeBadge")) $("visTimeBadge").textContent = `Time: ${algo.timeComplexity || 'O(N)'}`;
+    if ($("visSpaceBadge")) $("visSpaceBadge").textContent = `Space: ${algo.spaceComplexity || 'O(1)'}`;
+  }
+
+  // Render pseudocode container
+  renderPseudocodeBox(algo?.pseudocode || []);
+
+  try {
+    let payload = { algorithmId };
+    if (customInput) {
+      // Parse custom input if valid JSON or comma separated
+      try {
+        payload.input = JSON.parse(customInput);
+      } catch {
+        // Fallback: array or string
+        if (customInput.includes(",")) {
+          payload.input = { arr: customInput.split(",").map(x => isNaN(Number(x.trim())) ? x.trim() : Number(x.trim())) };
+        } else {
+          payload.input = { val: customInput };
+        }
+      }
+    }
+
+    const res = await apiRequest("/api/algorithm-visualizer/generate", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+
+    if (res && res.steps && res.steps.length > 0) {
+      visualizerState.currentSteps = res.steps;
+      visualizerState.currentStepIndex = 0;
+      updateTimelineSliderMax(res.steps.length);
+      renderCurrentVisualizerStep(0);
+    } else {
+      showToast("Unable to generate steps for this algorithm.", "error");
+    }
+  } catch (err) {
+    console.error("Error generating algorithm steps:", err);
+    showToast(err.message || "Failed to load algorithm steps.", "error");
+  }
+}
+
+function updateTimelineSliderMax(totalSteps) {
+  const slider = $("visTimelineSlider");
+  if (slider) {
+    slider.min = "0";
+    slider.max = String(Math.max(0, totalSteps - 1));
+    slider.value = "0";
+  }
+}
+
+function renderPseudocodeBox(pseudocodeLines) {
+  const box = $("visPseudocodeBox");
+  if (!box) return;
+  if (!pseudocodeLines || pseudocodeLines.length === 0) {
+    box.innerHTML = `<div class="vis-pseudo-line"><span class="vis-pseudo-num">1</span><span>Algorithm executing...</span></div>`;
+    return;
+  }
+  box.innerHTML = pseudocodeLines.map((line, idx) => {
+    return `<div class="vis-pseudo-line" data-line-num="${idx + 1}" id="visPseudoLine-${idx + 1}">
+      <span class="vis-pseudo-num">${idx + 1}</span>
+      <span>${escapeHtml(line)}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderCurrentVisualizerStep(stepIndex) {
+  const steps = visualizerState.currentSteps;
+  if (!steps || steps.length === 0) return;
+  const idx = Math.max(0, Math.min(stepIndex, steps.length - 1));
+  visualizerState.currentStepIndex = idx;
+  const step = steps[idx];
+
+  // 1. Update Status Banner
+  if ($("visStepOperation")) $("visStepOperation").textContent = (step.operation || "STEP").toUpperCase();
+  if ($("visStepExplanation")) $("visStepExplanation").textContent = step.explanation || step.narrative || "Executing algorithm step.";
+
+  // 2. Update Timeline Slider & Counter
+  const slider = $("visTimelineSlider");
+  if (slider) slider.value = String(idx);
+  if ($("visStepCounter")) $("visStepCounter").textContent = `Step ${idx + 1} of ${steps.length}`;
+  if ($("visProgressPercent")) {
+    const percent = Math.round(((idx + 1) / steps.length) * 100);
+    $("visProgressPercent").textContent = `${percent}%`;
+  }
+
+  // 3. Highlight Pseudocode Line
+  document.querySelectorAll(".vis-pseudo-line").forEach(l => l.classList.remove("active-line"));
+  if (step.lineExecuted) {
+    const activeLineEl = $(`visPseudoLine-${step.lineExecuted}`);
+    if (activeLineEl) {
+      activeLineEl.classList.add("active-line");
+      activeLineEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+
+  // 4. Update Variable Watch Table
+  renderWatchTable(step.variables || {});
+
+  // 5. Render Memory Canvas
+  renderMemoryCanvas(step);
+}
+
+function renderWatchTable(variables) {
+  const tbody = $("visWatchBody");
+  if (!tbody) return;
+  const entries = Object.entries(variables || {});
+  if (entries.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #94a3b8;">No variables in scope</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = entries.map(([name, val]) => {
+    const formatted = typeof val === "object" ? JSON.stringify(val) : String(val);
+    const type = typeof val;
+    return `<tr>
+      <td><strong>${escapeHtml(name)}</strong></td>
+      <td style="color: #4f46e5; font-family: monospace;">${escapeHtml(formatted)}</td>
+      <td style="color: #64748b;">${escapeHtml(type)}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderMemoryCanvas(step) {
+  const stage = $("visMemoryStage");
+  if (!stage) return;
+  stage.innerHTML = "";
+
+  // 1. Array representation
+  if (Array.isArray(step.array)) {
+    const tray = document.createElement("div");
+    tray.className = "vis-array-tray";
+
+    const pointers = step.pointers || {};
+    // Invert pointers mapping: index -> list of pointer names
+    const indexToPointer = {};
+    Object.entries(pointers).forEach(([name, pIdx]) => {
+      if (pIdx !== undefined && pIdx !== null && pIdx >= 0) {
+        if (!indexToPointer[pIdx]) indexToPointer[pIdx] = [];
+        indexToPointer[pIdx].push(name);
+      }
+    });
+
+    const activeIndices = new Set(step.activeIndices || []);
+    const comparing = new Set(step.comparing || []);
+    const swapping = new Set(step.swapping || []);
+    const sorted = new Set(step.sorted || []);
+    const found = new Set(step.found || []);
+
+    step.array.forEach((val, i) => {
+      const col = document.createElement("div");
+      col.className = "vis-cell-column";
+
+      // Pointer marker if present
+      if (indexToPointer[i]) {
+        const marker = document.createElement("span");
+        marker.className = `vis-pointer-marker ptr-${indexToPointer[i][0].toLowerCase()}`;
+        marker.textContent = indexToPointer[i].join(", ");
+        col.appendChild(marker);
+      }
+
+      // Array Cell
+      const cell = document.createElement("div");
+      cell.className = "vis-array-cell";
+      cell.textContent = String(val);
+
+      if (found.has(i)) cell.classList.add("state-found");
+      else if (swapping.has(i)) cell.classList.add("state-swapping");
+      else if (comparing.has(i)) cell.classList.add("state-comparing");
+      else if (sorted.has(i)) cell.classList.add("state-sorted");
+      else if (activeIndices.has(i)) cell.classList.add("state-active");
+
+      // Inactive out-of-range bounds (e.g. binary search outside [low, high])
+      if (pointers.low !== undefined && pointers.high !== undefined) {
+        if (i < pointers.low || i > pointers.high) {
+          cell.classList.add("state-inactive");
+        }
+      }
+
+      col.appendChild(cell);
+
+      // Index label
+      const idxLabel = document.createElement("span");
+      idxLabel.className = "vis-cell-index";
+      idxLabel.textContent = String(i);
+      col.appendChild(idxLabel);
+
+      tray.appendChild(col);
+    });
+
+    stage.appendChild(tray);
+  }
+
+  // 2. Hash Table representation
+  if (step.hashTable && typeof step.hashTable === "object") {
+    const hashTray = document.createElement("div");
+    hashTray.className = "vis-hash-tray";
+    hashTray.innerHTML = `<div class="vis-hash-title">Hash Map (Key &rarr; Value)</div>`;
+
+    const entriesGrid = document.createElement("div");
+    entriesGrid.className = "vis-hash-entries-grid";
+
+    const entries = Object.entries(step.hashTable);
+    if (entries.length === 0) {
+      entriesGrid.innerHTML = `<span style="color: #94a3b8; font-size: 0.8rem;">(empty map)</span>`;
+    } else {
+      entries.forEach(([k, v]) => {
+        const entryEl = document.createElement("div");
+        entryEl.className = "vis-hash-entry";
+        if (step.activeHashKey === k) entryEl.classList.add("active-insert");
+        if (step.lookupHashKey === k) entryEl.classList.add("active-lookup");
+        entryEl.innerHTML = `<span class="vis-hash-k">${escapeHtml(k)}</span><span class="vis-hash-v">${escapeHtml(String(v))}</span>`;
+        entriesGrid.appendChild(entryEl);
+      });
+    }
+    hashTray.appendChild(entriesGrid);
+    stage.appendChild(hashTray);
+  }
+
+  // 3. Stack representation
+  if (Array.isArray(step.stack)) {
+    const stackWrap = document.createElement("div");
+    stackWrap.style.display = "flex";
+    stackWrap.style.flexDirection = "column";
+    stackWrap.style.alignItems = "center";
+    stackWrap.innerHTML = `<div style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 0.4rem;">STACK (Top on Top)</div>`;
+
+    const stackTray = document.createElement("div");
+    stackTray.className = "vis-stack-tray";
+
+    if (step.stack.length === 0) {
+      stackTray.innerHTML = `<span style="color: #94a3b8; font-size: 0.75rem;">(empty stack)</span>`;
+    } else {
+      step.stack.forEach(item => {
+        const itemEl = document.createElement("div");
+        itemEl.className = "vis-stack-item";
+        itemEl.textContent = String(item);
+        stackTray.appendChild(itemEl);
+      });
+    }
+    stackWrap.appendChild(stackTray);
+    stage.appendChild(stackWrap);
+  }
+
+  // 4. Queue representation
+  if (Array.isArray(step.queue)) {
+    const queueWrap = document.createElement("div");
+    queueWrap.style.display = "flex";
+    queueWrap.style.flexDirection = "column";
+    queueWrap.style.alignItems = "center";
+    queueWrap.innerHTML = `<div style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 0.4rem;">QUEUE (Front &rarr; Back)</div>`;
+
+    const queueTray = document.createElement("div");
+    queueTray.style.display = "flex";
+    queueTray.style.gap = "0.5rem";
+    queueTray.style.padding = "0.75rem";
+    queueTray.style.background = "#f8fafc";
+    queueTray.style.border = "2px dashed #94a3b8";
+    queueTray.style.borderRadius = "0.5rem";
+
+    if (step.queue.length === 0) {
+      queueTray.innerHTML = `<span style="color: #94a3b8; font-size: 0.75rem;">(empty queue)</span>`;
+    } else {
+      step.queue.forEach(item => {
+        const qItem = document.createElement("div");
+        qItem.className = "vis-stack-item";
+        qItem.textContent = String(item);
+        queueTray.appendChild(qItem);
+      });
+    }
+    queueWrap.appendChild(queueTray);
+    stage.appendChild(queueWrap);
+  }
+
+  // 5. Dynamic Programming Table
+  if (step.dpTable) {
+    const dpWrap = document.createElement("div");
+    dpWrap.className = "vis-dp-tray";
+
+    if (Array.isArray(step.dpTable) && Array.isArray(step.dpTable[0])) {
+      // 2D Table
+      const table = document.createElement("table");
+      table.className = "vis-dp-table";
+      const tbody = document.createElement("tbody");
+
+      step.dpTable.forEach((row, rIdx) => {
+        const tr = document.createElement("tr");
+        row.forEach((cellVal, cIdx) => {
+          const td = document.createElement("td");
+          td.textContent = String(cellVal);
+          if (step.activeCell && step.activeCell[0] === rIdx && step.activeCell[1] === cIdx) {
+            td.className = "vis-dp-cell-active";
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      dpWrap.appendChild(table);
+    } else if (Array.isArray(step.dpTable)) {
+      // 1D Table
+      const table = document.createElement("table");
+      table.className = "vis-dp-table";
+      const trHead = document.createElement("tr");
+      const trData = document.createElement("tr");
+
+      step.dpTable.forEach((val, idx) => {
+        const th = document.createElement("th");
+        th.textContent = `i=${idx}`;
+        trHead.appendChild(th);
+
+        const td = document.createElement("td");
+        td.textContent = String(val);
+        if (step.activeCell === idx) td.className = "vis-dp-cell-active";
+        trData.appendChild(td);
+      });
+      table.appendChild(trHead);
+      table.appendChild(trData);
+      dpWrap.appendChild(table);
+    }
+    stage.appendChild(dpWrap);
+  }
+}
+
+// Playback Methods
+function visPlay() {
+  if (visualizerState.isPlaying) return;
+  visualizerState.isPlaying = true;
+  updatePlayButtonUI(true);
+
+  visualizerState.playbackTimer = setInterval(() => {
+    if (visualizerState.currentStepIndex >= visualizerState.currentSteps.length - 1) {
+      visPause();
+    } else {
+      visNextStep();
+    }
+  }, visualizerState.playbackSpeed);
+}
+
+function visPause() {
+  visualizerState.isPlaying = false;
+  if (visualizerState.playbackTimer) {
+    clearInterval(visualizerState.playbackTimer);
+    visualizerState.playbackTimer = null;
+  }
+  updatePlayButtonUI(false);
+}
+
+function visTogglePlay() {
+  if (visualizerState.isPlaying) visPause();
+  else visPlay();
+}
+
+function updatePlayButtonUI(isPlaying) {
+  const playIcon = $("visPlayIcon");
+  const pauseIcon = $("visPauseIcon");
+  const playLabel = $("visPlayLabel");
+
+  if (playIcon) playIcon.hidden = isPlaying;
+  if (pauseIcon) pauseIcon.hidden = !isPlaying;
+  if (playLabel) playLabel.textContent = isPlaying ? "Pause" : "Play";
+}
+
+function visNextStep() {
+  const nextIdx = visualizerState.currentStepIndex + 1;
+  if (nextIdx < visualizerState.currentSteps.length) {
+    renderCurrentVisualizerStep(nextIdx);
+  } else {
+    visPause();
+  }
+}
+
+function visPrevStep() {
+  const prevIdx = visualizerState.currentStepIndex - 1;
+  if (prevIdx >= 0) {
+    renderCurrentVisualizerStep(prevIdx);
+  }
+}
+
+function visRestart() {
+  visPause();
+  renderCurrentVisualizerStep(0);
+}
+
+function visJumpToStep(targetIndex) {
+  renderCurrentVisualizerStep(targetIndex);
+}
+
+// Line Dry Run Methods
+async function loadDryRunView(algoId) {
+  visualizerState.dryRunAlgoId = algoId;
+  const select = $("visDryRunAlgoSelect");
+  if (select) select.value = algoId;
+
+  const algo = visualizerState.algorithms.find(a => a.id === algoId);
+  if (algo && algo.pseudocode) {
+    renderDryRunLines(algo.pseudocode);
+  }
+
+  try {
+    const res = await apiRequest("/api/algorithm-visualizer/dry-run", {
+      method: "POST",
+      body: JSON.stringify({ algorithmId: algoId })
+    });
+
+    if (res && res.dryRun) {
+      visualizerState.dryRunTrace = res.dryRun;
+      visualizerState.dryRunIndex = 0;
+      renderDryRunLines(res.dryRun.codeLines || []);
+      renderDryRunStep(0);
+    }
+  } catch (err) {
+    console.error("Failed to load dry run:", err);
+  }
+}
+
+function renderDryRunLines(lines) {
+  const container = $("visDryRunCodeLines");
+  if (!container) return;
+  container.innerHTML = lines.map((l, i) => `
+    <div class="vis-dry-line" id="visDryLine-${i + 1}" data-line="${i + 1}">
+      <span class="vis-pseudo-num">${i + 1}</span>
+      <span>${escapeHtml(l)}</span>
+    </div>
+  `).join("");
+}
+
+function renderDryRunStep(stepIdx) {
+  const trace = visualizerState.dryRunTrace;
+  if (!trace || !trace.steps || trace.steps.length === 0) return;
+  const idx = Math.max(0, Math.min(stepIdx, trace.steps.length - 1));
+  visualizerState.dryRunIndex = idx;
+  const cur = trace.steps[idx];
+
+  // Active Line
+  document.querySelectorAll(".vis-dry-line").forEach(l => l.classList.remove("line-active"));
+  if (cur.line) {
+    const lineEl = $(`visDryLine-${cur.line}`);
+    if (lineEl) {
+      lineEl.classList.add("line-active");
+      lineEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+    if ($("visDryRunLineIndicator")) $("visDryRunLineIndicator").textContent = `Line ${cur.line} (Step ${idx + 1}/${trace.steps.length})`;
+  }
+
+  // Condition evaluation
+  if ($("visConditionEvalText")) {
+    $("visConditionEvalText").textContent = cur.conditionEval || "No branch condition at this line.";
+  }
+
+  // Narrative
+  if ($("visDryRunNarrative")) {
+    $("visDryRunNarrative").textContent = cur.explanation || "Executing instruction.";
+  }
+
+  // Watch body
+  const tbody = $("visDryRunWatchBody");
+  if (tbody) {
+    const entries = Object.entries(cur.variables || {});
+    if (entries.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #94a3b8;">No variables</td></tr>`;
+    } else {
+      tbody.innerHTML = entries.map(([k, v]) => `
+        <tr>
+          <td><strong>${escapeHtml(k)}</strong></td>
+          <td style="color: #4f46e5; font-family: monospace;">${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v))}</td>
+          <td style="color: #10b981;">&bull; In scope</td>
+        </tr>
+      `).join("");
+    }
+  }
+}
+
+function dryRunNext() {
+  if (!visualizerState.dryRunTrace) return;
+  const nextIdx = visualizerState.dryRunIndex + 1;
+  if (nextIdx < visualizerState.dryRunTrace.steps.length) {
+    renderDryRunStep(nextIdx);
+  }
+}
+
+function dryRunPrev() {
+  if (!visualizerState.dryRunTrace) return;
+  const prevIdx = visualizerState.dryRunIndex - 1;
+  if (prevIdx >= 0) {
+    renderDryRunStep(prevIdx);
+  }
+}
+
+function dryRunReset() {
+  renderDryRunStep(0);
+}
+
+// Comparison Methods
+async function executeAlgorithmComparison() {
+  const algo1Id = $("visCompareAlgoA")?.value;
+  const algo2Id = $("visCompareAlgoB")?.value;
+  if (!algo1Id || !algo2Id) return;
+
+  const container = $("visComparisonContainer");
+  if (container) {
+    container.innerHTML = `<div style="text-align: center; padding: 2rem; color: #64748b;">Computing comparative metrics...</div>`;
+  }
+
+  try {
+    const res = await apiRequest("/api/algorithm-visualizer/compare", {
+      method: "POST",
+      body: JSON.stringify({ algo1Id, algo2Id })
+    });
+
+    if (res && res.comparison) {
+      renderComparisonMatrix(res.comparison);
+    }
+  } catch (err) {
+    console.error("Comparison failed:", err);
+    if (container) container.innerHTML = `<div class="security-error">${escapeHtml(err.message || 'Comparison failed.')}</div>`;
+  }
+}
+
+function renderComparisonMatrix(comp) {
+  const container = $("visComparisonContainer");
+  if (!container) return;
+
+  const a = comp.algo1;
+  const b = comp.algo2;
+
+  container.innerHTML = `
+    <table class="vis-compare-table">
+      <thead>
+        <tr>
+          <th style="width: 25%;">Metric / Property</th>
+          <th style="width: 37.5%; color: #4f46e5;">${escapeHtml(a.name)} (${escapeHtml(a.category)})</th>
+          <th style="width: 37.5%; color: #059669;">${escapeHtml(b.name)} (${escapeHtml(b.category)})</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Time Complexity (Avg)</strong></td>
+          <td class="vis-metric-highlight">${escapeHtml(a.timeComplexity)}</td>
+          <td class="vis-metric-highlight" style="color: #059669;">${escapeHtml(b.timeComplexity)}</td>
+        </tr>
+        <tr>
+          <td><strong>Space Complexity</strong></td>
+          <td>${escapeHtml(a.spaceComplexity)}</td>
+          <td>${escapeHtml(b.spaceComplexity)}</td>
+        </tr>
+        <tr>
+          <td><strong>Stability</strong></td>
+          <td>${a.stable ? 'Stable (preserves relative order)' : 'Unstable'}</td>
+          <td>${b.stable ? 'Stable (preserves relative order)' : 'Unstable'}</td>
+        </tr>
+        <tr>
+          <td><strong>In-Place Execution</strong></td>
+          <td>${a.inPlace ? 'Yes (O(1) auxiliary space)' : 'No (Requires extra memory)'}</td>
+          <td>${b.inPlace ? 'Yes (O(1) auxiliary space)' : 'No (Requires extra memory)'}</td>
+        </tr>
+        <tr>
+          <td><strong>Best For / Strengths</strong></td>
+          <td style="color: #334155; line-height: 1.4;">${escapeHtml(a.bestUseCase || a.description)}</td>
+          <td style="color: #334155; line-height: 1.4;">${escapeHtml(b.bestUseCase || b.description)}</td>
+        </tr>
+        <tr>
+          <td><strong>Trade-offs / Weaknesses</strong></td>
+          <td style="color: #64748b; line-height: 1.4;">${escapeHtml(a.tradeoffs || 'None specified')}</td>
+          <td style="color: #64748b; line-height: 1.4;">${escapeHtml(b.tradeoffs || 'None specified')}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; justify-content: flex-end;">
+      <button class="btn btn-sm btn-light" onclick="startVisualizingAlgo('${a.id}')">Visualize ${escapeHtml(a.name)}</button>
+      <button class="btn btn-sm btn-light" onclick="startVisualizingAlgo('${b.id}')">Visualize ${escapeHtml(b.name)}</button>
+    </div>
+  `;
+}
+
+// AI Custom Code Analysis
+async function handleAiCodeAnalysis() {
+  const code = $("visAiCodeEditor")?.value?.trim();
+  const lang = $("visAiLangSelect")?.value || "python";
+  const problemContext = $("visAiProblemInput")?.value?.trim() || "";
+  const statusEl = $("visAiStatusText");
+  const btn = $("visAiAnalyzeBtn");
+
+  if (!code) {
+    showToast("Please provide code to visualize.", "error");
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = "Analyzing code & synthesizing step-by-step state machine with Gemini...";
+
+  try {
+    const res = await apiRequest("/api/algorithm-visualizer/analyze-code", {
+      method: "POST",
+      body: JSON.stringify({ code, language: lang, problemContext })
+    });
+
+    if (res && res.steps && res.steps.length > 0) {
+      if (statusEl) statusEl.textContent = `Generated ${res.totalSteps} validated visualization steps via ${res.provider || 'AI'}!`;
+      showToast("AI Visualization generated successfully!", "success");
+
+      // Switch to canvas and load the AI generated steps
+      switchVisualizerTab("canvas");
+      visualizerState.currentSteps = res.steps;
+      visualizerState.currentStepIndex = 0;
+      updateTimelineSliderMax(res.steps.length);
+      renderPseudocodeBox(res.steps.map(s => s.explanation || s.operation));
+      renderCurrentVisualizerStep(0);
+    } else {
+      if (statusEl) statusEl.textContent = "Could not generate steps.";
+    }
+  } catch (err) {
+    console.error("AI Analysis failed:", err);
+    if (statusEl) statusEl.textContent = err.message || "Failed to analyze code.";
+    showToast(err.message || "AI Analysis failed.", "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// History Methods
+async function loadVisualizerHistory() {
+  const list = $("visHistoryList");
+  if (!list) return;
+  list.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 1.5rem;">Loading history...</div>`;
+
+  try {
+    const res = await apiRequest("/api/algorithm-visualizer/history");
+    if (res && res.history && res.history.length > 0) {
+      visualizerState.userHistory = res.history;
+      list.innerHTML = res.history.map(item => `
+        <div class="vis-history-item" data-id="${item._id}">
+          <div class="vis-history-item-info">
+            <h4>${escapeHtml(item.title || item.algorithmId)}</h4>
+            <div class="vis-history-item-meta">
+              <span>${item.totalSteps || (item.steps ? item.steps.length : 0)} steps</span> &middot;
+              <span>${new Date(item.createdAt).toLocaleDateString()} ${new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          </div>
+          <div class="vis-history-item-actions">
+            <button class="btn btn-sm btn-primary" onclick="replayHistoryItem('${item._id}')">Replay</button>
+            <button class="btn btn-sm btn-light" onclick="deleteHistoryItem('${item._id}')">&#128465;</button>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      list.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">No saved visualization traces yet. Use AI Code Trace to create and save custom traces.</div>`;
+    }
+  } catch (err) {
+    list.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 1.5rem;">Sign in as a member to view your saved visualization history.</div>`;
+  }
+}
+
+window.replayHistoryItem = function(id) {
+  const item = visualizerState.userHistory.find(h => String(h._id) === String(id));
+  if (!item || !item.steps || item.steps.length === 0) return;
+
+  switchVisualizerTab("canvas");
+  visualizerState.currentSteps = item.steps;
+  visualizerState.currentStepIndex = 0;
+  updateTimelineSliderMax(item.steps.length);
+  renderPseudocodeBox(item.steps.map(s => s.explanation || s.operation));
+  renderCurrentVisualizerStep(0);
+  showToast(`Loaded "${item.title || item.algorithmId}"`, "info");
+};
+
+window.deleteHistoryItem = async function(id) {
+  try {
+    await apiRequest(`/api/algorithm-visualizer/history/${id}`, { method: "DELETE" });
+    showToast("Trace deleted.", "info");
+    loadVisualizerHistory();
+  } catch (err) {
+    showToast(err.message || "Failed to delete item.", "error");
+  }
+};
 
 initializeAiCodeMentor();
 initializeApp();

@@ -38,9 +38,11 @@ const { createDailyWorkspaceRouter } = require("./daily-workspace-routes");
 const { createAiCodeMentorService } = require("./ai-code-mentor");
 const { createUnifiedMentorProvider } = require("./ai-code-mentor-provider");
 const { createAiCodeMentorRouter } = require("./ai-code-mentor-routes");
+const { createAlgorithmVisualizerService } = require("./algorithm-visualizer");
+const { createAlgorithmVisualizerRouter } = require("./algorithm-visualizer-routes");
 const { groupDailySubmissions, fetchLeetCodeQuestionDetail } = require("./daily-activity-helper");
 
-const PAGES = ["overview", "daily", "concepts", "members", "arena", "report", "leaderboard"];
+const PAGES = ["overview", "daily", "concepts", "members", "arena", "report", "leaderboard", "visualizer"];
 const STATUSES = new Set(["blank", "done", "absent"]);
 const PORT = Number(process.env.PORT) || 3000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -312,6 +314,7 @@ const resolvePersonalProfile = createPersonalProfileResolver({ collection: { upd
 const dailyWorkspaceService = () => createDailyWorkspaceService({ db, fetchProfile, fetchRecentSubmissions, currentActivityDate, lockOwnerId: activityLockOwnerId });
 const aiMentorNumber = (name, fallback, min, max) => { const value = Number(process.env[name]); return Number.isInteger(value) && value >= min && value <= max ? value : fallback; };
 const aiCodeMentorService = () => createAiCodeMentorService({ db, provider: createUnifiedMentorProvider({ env: process.env }), dailyQuota: aiMentorNumber("AI_MENTOR_DAILY_QUOTA", 10, 1, 100), reviewRetentionDays: aiMentorNumber("AI_MENTOR_REVIEW_RETENTION_DAYS", 180, 1, 3650), sourceRetentionDays: aiMentorNumber("AI_MENTOR_SOURCE_RETENTION_DAYS", 30, 1, 365), maxSourceChars: Math.min(40_000, aiMentorNumber("AI_MENTOR_MAX_INPUT_TOKENS", 10_000, 1_000, 10_000) * 4), maxDescriptionChars: 8_000 });
+const algorithmVisualizerService = () => createAlgorithmVisualizerService({ db, provider: createUnifiedMentorProvider({ env: process.env }) });
 
 app.disable("x-powered-by");
 app.set("trust proxy", production ? 1 : false);
@@ -363,6 +366,12 @@ app.use("/api/ai-code-mentor", createAiCodeMentorRouter({
   memberOnly,
   serviceFor: aiCodeMentorService,
   reviewRateLimit: aiMentorReviewLimit,
+  audit
+}));
+app.use("/api/algorithm-visualizer", createAlgorithmVisualizerRouter({
+  memberOnly,
+  serviceFor: algorithmVisualizerService,
+  analysisRateLimit: aiMentorReviewLimit,
   audit
 }));
 

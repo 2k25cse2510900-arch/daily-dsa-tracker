@@ -29,7 +29,8 @@
         <button class="nav-link" data-target="leaderboard"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20V12h4v8M10 20V5h4v15M16 20V9h4v11"/></svg><span>Leaderboard</span></button>
         <button class="nav-link" data-target="arena"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg><span>Race Arena</span></button>
         <button class="nav-link" data-target="report"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6zM14 3.5V8h4M9 12h6M9 16h6"/></svg><span>Weekly report</span></button>
-        <button class="nav-link" data-target="aimentor" id="navAiMentorBtn"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg><span>AI Code Mentor</span></button>
+                <button class="nav-link" data-target="visualizer" id="navVisualizerBtn"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Visualizer</span></button>
+<button class="nav-link" data-target="aimentor" id="navAiMentorBtn"><svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg><span>AI Code Mentor</span></button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -442,6 +443,341 @@
         <div id="printReport" class="print-report"></div>
       </section>
 
+            <!-- MODULE 8: AI ALGORITHM VISUALIZER -->
+      <section id="visualizerPage" class="page visualizer-page">
+        <!-- Visualizer Top Bar -->
+        <div class="visualizer-header-bar">
+          <div class="vis-header-content">
+            <div class="vis-module-tag">MODULE 8 &middot; INTERACTIVE LEARNING ENGINE</div>
+            <h2 class="vis-main-title">AI Algorithm Visualizer</h2>
+            <p class="vis-main-subtitle">Step-by-step state machine, memory canvas, line dry runs, and algorithmic comparisons across 20 core DSA patterns.</p>
+          </div>
+          <!-- Subnavigation Pills -->
+          <div class="vis-subnav-cluster" role="tablist" aria-label="Visualizer Views">
+            <button class="vis-subnav-btn active" data-vis-tab="explore" type="button" role="tab" aria-selected="true">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+              Explore Library
+            </button>
+            <button class="vis-subnav-btn" data-vis-tab="canvas" type="button" role="tab" aria-selected="false">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><polygon points="4 2 16 10 4 18 4 2"/></svg>
+              Interactive Canvas
+            </button>
+            <button class="vis-subnav-btn" data-vis-tab="dryrun" type="button" role="tab" aria-selected="false">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+              Line Dry Run
+            </button>
+            <button class="vis-subnav-btn" data-vis-tab="compare" type="button" role="tab" aria-selected="false">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+              Compare
+            </button>
+            <button class="vis-subnav-btn" data-vis-tab="aicode" type="button" role="tab" aria-selected="false">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+              AI Code Trace
+            </button>
+            <button class="vis-subnav-btn" data-vis-tab="history" type="button" role="tab" aria-selected="false">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+              History
+            </button>
+          </div>
+        </div>
+
+        <!-- VIEW 1: EXPLORE LIBRARY -->
+        <div id="visExplorePanel" class="vis-panel-view active">
+          <!-- Filter & Search Toolbar -->
+          <div class="vis-toolbar-card">
+            <div class="vis-search-box">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+              <input type="text" id="visSearchInput" placeholder="Search algorithms, categories, or keywords (e.g. binary, two sum, dp)..." autocomplete="off">
+            </div>
+            <div class="vis-category-filter" id="visCategoryFilter" role="group" aria-label="Category Filters">
+              <button class="vis-filter-pill active" data-category="ALL" type="button">All (20)</button>
+              <button class="vis-filter-pill" data-category="Searching" type="button">Searching</button>
+              <button class="vis-filter-pill" data-category="Sorting" type="button">Sorting</button>
+              <button class="vis-filter-pill" data-category="Hashing" type="button">Hashing</button>
+              <button class="vis-filter-pill" data-category="Two Pointers" type="button">Two Pointers</button>
+              <button class="vis-filter-pill" data-category="Sliding Window" type="button">Sliding Window</button>
+              <button class="vis-filter-pill" data-category="Prefix Sum" type="button">Prefix Sum</button>
+              <button class="vis-filter-pill" data-category="Stacks" type="button">Stacks</button>
+              <button class="vis-filter-pill" data-category="Queues" type="button">Queues</button>
+              <button class="vis-filter-pill" data-category="Linked Lists" type="button">Linked Lists</button>
+              <button class="vis-filter-pill" data-category="Trees" type="button">Trees</button>
+              <button class="vis-filter-pill" data-category="Graphs" type="button">Graphs</button>
+              <button class="vis-filter-pill" data-category="Dynamic Programming" type="button">Dynamic Programming</button>
+            </div>
+          </div>
+
+          <!-- Algorithms Grid -->
+          <div id="visAlgorithmsGrid" class="vis-algo-grid" aria-live="polite">
+            <!-- Populated dynamically via script.js -->
+          </div>
+        </div>
+
+        <!-- VIEW 2: INTERACTIVE CANVAS -->
+        <div id="visCanvasPanel" class="vis-panel-view" hidden>
+          <!-- Algorithm Header & Custom Input Controls -->
+          <div class="vis-canvas-header-card">
+            <div class="vis-canvas-selector-row">
+              <div class="vis-canvas-meta">
+                <label for="visAlgoSelect" class="vis-meta-label">Selected Algorithm</label>
+                <select id="visAlgoSelect" class="vis-select-box"></select>
+              </div>
+              <div class="vis-badge-cluster">
+                <span id="visCategoryBadge" class="vis-badge vis-badge-cat">Searching</span>
+                <span id="visDifficultyBadge" class="vis-badge vis-badge-diff">Easy</span>
+                <span id="visTimeBadge" class="vis-badge vis-badge-time">Time: O(log N)</span>
+                <span id="visSpaceBadge" class="vis-badge vis-badge-space">Space: O(1)</span>
+              </div>
+            </div>
+
+            <div class="vis-input-config-row">
+              <div class="vis-input-group">
+                <label for="visCustomInput" class="vis-field-label">Test Input (JSON / comma-separated):</label>
+                <div class="vis-input-wrapper">
+                  <input type="text" id="visCustomInput" class="vis-text-input" placeholder="e.g. [1, 3, 5, 7, 9, 11] or target=7">
+                  <button id="visApplyInputBtn" class="btn btn-sm btn-primary" type="button">Run Input</button>
+                  <button id="visResetDefaultBtn" class="btn btn-sm btn-light" type="button">Reset Default</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Visualization Stage -->
+          <div class="vis-stage-card">
+            <!-- State & Operation Status Banner -->
+            <div class="vis-status-banner">
+              <div class="vis-step-flag">
+                <span class="vis-flag-dot"></span>
+                <strong id="visStepOperation">INITIALIZATION</strong>
+              </div>
+              <div id="visStepExplanation" class="vis-step-narration">
+                Starting algorithm execution. Setting up pointers and initial state.
+              </div>
+            </div>
+
+            <!-- Memory Canvas Container -->
+            <div class="vis-canvas-container" id="visCanvasContainer">
+              <div id="visMemoryStage" class="vis-memory-stage">
+                <!-- Rendered dynamically (array boxes, pointers, hash table, stack, etc.) -->
+              </div>
+            </div>
+
+            <!-- Playback Controller Bar -->
+            <div class="vis-playback-bar">
+              <div class="vis-controls-cluster">
+                <button id="visRestartBtn" class="btn-vis-ctrl" title="Restart (Home)" type="button">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                </button>
+                <button id="visPrevBtn" class="btn-vis-ctrl" title="Step Back (Left Arrow)" type="button">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </button>
+                <button id="visPlayPauseBtn" class="btn-vis-play" title="Play / Pause (Spacebar)" type="button">
+                  <svg id="visPlayIcon" viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><polygon points="6 4 16 10 6 16 6 4"/></svg>
+                  <svg id="visPauseIcon" viewBox="0 0 20 20" fill="currentColor" width="18" height="18" hidden><rect x="5" y="4" width="3.5" height="12"/><rect x="11.5" y="4" width="3.5" height="12"/></svg>
+                  <span id="visPlayLabel">Play</span>
+                </button>
+                <button id="visNextBtn" class="btn-vis-ctrl" title="Step Forward (Right Arrow)" type="button">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                </button>
+              </div>
+
+              <!-- Timeline Track & Scrubber -->
+              <div class="vis-timeline-container">
+                <input type="range" id="visTimelineSlider" min="0" max="0" value="0" step="1" class="vis-slider" aria-label="Step timeline scrubber">
+                <div class="vis-timeline-meta">
+                  <span id="visStepCounter">Step 0 of 0</span>
+                  <span id="visProgressPercent">0%</span>
+                </div>
+              </div>
+
+              <!-- Speed Selector -->
+              <div class="vis-speed-cluster">
+                <label for="visSpeedSelect" class="vis-speed-label">Speed:</label>
+                <select id="visSpeedSelect" class="vis-speed-dropdown">
+                  <option value="1600">0.5x (Slow)</option>
+                  <option value="900" selected>1.0x (Normal)</option>
+                  <option value="500">1.5x (Fast)</option>
+                  <option value="250">2.5x (Rapid)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Split: Pseudocode & Live Watch Table -->
+          <div class="vis-details-grid">
+            <!-- Pseudocode Card -->
+            <div class="vis-card-panel">
+              <div class="vis-card-title-row">
+                <h4 class="vis-card-h4">Pseudocode Execution</h4>
+                <span class="vis-code-lang">Standard Algorithmic Form</span>
+              </div>
+              <div id="visPseudocodeBox" class="vis-pseudocode-view">
+                <!-- Lines populated dynamically with active highlight -->
+              </div>
+            </div>
+
+            <!-- Variable Watch & Invariant Card -->
+            <div class="vis-card-panel">
+              <div class="vis-card-title-row">
+                <h4 class="vis-card-h4">Real-time Variable Watch</h4>
+                <span class="vis-state-tag">Active Scope</span>
+              </div>
+              <div class="vis-watch-container">
+                <table class="vis-watch-table" id="visWatchTable">
+                  <thead>
+                    <tr><th>Variable</th><th>Current Value</th><th>Type / Role</th></tr>
+                  </thead>
+                  <tbody id="visWatchBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 3: LINE-BY-LINE DRY RUN -->
+        <div id="visDryRunPanel" class="vis-panel-view" hidden>
+          <div class="vis-dryrun-header-card">
+            <div class="vis-dryrun-title-group">
+              <h3>Line-by-Line Code Execution &amp; Invariant Tracer</h3>
+              <p>Step through algorithm lines one by one. Inspect conditions evaluating to true/false and observe invariant preservation.</p>
+            </div>
+            <div class="vis-dryrun-controls">
+              <select id="visDryRunAlgoSelect" class="vis-select-box"></select>
+              <button id="visDryRunPrevBtn" class="btn btn-sm btn-light" type="button">&#8592; Prev Line</button>
+              <button id="visDryRunNextBtn" class="btn btn-sm btn-primary" type="button">Next Line &#8594;</button>
+              <button id="visDryRunResetBtn" class="btn btn-sm btn-light" type="button">&#8635; Reset</button>
+            </div>
+          </div>
+
+          <div class="vis-dryrun-grid">
+            <!-- Left: Executable Code Lines -->
+            <div class="vis-code-dryrun-panel">
+              <div class="vis-code-toolbar">
+                <span>Code Gutter &amp; Active Pointer</span>
+                <span id="visDryRunLineIndicator">Line 1</span>
+              </div>
+              <div id="visDryRunCodeLines" class="vis-dryrun-code-container">
+                <!-- Code lines with line numbers and active markers -->
+              </div>
+            </div>
+
+            <!-- Right: State & Condition Inspector -->
+            <div class="vis-inspector-dryrun-panel">
+              <!-- Condition Evaluation Box -->
+              <div class="vis-eval-box" id="visConditionBox">
+                <div class="vis-eval-title">Branch / Condition Evaluation:</div>
+                <div id="visConditionEvalText" class="vis-eval-result">Evaluating conditions...</div>
+              </div>
+
+              <!-- Watch Variables Table -->
+              <div class="vis-eval-title" style="margin-top: 1rem;">Scope Snapshot:</div>
+              <table class="vis-watch-table" id="visDryRunWatchTable">
+                <thead>
+                  <tr><th>Variable</th><th>Value</th><th>Change</th></tr>
+                </thead>
+                <tbody id="visDryRunWatchBody">
+                  <!-- Dynamic rows -->
+                </tbody>
+              </table>
+
+              <!-- Explanation -->
+              <div class="vis-eval-title" style="margin-top: 1rem;">Step Narrative:</div>
+              <div id="visDryRunNarrative" class="vis-narrative-box">
+                Ready to begin dry run.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 4: ALGORITHM COMPARISON -->
+        <div id="visComparePanel" class="vis-panel-view" hidden>
+          <div class="vis-compare-header-card">
+            <div class="vis-compare-picker-row">
+              <div class="vis-compare-slot">
+                <label for="visCompareAlgoA">Algorithm A</label>
+                <select id="visCompareAlgoA" class="vis-select-box"></select>
+              </div>
+              <div class="vis-compare-vs-badge">VS</div>
+              <div class="vis-compare-slot">
+                <label for="visCompareAlgoB">Algorithm B</label>
+                <select id="visCompareAlgoB" class="vis-select-box"></select>
+              </div>
+              <div class="vis-compare-action">
+                <button id="visExecuteCompareBtn" class="btn btn-primary" type="button">Run Head-to-Head Comparison</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Comparison Results Table & Metric Cards -->
+          <div id="visComparisonContainer" class="vis-comparison-content">
+            <!-- Dynamically populated comparison matrix -->
+          </div>
+        </div>
+
+        <!-- VIEW 5: AI CODE TRACE & VISUALIZER -->
+        <div id="visAiCodePanel" class="vis-panel-view" hidden>
+          <div class="vis-aicode-header-card">
+            <div class="vis-aicode-intro">
+              <h3>AI-Powered Custom Code Visualizer</h3>
+              <p>Submit custom code or LeetCode solution. Our Gemini AI engine synthesizes a verified step-by-step state machine trace with memory frames and variable watchers.</p>
+            </div>
+            <div class="vis-aicode-status-badge">
+              <span class="badge-provider">AI Pipeline: Google Gemini / Schema Grounded</span>
+            </div>
+          </div>
+
+          <div class="vis-aicode-workspace">
+            <div class="vis-aicode-input-pane">
+              <div class="vis-aicode-toolbar">
+                <div class="vis-aicode-inputs-group">
+                  <select id="visAiLangSelect" class="vis-select-box-sm">
+                    <option value="javascript">JavaScript</option>
+                    <option value="python" selected>Python</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                  </select>
+                  <input type="text" id="visAiProblemInput" placeholder="Problem title or slug (e.g. 3Sum, Container With Most Water)" class="vis-aicode-title-field">
+                </div>
+                <div class="vis-aicode-samples">
+                  <button id="visAiSampleBtn1" class="btn-vis-pill" type="button">Sample: Two Sum</button>
+                  <button id="visAiSampleBtn2" class="btn-vis-pill" type="button">Sample: Binary Search</button>
+                </div>
+              </div>
+
+              <textarea id="visAiCodeEditor" class="vis-aicode-textarea" placeholder="Paste your algorithm code here...&#10;&#10;def twoSum(nums, target):&#10;    seen = {}&#10;    for i, n in enumerate(nums):&#10;        comp = target - n&#10;        if comp in seen:&#10;            return [seen[comp], i]&#10;        seen[n] = i&#10;    return []" spellcheck="false"></textarea>
+
+              <div class="vis-aicode-run-row">
+                <button id="visAiAnalyzeBtn" class="btn btn-primary" type="button">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><polygon points="4 2 16 10 4 18 4 2"/></svg>
+                  Generate AI Step-by-Step Visualization
+                </button>
+                <span id="visAiStatusText" class="vis-aicode-status-msg"></span>
+              </div>
+            </div>
+
+            <!-- AI Result Canvas Container -->
+            <div id="visAiResultsContainer" class="vis-aicode-results-pane" hidden>
+              <!-- AI generated interactive trace mounts here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW 6: HISTORY -->
+        <div id="visHistoryPanel" class="vis-panel-view" hidden>
+          <div class="vis-history-header-card">
+            <div>
+              <h3>Saved Visualization Traces</h3>
+              <p>Replay previously generated custom visualizations and algorithm dry-run sessions.</p>
+            </div>
+            <button id="visHistoryRefreshBtn" class="btn btn-sm btn-light" type="button">&#8635; Refresh History</button>
+          </div>
+          <div id="visHistoryList" class="vis-history-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </section>
+
       <footer class="app-footer">
         <span>DSA Admin Dashboard</span>
           <span>Shared group dashboard · Admin edits only</span>
@@ -456,6 +792,7 @@
         <button class="member-view-button" id="memberDashboardNav" type="button" aria-controls="memberPersonalDashboard" aria-pressed="true">My Profile</button>
         <button class="member-view-button" id="memberProgressNav" type="button" aria-controls="memberProgressView" aria-pressed="false">My Progress</button>
         <button class="member-view-button" id="memberMentorNav" type="button">AI Code Mentor</button>
+        <button class="member-view-button" id="memberVisualizerNav" type="button">Algorithm Visualizer</button>
       </nav>
       <div class="member-session-actions"><span class="member-mode-indicator">Member Mode</span><button class="btn btn-light" id="memberLogoutBtn" type="button">Log out</button></div>
     </header>
@@ -658,6 +995,10 @@
               Mock Interview
             </button>
           </div>
+          <button id="mentorVisualizeBtn" class="btn btn-secondary mentor-visualize-btn" type="button" title="Visualize this algorithm interactively">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+            Visualize Algorithm
+          </button>
           <a id="mentorLeetCodeLink" class="btn btn-light mentor-leetcode-link" href="https://leetcode.com/problems/two-sum/" target="_blank" rel="noopener noreferrer">
             View on LeetCode &#8599;
           </a>
