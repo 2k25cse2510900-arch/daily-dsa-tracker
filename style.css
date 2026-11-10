@@ -6160,3 +6160,595 @@ body { color: var(--j-ink); background-color: #ebe6f0; background-image: radial-
 }
 
 
+
+
+/* ==========================================================================
+   DSAverse AI Code Mentor — Module 6: Personalized Learning & Adaptive Coach
+   ========================================================================== */
+
+.mentor-learning-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 0 32px 0;
+}
+
+.learning-coach-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #ffffff;
+  padding: 24px 28px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+
+.coach-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.coach-avatar {
+  font-size: 36px;
+  background: rgba(255, 255, 255, 0.12);
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.coach-hero-title {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.coach-hero-subtitle {
+  margin: 0;
+  font-size: 13.5px;
+  color: #94a3b8;
+  max-width: 650px;
+}
+
+.coach-hero-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Learning Overview Grid */
+.learning-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.learning-disclaimer-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #3b82f6;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-top: 12px;
+}
+
+.disclaimer-icon {
+  font-size: 16px;
+  color: #3b82f6;
+  line-height: 1.4;
+}
+
+.disclaimer-text {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* Adaptive Recommendations */
+.learning-recs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.learning-rec-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px 18px;
+  transition: all 0.2s ease;
+}
+
+.learning-rec-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.learning-rec-card.rec-high {
+  border-left: 4px solid #ef4444;
+}
+
+.learning-rec-card.rec-medium {
+  border-left: 4px solid #f59e0b;
+}
+
+.learning-rec-card.rec-low,
+.learning-rec-card.rec-onboarding {
+  border-left: 4px solid #3b82f6;
+}
+
+.rec-content {
+  flex: 1;
+}
+
+.rec-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rec-type-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.rec-title {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.rec-reason {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.rec-evidence {
+  font-size: 11.5px;
+  color: #64748b;
+  font-style: italic;
+}
+
+.rec-action-btn {
+  white-space: nowrap;
+}
+
+/* Concept Mastery Grid */
+.mastery-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.legend-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.chip-strong {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.chip-proficient {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.chip-developing {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.chip-learning {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.chip-not-started {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.learning-mastery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.concept-mastery-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+
+.concept-mastery-card:hover {
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+}
+
+.concept-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.concept-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.concept-category {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.concept-score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.score-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.score-bar-fill.fill-strong {
+  background: #10b981;
+}
+
+.score-bar-fill.fill-proficient {
+  background: #3b82f6;
+}
+
+.score-bar-fill.fill-developing {
+  background: #f59e0b;
+}
+
+.score-bar-fill.fill-learning {
+  background: #ef4444;
+}
+
+.score-bar-fill.fill-not-started {
+  background: #cbd5e1;
+}
+
+.score-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  min-width: 35px;
+  text-align: right;
+}
+
+.concept-metrics {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: #64748b;
+  padding: 4px 0;
+  border-top: 1px dashed #f1f5f9;
+  border-bottom: 1px dashed #f1f5f9;
+}
+
+.concept-rationale {
+  font-size: 11.5px;
+  color: #475569;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.concept-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+/* Revision Center */
+.revision-filter-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.revision-filter-tab {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.revision-filter-tab.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+
+.learning-revision-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.revision-item-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.revision-item-info {
+  flex: 1;
+}
+
+.revision-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 2px 0;
+}
+
+.revision-item-meta {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.revision-item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Mistake Retrospective Cards */
+.learning-mistakes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.mistake-retrospective-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #ef4444;
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+
+.mistake-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mistake-card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.mistake-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  font-size: 12.5px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.mistake-counterexample {
+  color: #b91c1c;
+}
+
+.mistake-fix {
+  color: #047857;
+}
+
+/* Learning Path Steps */
+.learning-path-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.path-step-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #334155;
+  transition: all 0.15s ease;
+}
+
+.path-step-chip.step-strong {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.path-step-chip.step-proficient {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.path-step-chip.step-developing {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.path-step-chip.step-learning {
+  border-color: #f87171;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.path-step-chip.step-not-started {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+/* AI Tutor Lesson Drawer */
+.learning-tutor-drawer {
+  background: #ffffff;
+  border: 2px solid #3b82f6;
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.12);
+  margin-top: 14px;
+}
+
+.tutor-drawer-body {
+  margin-top: 14px;
+}
+
+.tutor-progressive-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.tutor-step-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.tutor-hint-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tutor-hint-pill {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tutor-hint-pill.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.tutor-lesson-content {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px 18px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #1e293b;
+}
+
+.tutor-lesson-content pre {
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12.5px;
+}
+
+@media (max-width: 768px) {
+  .learning-coach-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .learning-rec-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .revision-item-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .mistake-details-grid {
+    grid-template-columns: 1fr;
+  }
+}

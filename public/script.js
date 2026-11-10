@@ -6392,21 +6392,466 @@ function renderNormalModeAnalysis(data, isBuggy, analysisResult = null) {
 function switchMentorLearningTab(tabName) {
   const normalBtn = $("mentorModeNormalBtn");
   const animaticBtn = $("mentorModeAnimaticBtn");
+  const learningBtn = $("mentorModeLearningBtn");
   const normalWorkspace = $("mentorNormalWorkspace");
   const animaticWorkspace = $("mentorAnimaticWorkspace");
+  const learningWorkspace = $("mentorLearningWorkspace");
 
   if (tabName === "animatic") {
+    stopAnimaticPlayback();
     if (normalBtn) { normalBtn.classList.remove("active"); normalBtn.setAttribute("aria-selected", "false"); }
     if (animaticBtn) { animaticBtn.classList.add("active"); animaticBtn.setAttribute("aria-selected", "true"); }
+    if (learningBtn) { learningBtn.classList.remove("active"); learningBtn.setAttribute("aria-selected", "false"); }
     if (normalWorkspace) normalWorkspace.hidden = true;
     if (animaticWorkspace) animaticWorkspace.hidden = false;
+    if (learningWorkspace) learningWorkspace.hidden = true;
     renderAnimaticStep(animaticState.currentStep);
+  } else if (tabName === "learning") {
+    stopAnimaticPlayback();
+    if (normalBtn) { normalBtn.classList.remove("active"); normalBtn.setAttribute("aria-selected", "false"); }
+    if (animaticBtn) { animaticBtn.classList.remove("active"); animaticBtn.setAttribute("aria-selected", "false"); }
+    if (learningBtn) { learningBtn.classList.add("active"); learningBtn.setAttribute("aria-selected", "true"); }
+    if (normalWorkspace) normalWorkspace.hidden = true;
+    if (animaticWorkspace) animaticWorkspace.hidden = true;
+    if (learningWorkspace) learningWorkspace.hidden = false;
+    loadMentorLearningJourney();
   } else {
     stopAnimaticPlayback();
     if (normalBtn) { normalBtn.classList.add("active"); normalBtn.setAttribute("aria-selected", "true"); }
     if (animaticBtn) { animaticBtn.classList.remove("active"); animaticBtn.setAttribute("aria-selected", "false"); }
+    if (learningBtn) { learningBtn.classList.remove("active"); learningBtn.setAttribute("aria-selected", "false"); }
     if (normalWorkspace) normalWorkspace.hidden = false;
     if (animaticWorkspace) animaticWorkspace.hidden = true;
+    if (learningWorkspace) learningWorkspace.hidden = true;
+  }
+}
+
+// Module 6: Personalized Learning & Adaptive DSA Coach State & Handlers
+const mentorCoachState = {
+  profile: null,
+  loading: false,
+  error: null,
+  revisionFilter: "due",
+  activeConceptId: "arrays-hashing",
+  tutorHintLevel: 1
+};
+
+async function loadMentorLearningJourney(forceRefresh = false) {
+  const container = $("mentorLearningWorkspace");
+  if (!container) return;
+
+  const refreshBtn = $("coachRefreshBtn");
+  if (refreshBtn) refreshBtn.disabled = true;
+
+  mentorCoachState.loading = true;
+  mentorCoachState.error = null;
+
+  try {
+    const endpoint = forceRefresh
+      ? "/api/ai-code-mentor/learning/refresh"
+      : "/api/ai-code-mentor/learning/profile";
+    const method = forceRefresh ? "POST" : "GET";
+    const res = await apiRequest(endpoint, {
+      method,
+      headers: { "Content-Type": "application/json" }
+    });
+
+    mentorCoachState.profile = res;
+    renderLearningOverview(res.overview);
+    renderLearningRecommendations(res.recommendations);
+    renderConceptMastery(res.conceptMastery);
+    renderRevisionCenter(res.revisionSchedule);
+    renderMistakeHistory(res.recurringMistakes, res.allMistakes);
+    renderLearningPath(res.learningPath);
+
+    if (forceRefresh) {
+      showToast("Personalized learning coach profile refreshed!", "success");
+    }
+  } catch (err) {
+    console.error("Failed to load learning journey:", err);
+    mentorCoachState.error = err.message || "Failed to load learning profile";
+    showToast(mentorCoachState.error, "error");
+  } finally {
+    mentorCoachState.loading = false;
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
+function renderLearningOverview(overview = {}) {
+  const attemptedEl = $("learningStatAttempted");
+  const solvedEl = $("learningStatSolved");
+  const passRateEl = $("learningStatPassRate");
+  const revisionDueEl = $("learningStatRevisionDue");
+  const strongEl = $("learningStatStrong");
+  const badgeEl = $("coachLastUpdatedBadge");
+  const disclaimerEl = $("learningDisclaimerText");
+
+  if (attemptedEl) attemptedEl.textContent = overview.totalProblemsAttempted ?? 0;
+  if (solvedEl) solvedEl.textContent = overview.totalProblemsSolved ?? 0;
+  if (passRateEl) passRateEl.textContent = `${overview.executionPassRate ?? 0}%`;
+  if (revisionDueEl) revisionDueEl.textContent = overview.revisionDueCount ?? 0;
+  if (strongEl) strongEl.textContent = overview.strongCount ?? 0;
+
+  if (badgeEl) {
+    badgeEl.textContent = overview.lastActivityAt
+      ? `Active · ${new Date(overview.lastActivityAt).toLocaleDateString()}`
+      : "Profile Building";
+  }
+
+  if (disclaimerEl && overview.assessmentDisclaimer) {
+    disclaimerEl.textContent = overview.assessmentDisclaimer;
+  }
+}
+
+function renderLearningRecommendations(recommendations = []) {
+  const listEl = $("learningRecommendationsList");
+  if (!listEl) return;
+
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+    listEl.innerHTML = `<div class="empty-state-notice">Your personalized learning profile is analyzing practice history. Keep solving problems in the daily workspace to generate tailored recommendations.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = recommendations.map(rec => {
+    const priorityClass = rec.priority === "high" ? "rec-high" : (rec.priority === "medium" ? "rec-medium" : "rec-low");
+    let evidenceText = "";
+    if (rec.evidence) {
+      if (rec.evidence.affectedProblems) {
+        evidenceText = `Identified in: ${rec.evidence.affectedProblems.join(", ")}`;
+      } else if (rec.evidence.attempts !== undefined) {
+        evidenceText = `Current stats: ${rec.evidence.attempts} attempts, ${rec.evidence.solved} solved (${rec.evidence.passRate} pass rate)`;
+      } else if (rec.evidence.intervalDays) {
+        evidenceText = `Spaced repetition tier: ${rec.evidence.intervalDays} day interval (Cycle #${rec.evidence.cycle})`;
+      } else if (rec.evidence.status) {
+        evidenceText = `Status: ${rec.evidence.status}`;
+      }
+    }
+
+    return `
+      <div class="learning-rec-card ${priorityClass}">
+        <div class="rec-content">
+          <div class="rec-badge-row">
+            <span class="rec-type-badge">${escapeHtml(rec.type.replace(/_/g, " "))}</span>
+            <span class="badge-tag">${escapeHtml(rec.conceptTitle || "Curriculum Focus")}</span>
+          </div>
+          <h4 class="rec-title">${escapeHtml(rec.title)}</h4>
+          <p class="rec-reason">${escapeHtml(rec.reason)}</p>
+          ${evidenceText ? `<div class="rec-evidence">${escapeHtml(evidenceText)}</div>` : ""}
+        </div>
+        <div class="rec-action-btn">
+          <button class="btn btn-sm btn-primary btn-rec-action" type="button"
+            data-rec-id="${escapeHtml(rec.id)}"
+            data-rec-type="${escapeHtml(rec.type)}"
+            data-concept-id="${escapeHtml(rec.conceptId || '')}">
+            ${escapeHtml(rec.suggestedAction || "Take Action")} &rarr;
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".btn-rec-action").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.recType;
+      const conceptId = btn.dataset.conceptId;
+      if (type === "revision_due") {
+        const revCard = $("learningRevisionList");
+        if (revCard) revCard.scrollIntoView({ behavior: "smooth" });
+      } else if (type === "recurring_mistake") {
+        openTutorDrawer({ type: "explain_mistake", mistakeCategory: "boundary-condition" });
+      } else {
+        openTutorDrawer({ type: "explain_weak_concept", conceptId: conceptId || "arrays-hashing" });
+      }
+    });
+  });
+}
+
+function renderConceptMastery(conceptMastery = {}) {
+  const gridEl = $("learningMasteryGrid");
+  if (!gridEl) return;
+
+  const items = Object.values(conceptMastery).sort((a, b) => (a.order || 99) - (b.order || 99));
+  if (!items.length) {
+    gridEl.innerHTML = `<div class="empty-state-notice">No concept mastery data recorded yet.</div>`;
+    return;
+  }
+
+  gridEl.innerHTML = items.map(c => {
+    const levelSlug = String(c.level || "Not Started").toLowerCase().replace(/\s+/g, "-");
+    const chipClass = `chip-${levelSlug}`;
+    const fillClass = `fill-${levelSlug}`;
+    const score = Number(c.score || 0);
+
+    return `
+      <div class="concept-mastery-card" data-concept-id="${escapeHtml(c.id)}">
+        <div class="concept-card-top">
+          <div>
+            <h4 class="concept-name">${escapeHtml(c.title)}</h4>
+            <span class="concept-category">${escapeHtml(c.category || "General")}</span>
+          </div>
+          <span class="legend-chip ${chipClass}">${escapeHtml(c.level || "Not Started")}</span>
+        </div>
+
+        <div class="concept-score-row">
+          <div class="score-bar-bg">
+            <div class="score-bar-fill ${fillClass}" style="width: ${Math.max(4, score)}%;"></div>
+          </div>
+          <span class="score-val">${score}%</span>
+        </div>
+
+        <div class="concept-metrics">
+          <span>Attempted: <strong>${c.attemptsCount || 0}</strong></span>
+          <span>Solved: <strong>${c.solvedCount || 0}</strong></span>
+          <span>Pass Rate: <strong>${c.executionPassRate || 0}%</strong></span>
+        </div>
+
+        <p class="concept-rationale">${escapeHtml(c.rationale || c.description || "")}</p>
+
+        <div class="concept-actions">
+          <button class="btn btn-sm btn-light btn-study-concept" type="button" data-concept-id="${escapeHtml(c.id)}">
+            Study Concept &rarr;
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  gridEl.querySelectorAll(".btn-study-concept").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cid = btn.dataset.conceptId;
+      openTutorDrawer({ type: "explain_weak_concept", conceptId: cid });
+    });
+  });
+}
+
+function renderRevisionCenter(revisionSchedule = {}) {
+  const listEl = $("learningRevisionList");
+  const countBadge = $("revDueCount");
+  if (countBadge) countBadge.textContent = revisionSchedule.due?.length || 0;
+  if (!listEl) return;
+
+  const activeFilter = mentorCoachState.revisionFilter || "due";
+  let items = [];
+  if (activeFilter === "due") items = revisionSchedule.due || [];
+  else if (activeFilter === "upcoming") items = revisionSchedule.upcoming || [];
+  else if (activeFilter === "recently_revised") items = revisionSchedule.recentlyRevised || [];
+
+  if (!items.length) {
+    const emptyMsg = activeFilter === "due"
+      ? "No concepts are currently due for revision! Excellent retention."
+      : (activeFilter === "upcoming" ? "No concepts upcoming for revision in the next 3 days." : "No concepts recently revised within the past 7 days.");
+    listEl.innerHTML = `<div class="empty-state-notice">${escapeHtml(emptyMsg)}</div>`;
+    return;
+  }
+
+  listEl.innerHTML = items.map(item => {
+    const levelSlug = String(item.masteryLevel || "Learning").toLowerCase().replace(/\s+/g, "-");
+    const statusText = item.status === "due"
+      ? `<span style="color:#b91c1c; font-weight:600;">Overdue (${Math.abs(item.daysRemaining)}d)</span>`
+      : `Due in ${item.daysRemaining}d`;
+
+    return `
+      <div class="revision-item-card" data-concept-id="${escapeHtml(item.conceptId)}">
+        <div class="revision-item-info">
+          <h4 class="revision-item-title">${escapeHtml(item.conceptTitle)}</h4>
+          <div class="revision-item-meta">
+            <span>${escapeHtml(item.category)}</span> &middot;
+            <span class="legend-chip chip-${levelSlug}">${escapeHtml(item.masteryLevel)}</span> &middot;
+            <span>Cycle #${item.revisionCycle} (${item.intervalDays}d interval)</span> &middot;
+            ${statusText}
+          </div>
+        </div>
+        <div class="revision-item-actions">
+          <button class="btn btn-sm btn-primary btn-revise-concept" type="button" data-concept-id="${escapeHtml(item.conceptId)}">
+            Revise Now
+          </button>
+          <button class="btn btn-sm btn-secondary btn-complete-revision" type="button" data-concept-id="${escapeHtml(item.conceptId)}">
+            Mark Completed &#10003;
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".btn-revise-concept").forEach(btn => {
+    btn.addEventListener("click", () => {
+      openTutorDrawer({ type: "explain_weak_concept", conceptId: btn.dataset.conceptId });
+    });
+  });
+
+  listEl.querySelectorAll(".btn-complete-revision").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const cid = btn.dataset.conceptId;
+      btn.disabled = true;
+      try {
+        const res = await apiRequest("/api/ai-code-mentor/learning/revision/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conceptId: cid, outcome: "completed" })
+        });
+        showToast(`Revision marked completed for ${res.completedRevision?.conceptTitle || cid}!`, "success");
+        if (res.revisionSchedule && mentorCoachState.profile) {
+          mentorCoachState.profile.revisionSchedule = res.revisionSchedule;
+          renderRevisionCenter(res.revisionSchedule);
+        } else {
+          loadMentorLearningJourney(true);
+        }
+      } catch (err) {
+        showToast(err.message || "Failed to mark revision completed.", "error");
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function renderMistakeHistory(recurringMistakes = [], allMistakes = []) {
+  const listEl = $("learningMistakesList");
+  if (!listEl) return;
+
+  if (!Array.isArray(recurringMistakes) || recurringMistakes.length === 0) {
+    listEl.innerHTML = `<div class="empty-state-notice">No recurring mistake patterns detected! Your code executions demonstrate clean invariants and consistent logic.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = recurringMistakes.map(m => {
+    const formattedCat = m.category.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    return `
+      <div class="mistake-retrospective-card">
+        <div class="mistake-card-head">
+          <h4 class="mistake-card-title">${escapeHtml(formattedCat)} (${escapeHtml(m.title)})</h4>
+          <span class="badge-tag" style="background:#fee2e2; color:#b91c1c;">${m.count} Occurrences</span>
+        </div>
+        <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569;">
+          Observed in problems: <strong>${escapeHtml(m.problemSlugs.join(", "))}</strong>
+        </p>
+        <div class="mistake-details-grid">
+          <div>
+            <strong>Failing Counter-Example:</strong>
+            <p class="mistake-counterexample" style="margin:4px 0 0 0; font-family:monospace;">${escapeHtml(m.counterExample || "edge cases at boundary endpoints")}</p>
+          </div>
+          <div>
+            <strong>Actionable Solution / Invariant:</strong>
+            <p class="mistake-fix" style="margin:4px 0 0 0;">${escapeHtml(m.suggestedFix || "Enforce explicit inclusive loop bounds.")}</p>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+          <button class="btn btn-sm btn-secondary btn-explain-mistake" type="button" data-mistake-category="${escapeHtml(m.category)}">
+            Explain Mistake with AI Coach &rarr;
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  listEl.querySelectorAll(".btn-explain-mistake").forEach(btn => {
+    btn.addEventListener("click", () => {
+      openTutorDrawer({ type: "explain_mistake", mistakeCategory: btn.dataset.mistakeCategory });
+    });
+  });
+}
+
+function renderLearningPath(learningPath = []) {
+  const stepsEl = $("learningPathSteps");
+  if (!stepsEl) return;
+
+  if (!Array.isArray(learningPath) || !learningPath.length) {
+    stepsEl.innerHTML = `<div class="empty-state-notice">Curriculum roadmap initializing.</div>`;
+    return;
+  }
+
+  stepsEl.innerHTML = learningPath.map(step => {
+    const levelSlug = String(step.level || "Not Started").toLowerCase().replace(/\s+/g, "-");
+    const statusIcon = step.level === "Strong" ? "&#10003;" : (step.level === "Proficient" ? "&#9670;" : "&#9675;");
+    return `
+      <div class="path-step-chip step-${levelSlug}" title="${escapeHtml(step.title)} - ${escapeHtml(step.level)} (${step.score}%)">
+        <span>${statusIcon}</span>
+        <strong>${step.order}. ${escapeHtml(step.title)}</strong>
+        <span style="font-size:11px; opacity:0.8;">${step.score}%</span>
+      </div>
+    `;
+  }).join("");
+}
+
+async function openTutorDrawer({ type = "explain_weak_concept", conceptId, mistakeCategory, conceptA, conceptB, hintLevel = 1 }) {
+  const drawer = $("learningTutorDrawer");
+  const titleEl = $("tutorLessonTitle");
+  const contentEl = $("tutorLessonContent");
+  const controlsEl = $("tutorProgressiveControls");
+
+  if (!drawer || !contentEl) return;
+
+  drawer.hidden = false;
+  drawer.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  mentorCoachState.activeConceptId = conceptId || "arrays-hashing";
+  mentorCoachState.tutorHintLevel = hintLevel;
+
+  if (controlsEl) {
+    controlsEl.style.display = type === "progressive_hint" ? "flex" : "none";
+    controlsEl.querySelectorAll(".tutor-hint-pill").forEach(p => {
+      const pLevel = Number(p.dataset.hint);
+      if (pLevel === hintLevel) p.classList.add("active");
+      else p.classList.remove("active");
+    });
+  }
+
+  contentEl.innerHTML = `<div style="padding:16px; text-align:center; color:#64748b;">Generating AI coach lesson...</div>`;
+  if (titleEl) titleEl.textContent = "AI Personalized Tutor";
+
+  try {
+    const res = await apiRequest("/api/ai-code-mentor/learning/tutor-lesson", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type,
+        conceptId: mentorCoachState.activeConceptId,
+        mistakeCategory,
+        conceptA,
+        conceptB,
+        hintLevel
+      })
+    });
+
+    if (titleEl && res.title) titleEl.textContent = res.title;
+
+    let html = `<div class="tutor-text-body"><p>${escapeHtml(res.text || "")}</p></div>`;
+
+    if (res.counterExample) {
+      html += `
+        <div style="margin-top:12px; background:#fff1f2; border:1px solid #fecdd3; border-radius:6px; padding:10px 14px;">
+          <strong style="color:#b91c1c;">Failing Counter-Example:</strong>
+          <pre style="background:transparent; color:#9f1239; margin:4px 0 0 0; padding:0;">${escapeHtml(res.counterExample)}</pre>
+        </div>
+      `;
+    }
+
+    if (res.remedy) {
+      html += `
+        <div style="margin-top:10px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:6px; padding:10px 14px;">
+          <strong style="color:#047857;">Recommended Invariant Fix:</strong>
+          <p style="margin:4px 0 0 0; color:#065f46;">${escapeHtml(res.remedy)}</p>
+        </div>
+      `;
+    }
+
+    if (Array.isArray(res.comparison)) {
+      html += `
+        <table class="mentor-comparison-table" style="margin-top:14px;">
+          <thead><tr><th>Aspect</th><th>${escapeHtml(conceptA || "Pattern A")}</th><th>${escapeHtml(conceptB || "Pattern B")}</th></tr></thead>
+          <tbody>
+            ${res.comparison.map(row => `<tr><td><strong>${escapeHtml(row.aspect)}</strong></td><td>${escapeHtml(row[conceptA] || "")}</td><td>${escapeHtml(row[conceptB] || "")}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    if (res.action) {
+      html += `<div style="margin-top:12px; font-weight:600; color:#2563eb;">Next Action: ${escapeHtml(res.action)}</div>`;
+    }
+
+    contentEl.innerHTML = html;
+  } catch (err) {
+    contentEl.innerHTML = `<div class="mentor-alert-card mistake-alert">${escapeHtml(err.message || "Failed to generate AI tutor lesson.")}</div>`;
   }
 }
 
@@ -7401,6 +7846,7 @@ function initializeAiCodeMentor() {
   // 2. Learning Mode switcher
   const normalTabBtn = $("mentorModeNormalBtn");
   const animaticTabBtn = $("mentorModeAnimaticBtn");
+  const learningTabBtn = $("mentorModeLearningBtn");
   if (normalTabBtn && !normalTabBtn.dataset.bound) {
     normalTabBtn.dataset.bound = "true";
     normalTabBtn.addEventListener("click", () => switchMentorLearningTab("normal"));
@@ -7408,6 +7854,10 @@ function initializeAiCodeMentor() {
   if (animaticTabBtn && !animaticTabBtn.dataset.bound) {
     animaticTabBtn.dataset.bound = "true";
     animaticTabBtn.addEventListener("click", () => switchMentorLearningTab("animatic"));
+  }
+  if (learningTabBtn && !learningTabBtn.dataset.bound) {
+    learningTabBtn.dataset.bound = "true";
+    learningTabBtn.addEventListener("click", () => switchMentorLearningTab("learning"));
   }
 
   // 3. Code Editor interactions
@@ -7698,6 +8148,10 @@ function initializeAiCodeMentor() {
         document.querySelectorAll(".mentor-action-chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
         const chipType = chip.dataset.mentorChip || chip.dataset.mentorMode || "deep-analysis";
+        if (chipType === "learning-journey") {
+          switchMentorLearningTab("learning");
+          return;
+        }
         currentMentorMode = chipType;
         const data = getEducationalDataFor(currentMentorProblem?.slug, currentMentorProblem?.title);
         renderNormalModeAnalysis(data, currentMentorBuggyState);
@@ -8220,6 +8674,50 @@ function normalizeMentorMode(rawMode) {
       }
     });
   }
+
+  // Module 6: Coach & Spaced Repetition Event Bindings
+  const refreshCoachBtn = $("coachRefreshBtn");
+  if (refreshCoachBtn && !refreshCoachBtn.dataset.bound) {
+    refreshCoachBtn.dataset.bound = "true";
+    refreshCoachBtn.addEventListener("click", () => loadMentorLearningJourney(true));
+  }
+
+  document.querySelectorAll(".revision-filter-tab").forEach(tab => {
+    if (!tab.dataset.bound) {
+      tab.dataset.bound = "true";
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".revision-filter-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        mentorCoachState.revisionFilter = tab.dataset.revFilter || "due";
+        if (mentorCoachState.profile) {
+          renderRevisionCenter(mentorCoachState.profile.revisionSchedule);
+        }
+      });
+    }
+  });
+
+  const closeTutorBtn = $("closeTutorDrawerBtn");
+  if (closeTutorBtn && !closeTutorBtn.dataset.bound) {
+    closeTutorBtn.dataset.bound = "true";
+    closeTutorBtn.addEventListener("click", () => {
+      const drawer = $("learningTutorDrawer");
+      if (drawer) drawer.hidden = true;
+    });
+  }
+
+  document.querySelectorAll(".tutor-hint-pill").forEach(pill => {
+    if (!pill.dataset.bound) {
+      pill.dataset.bound = "true";
+      pill.addEventListener("click", () => {
+        const hintNum = Number(pill.dataset.hint);
+        openTutorDrawer({
+          type: "progressive_hint",
+          conceptId: mentorCoachState.activeConceptId || "arrays-hashing",
+          hintLevel: hintNum
+        });
+      });
+    }
+  });
 
   // 10. Sound Controls for Animatic Mode
   const soundToggle = $("animaticSoundToggle");

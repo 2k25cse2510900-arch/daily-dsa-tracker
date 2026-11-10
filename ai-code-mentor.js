@@ -12,6 +12,19 @@ const {
   createExecutionProvider,
   normalizeExecutionLanguage
 } = require("./code-execution-engine");
+const {
+  CONCEPT_TAXONOMY,
+  MASTERY_LEVELS,
+  REVISION_INTERVALS_DAYS,
+  detectConceptsForProblem,
+  normalizeMistakeCategory,
+  calculateConceptMastery,
+  aggregateRecurringMistakes,
+  calculateRevisionSchedule,
+  generateAdaptiveRecommendations,
+  buildStudentLearningProfile,
+  buildTutorLessonContent
+} = require("./personalized-learning-engine");
 
 const MODES = Object.freeze([
   "explain", "mistake", "hint", "complexity", "optimize", "dry-run", "teach",
@@ -447,6 +460,12 @@ function createAiCodeMentorService({
     : null;
   const executions = (db && typeof db.collection === "function")
     ? db.collection("aiCodeExecutions")
+    : null;
+  const revisions = (db && typeof db.collection === "function")
+    ? db.collection("aiLearningRevisions")
+    : null;
+  const learningProfiles = (db && typeof db.collection === "function")
+    ? db.collection("aiLearningProfiles")
     : null;
 
   const executionProvider = externalExecutionProvider || createExecutionProvider(process.env);
@@ -1720,6 +1739,170 @@ function createAiCodeMentorService({
     return doc;
   }
 
+  async function safeFindAll(collection, query = {}, limit = 100) {
+    if (!collection || typeof collection.find !== "function") return [];
+    try {
+      let cursor = collection.find(query);
+      if (cursor && typeof cursor.sort === "function") {
+        cursor = cursor.sort({ createdAt: -1, submittedAt: -1, _id: -1 });
+      }
+      if (cursor && typeof cursor.limit === "function") {
+        cursor = cursor.limit(limit);
+      }
+      if (cursor && typeof cursor.toArray === "function") {
+        let docs = await cursor.toArray();
+        if (query.userId) {
+          docs = docs.filter(d => d.userId === query.userId || d.memberId === query.userId);
+        }
+        return docs;
+      }
+      return [];
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  async function getLearningProfile(user) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+
+    const [userReviews, userExecutions, userSubmissions, userRevisions] = await Promise.all([
+      safeFindAll(reviews, { userId: user.id }, 150),
+      safeFindAll(executions, { userId: user.id }, 150),
+      safeFindAll(submissions, { userId: user.id }, 150),
+      safeFindAll(revisions, { userId: user.id }, 100)
+    ]);
+
+    const profile = buildStudentLearningProfile({
+      reviews: userReviews,
+      executions: userExecutions,
+      submissions: userSubmissions,
+      revisions: userRevisions,
+      now: now()
+    });
+
+    profile.userId = user.id;
+
+    try {
+      if (learningProfiles && typeof learningProfiles.updateOne === "function") {
+        await learningProfiles.updateOne(
+          { _id: `learning-profile:${user.id}` },
+          { $set: { ...profile, updatedAt: now() } },
+          { upsert: true }
+        );
+      }
+    } catch (_err) {
+      // non-blocking
+    }
+
+    return profile;
+  }
+
+  async function getConceptMastery(user) {
+    const profile = await getLearningProfile(user);
+    return {
+      conceptMastery: profile.conceptMastery,
+      overview: profile.overview
+    };
+  }
+
+  async function getAdaptiveRecommendations(user) {
+    const profile = await getLearningProfile(user);
+    return {
+      recommendations: profile.recommendations,
+      learningPath: profile.learningPath
+    };
+  }
+
+  async function getRevisionSchedule(user) {
+    const profile = await getLearningProfile(user);
+    return profile.revisionSchedule;
+  }
+
+  async function completeRevision(user, body = {}) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+    const conceptId = body.conceptId;
+    if (!conceptId || !CONCEPT_TAXONOMY[conceptId]) {
+      throw mentorError("INVALID_CONCEPT", `Unknown concept ID: ${conceptId || "missing"}.`, 400);
+    }
+
+    const revisionDoc = {
+      _id: `rev:${crypto.randomUUID()}`,
+      userId: user.id,
+      conceptId,
+      conceptTitle: CONCEPT_TAXONOMY[conceptId].title,
+      outcome: body.outcome || "completed",
+      notes: typeof body.notes === "string" ? body.notes.slice(0, 1000) : null,
+      completedAt: now()
+    };
+
+    if (revisions && typeof revisions.insertOne === "function") {
+      await revisions.insertOne(revisionDoc);
+    }
+
+    const updatedSchedule = await getRevisionSchedule(user);
+    return {
+      success: true,
+      completedRevision: revisionDoc,
+      revisionSchedule: updatedSchedule
+    };
+  }
+
+  async function generateTutorLesson(user, body = {}) {
+    if (!user?.id) throw mentorError("MEMBER_REQUIRED", "Member authentication required.", 401);
+
+    const type = body.type || "explain_weak_concept";
+    const conceptId = body.conceptId || "arrays-hashing";
+    const mistakeCategory = body.mistakeCategory || null;
+    const conceptA = body.conceptA || null;
+    const conceptB = body.conceptB || null;
+    const hintLevel = Number(body.hintLevel) || 1;
+
+    const baseContent = buildTutorLessonContent({
+      type,
+      conceptId,
+      mistakeCategory,
+      conceptA,
+      conceptB,
+      hintLevel
+    });
+
+    if (provider && provider.providerName !== "local" && (type === "explain_weak_concept" || type === "explain_mistake" || type === "compare_patterns")) {
+      try {
+        const systemPrompt = "You are Ada, the DSAverse Senior AI DSA Coach. Provide an intuitive, step-by-step, engaging DSA lesson tailored to the student's request. Keep your explanation crisp, use concrete code examples, avoid generic fluff, and explain the core invariants.";
+        let userMessage = "";
+        if (type === "explain_weak_concept") {
+          userMessage = `Explain the DSA concept '${CONCEPT_TAXONOMY[conceptId]?.title || conceptId}'. Detail when to choose this pattern, what invariant must be preserved, common edge cases, and an example problem.`;
+        } else if (type === "explain_mistake") {
+          userMessage = `Explain the recurring mistake pattern '${mistakeCategory || "boundary-condition"}'. Provide a concrete failing counter-example, the underlying mental misconception, and how to verify correctness systematically.`;
+        } else if (type === "compare_patterns") {
+          userMessage = `Contrast the pattern '${CONCEPT_TAXONOMY[conceptA]?.title || conceptA}' vs '${CONCEPT_TAXONOMY[conceptB]?.title || conceptB}'. Explain when to reach for each, differences in pointer movement/state maintenance, and memory trade-offs.`;
+        }
+
+        if (typeof provider.generateTeaching === "function") {
+          const aiResponse = await provider.generateTeaching({ systemPrompt, userMessage });
+          if (aiResponse && aiResponse.text) {
+            return {
+              ...baseContent,
+              text: aiResponse.text,
+              provider: provider.providerName || "gemini",
+              model: provider.model || null,
+              enhancedByAi: true
+            };
+          }
+        }
+      } catch (_err) {
+        // Fall back gracefully
+      }
+    }
+
+    return {
+      ...baseContent,
+      provider: "dsaverse-educational-engine",
+      model: "canonical-pedagogy-v1",
+      enhancedByAi: false
+    };
+  }
+
   return {
     cache,
     createReview,
@@ -1728,6 +1911,12 @@ function createAiCodeMentorService({
     executeCode,
     verifySolutions,
     getExecution,
+    getLearningProfile,
+    getConceptMastery,
+    getAdaptiveRecommendations,
+    getRevisionSchedule,
+    completeRevision,
+    generateTutorLesson,
     listReviews,
     reviewFor,
     deleteReview,
@@ -1744,6 +1933,8 @@ module.exports = {
   LANGUAGES,
   SECTION_IDS,
   QUOTA_TIMEZONE,
+  CONCEPT_TAXONOMY,
+  MASTERY_LEVELS,
   mentorError,
   validateRequest,
   validateAnalysis,

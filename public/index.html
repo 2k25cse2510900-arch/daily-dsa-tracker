@@ -647,6 +647,10 @@
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
               Advanced Animatic Mode
             </button>
+            <button id="mentorModeLearningBtn" class="mentor-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="mentorLearningWorkspace">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z"/></svg>
+              My Learning Journey
+            </button>
           </div>
           <a id="mentorLeetCodeLink" class="btn btn-light mentor-leetcode-link" href="https://leetcode.com/problems/two-sum/" target="_blank" rel="noopener noreferrer">
             View on LeetCode &#8599;
@@ -849,6 +853,7 @@
               <button class="mentor-action-chip" type="button" data-mentor-chip="complexity">Complexity Analysis</button>
               <button class="mentor-action-chip" type="button" data-mentor-chip="edge-cases">Edge Cases</button>
               <button class="mentor-action-chip" type="button" data-mentor-chip="code-comparison">Code Comparison</button>
+              <button class="mentor-action-chip" type="button" data-mentor-chip="learning-journey">My Learning Journey</button>
             </div>
 
             <!-- Mistake Detection Alert (When applicable) -->
@@ -1451,6 +1456,174 @@
             </div>
             <div class="mentor-code-block-wrap">
               <pre class="mentor-code-block animatic-code-block"><code id="animaticSynchronizedCode"></code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MY LEARNING JOURNEY WORKSPACE (MODULE 6) -->
+      <section id="mentorLearningWorkspace" class="mentor-workspace-section mentor-learning-workspace" role="tabpanel" aria-labelledby="mentorModeLearningBtn" hidden>
+        <!-- Coach Banner & Refresh -->
+        <div class="learning-coach-hero">
+          <div class="coach-hero-left">
+            <div class="coach-avatar">&#129302;</div>
+            <div class="coach-hero-info">
+              <h2 class="coach-hero-title">Ada &mdash; Adaptive DSA Coach</h2>
+              <p class="coach-hero-subtitle">Continuous mastery analysis, recurring mistake prevention, and spaced-repetition retention.</p>
+            </div>
+          </div>
+          <div class="coach-hero-actions">
+            <button id="coachRefreshBtn" class="btn btn-secondary btn-sm" type="button">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+              Refresh Coach
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Learning Overview Metrics Grid -->
+        <div class="mentor-card learning-overview-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">LEARNING OVERVIEW</span>
+              <h3 class="mentor-card-title">Practice Signals &amp; Mastery Breakdown</h3>
+            </div>
+            <span class="badge-tag" id="coachLastUpdatedBadge">Active</span>
+          </div>
+
+          <div class="learning-stats-grid">
+            <div class="mentor-stat-card">
+              <span class="mentor-stat-label">Problems Attempted</span>
+              <strong id="learningStatAttempted" class="mentor-stat-value">0</strong>
+              <span class="mentor-stat-sub">Across DSAverse daily submissions</span>
+            </div>
+            <div class="mentor-stat-card">
+              <span class="mentor-stat-label">Problems Solved</span>
+              <strong id="learningStatSolved" class="mentor-stat-value">0</strong>
+              <span class="mentor-stat-sub">Accepted &amp; verified passes</span>
+            </div>
+            <div class="mentor-stat-card">
+              <span class="mentor-stat-label">Execution Pass Rate</span>
+              <strong id="learningStatPassRate" class="mentor-stat-value">0%</strong>
+              <span class="mentor-stat-sub">Verified test runs</span>
+            </div>
+            <div class="mentor-stat-card">
+              <span class="mentor-stat-label">Revisions Due</span>
+              <strong id="learningStatRevisionDue" class="mentor-stat-value">0</strong>
+              <span class="mentor-stat-sub">Spaced repetition schedule</span>
+            </div>
+            <div class="mentor-stat-card">
+              <span class="mentor-stat-label">Strong Concepts</span>
+              <strong id="learningStatStrong" class="mentor-stat-value">0</strong>
+              <span class="mentor-stat-sub">Mastery level &ge; 85%</span>
+            </div>
+          </div>
+
+          <div class="learning-disclaimer-banner">
+            <span class="disclaimer-icon">&#9432;</span>
+            <p id="learningDisclaimerText" class="disclaimer-text">
+              AI assessments are educational estimations based strictly on your recorded DSAverse daily activity and code submissions. Not affiliated with official LeetCode lifetime statistics.
+            </p>
+          </div>
+        </div>
+
+        <!-- 2. Adaptive Recommendations Section -->
+        <div class="mentor-card learning-recs-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">ADAPTIVE GUIDANCE</span>
+              <h3 class="mentor-card-title">Recommended Next Actions</h3>
+            </div>
+          </div>
+          <div id="learningRecommendationsList" class="learning-recs-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 3. Concept Mastery Grid -->
+        <div class="mentor-card learning-mastery-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">CONCEPT MASTERY</span>
+              <h3 class="mentor-card-title">15 Core Pattern Mastery Levels</h3>
+            </div>
+            <div class="mastery-legend">
+              <span class="legend-chip chip-strong">Strong (&ge;85%)</span>
+              <span class="legend-chip chip-proficient">Proficient (65-84%)</span>
+              <span class="legend-chip chip-developing">Developing (35-64%)</span>
+              <span class="legend-chip chip-learning">Learning (&lt;35%)</span>
+              <span class="legend-chip chip-not-started">Not Started</span>
+            </div>
+          </div>
+          <div id="learningMasteryGrid" class="learning-mastery-grid">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 4. Spaced Repetition Revision Center -->
+        <div class="mentor-card learning-revision-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">SPACED REPETITION</span>
+              <h3 class="mentor-card-title">Revision Center</h3>
+            </div>
+            <div class="revision-filter-tabs" role="tablist">
+              <button class="revision-filter-tab active" data-rev-filter="due" type="button">Due for Revision (<span id="revDueCount">0</span>)</button>
+              <button class="revision-filter-tab" data-rev-filter="upcoming" type="button">Upcoming</button>
+              <button class="revision-filter-tab" data-rev-filter="recently_revised" type="button">Recently Revised</button>
+            </div>
+          </div>
+          <div id="learningRevisionList" class="learning-revision-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 5. Recurring Mistakes Retrospective -->
+        <div class="mentor-card learning-mistakes-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">MISTAKE RETROSPECTIVES</span>
+              <h3 class="mentor-card-title">Recurring Mistake Patterns</h3>
+            </div>
+          </div>
+          <div id="learningMistakesList" class="learning-mistakes-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 6. Structured Learning Path Roadmap -->
+        <div class="mentor-card learning-path-card">
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">CURRICULUM ROADMAP</span>
+              <h3 class="mentor-card-title">Adaptive Learning Path Progression</h3>
+            </div>
+          </div>
+          <div id="learningPathSteps" class="learning-path-steps">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 7. Interactive AI Tutor Lesson Drawer / Modal -->
+        <div id="learningTutorDrawer" class="mentor-card learning-tutor-drawer" hidden>
+          <div class="mentor-card-head">
+            <div class="mentor-card-title-wrap">
+              <span class="mentor-card-kicker">AI PERSONALIZED TUTOR</span>
+              <h3 class="mentor-card-title" id="tutorLessonTitle">Concept Lesson</h3>
+            </div>
+            <button id="closeTutorDrawerBtn" class="btn btn-sm btn-light" type="button">&times; Close</button>
+          </div>
+          <div class="tutor-drawer-body">
+            <div class="tutor-progressive-controls" id="tutorProgressiveControls">
+              <span class="tutor-step-label">Progressive Hint Stepper:</span>
+              <div class="tutor-hint-pills" role="group">
+                <button class="tutor-hint-pill active" data-hint="1" type="button">Hint 1: Direction</button>
+                <button class="tutor-hint-pill" data-hint="2" type="button">Hint 2: Key Observation</button>
+                <button class="tutor-hint-pill" data-hint="3" type="button">Hint 3: Blueprint</button>
+                <button class="tutor-hint-pill" data-hint="4" type="button">Full Walkthrough</button>
+              </div>
+            </div>
+            <div id="tutorLessonContent" class="tutor-lesson-content">
+              <!-- Rendered markdown / lesson text -->
             </div>
           </div>
         </div>

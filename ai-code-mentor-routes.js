@@ -143,6 +143,90 @@ function createAiCodeMentorRouter({ memberOnly, serviceFor, reviewRateLimit, aud
     }
   });
 
+  // Module 6: Personalized Learning & Adaptive DSA Coach Endpoints
+  router.get("/learning/profile", async (req, res) => {
+    try {
+      const profile = await serviceFor().getLearningProfile(req.member);
+      res.json(profile);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/learning/mastery", async (req, res) => {
+    try {
+      const mastery = await serviceFor().getConceptMastery(req.member);
+      res.json(mastery);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/learning/recommendations", async (req, res) => {
+    try {
+      const recommendations = await serviceFor().getAdaptiveRecommendations(req.member);
+      res.json(recommendations);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/learning/path", async (req, res) => {
+    try {
+      const profile = await serviceFor().getLearningProfile(req.member);
+      res.json({ learningPath: profile.learningPath, overview: profile.overview });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.get("/learning/revision", async (req, res) => {
+    try {
+      const schedule = await serviceFor().getRevisionSchedule(req.member);
+      res.json(schedule);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/learning/revision/complete", async (req, res) => {
+    try {
+      const result = await serviceFor().completeRevision(req.member, req.body);
+      audit(req, "ai-code-mentor-revision-complete", req.body?.conceptId);
+      res.json(result);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/learning/tutor-lesson", reviewRateLimit, async (req, res) => {
+    try {
+      const lesson = await serviceFor().generateTutorLesson(req.member, req.body);
+      audit(req, "ai-code-mentor-tutor-lesson", req.body?.conceptId || req.body?.type);
+      res.json(lesson);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/learning/assess", reviewRateLimit, async (req, res) => {
+    try {
+      const lesson = await serviceFor().generateTutorLesson(req.member, req.body);
+      res.json(lesson);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  router.post("/learning/refresh", async (req, res) => {
+    try {
+      const profile = await serviceFor().getLearningProfile(req.member);
+      res.json(profile);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   router.post("/reviews", reviewRateLimit, async (req, res) => {
     try {
       const review = await serviceFor().createReview(req.member, req.body);
