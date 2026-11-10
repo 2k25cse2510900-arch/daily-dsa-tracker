@@ -22,7 +22,8 @@ const PAGE_INFO = {
   leaderboard: { title: "Leaderboard", id: "leaderboardPage" },
   report: { title: "Weekly Report", id: "reportPage" },
   aimentor: { title: "AI Code Mentor", id: "aiMentorPage" },
-  visualizer: { title: "Algorithm Visualizer", id: "visualizerPage" }
+  visualizer: { title: "Algorithm Visualizer", id: "visualizerPage" },
+  library: { title: "Community DSA Library", id: "libraryPage" }
 };
 
 let state = { members: [], weeks: {}, currentWeek: 1 };
@@ -542,6 +543,9 @@ function showPage(pageName) {
   }
   if (pageName === "visualizer") {
     initVisualizerPage();
+  }
+  if (pageName === "library") {
+    initLibraryPage();
   }
   if (pageName === "daily" && isAdmin) loadDailyActivityStatus();
   if (pageName === "arena") {
@@ -2547,6 +2551,12 @@ function initializeMemberDashboardNavigation() {
       showPage("visualizer");
     });
   }
+  const memberLibraryNav = $("memberLibraryNav");
+  if (memberLibraryNav) {
+    memberLibraryNav.addEventListener("click", () => {
+      showPage("library");
+    });
+  }
   $("memberProgressNav").addEventListener("click", async () => {
     showMemberProgressView();
     try { await loadMemberProgress(memberWeek); } catch (error) { showToast(error.message, "error"); }
@@ -3232,6 +3242,10 @@ async function navigatePage(page) {
   }
   if (page === "visualizer") {
     showPage("visualizer");
+    return true;
+  }
+  if (page === "library") {
+    showPage("library");
     return true;
   }
   if (isAdmin) { showPage(page); return true; }
@@ -8690,6 +8704,13 @@ function initializeAiCodeMentor() {
       openVisualizerFromMentor(curProb);
     });
   }
+  const mentorSaveToLibraryBtn = $("mentorSaveToLibraryBtn");
+  if (mentorSaveToLibraryBtn && !mentorSaveToLibraryBtn.dataset.bound) {
+    mentorSaveToLibraryBtn.dataset.bound = "true";
+    mentorSaveToLibraryBtn.addEventListener("click", () => {
+      openLibraryEditorFromMentor();
+    });
+  }
 
   // 3. Code Editor interactions
   const codeInput = $("mentorCodeInput");
@@ -11604,6 +11625,1322 @@ window.deleteHistoryItem = async function(id) {
     showToast(err.message || "Failed to delete item.", "error");
   }
 };
+
+
+/* ==========================================================================
+   MODULE 9: COMMUNITY DSA LIBRARY CLIENT CONTROLLER
+   ========================================================================== */
+
+const libraryState = {
+  activePanel: "browse", // browse, saved, contributions, collections, suggestions, moderation
+  searchQuery: "",
+  topic: "",
+  difficulty: "",
+  contentType: "",
+  sortBy: "newest",
+  page: 1,
+  limit: 12,
+  total: 0,
+  totalPages: 1,
+  resources: [],
+  activeResource: null,
+  bookmarkedIds: new Set(),
+  helpfulIds: new Set(),
+  initialized: false
+};
+
+function renderSafeMarkdown(text) {
+  if (!text) return "";
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+  let escaped = escapeFn(String(text));
+
+  // Multi-line code blocks
+  escaped = escaped.replace(new RegExp('```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```', 'g'), (match, lang, code) => {
+    return '<div class="lib-code-box"><div class="lib-code-box-header"><span>' + (lang || 'code') + '</span></div><pre class="lib-code-pre"><code>' + code + '</code></pre></div>';
+  });
+
+  // Inline code
+  escaped = escaped.replace(new RegExp('`([^`]+)`', 'g'), '<code>$1</code>');
+
+  // Headings
+  escaped = escaped.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+  escaped = escaped.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  escaped = escaped.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+  // Blockquotes
+  escaped = escaped.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+  // Bold & Italics
+  escaped = escaped.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
+  escaped = escaped.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
+
+  // Bullet Lists
+  escaped = escaped.replace(/^[\*\-] (.*$)/gim, '<li>$1</li>');
+  escaped = escaped.replace(/(<li>.*<\/li>(?:\r?\n)?)+/g, match => '<ul>' + match + '</ul>');
+
+  // Safe Links (only http/https/relative)
+  escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s"\)]+|\/[^\s"\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+  // Paragraphs
+  const paragraphs = escaped.split(/(?:\r?\n){2,}/);
+  return paragraphs.map(p => {
+    const trimmed = p.trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('<h') || trimmed.startsWith('<ul') || trimmed.startsWith('<div') || trimmed.startsWith('<blockquote')) {
+      return trimmed;
+    }
+    return '<p>' + trimmed.replace(/\r?\n/g, '<br>') + '</p>';
+  }).join('');
+}
+
+function initLibraryPage() {
+  if (libraryState.initialized) {
+    loadActiveLibraryPanel();
+    return;
+  }
+  libraryState.initialized = true;
+
+  // 1. Subnavigation Tabs
+  document.querySelectorAll(".lib-subnav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const panel = btn.dataset.panel || "browse";
+      switchLibraryPanel(panel);
+    });
+  });
+
+  // Check admin visibility for moderation tab
+  const modNav = document.querySelector('.lib-subnav-btn[data-panel="moderation"]');
+  if (modNav) {
+    modNav.style.display = (typeof isAdmin !== "undefined" && isAdmin) ? "flex" : "none";
+  }
+
+  // 2. Search & Filters
+  const searchInput = $("libSearchInput");
+  let searchTimer = null;
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        libraryState.searchQuery = e.target.value.trim();
+        libraryState.page = 1;
+        fetchBrowseResources();
+      }, 300);
+    });
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        clearTimeout(searchTimer);
+        libraryState.searchQuery = searchInput.value.trim();
+        libraryState.page = 1;
+        fetchBrowseResources();
+      }
+    });
+  }
+
+  const searchBtn = $("libSearchBtn");
+  if (searchBtn) {
+    searchBtn.addEventListener("click", () => {
+      if (searchInput) libraryState.searchQuery = searchInput.value.trim();
+      libraryState.page = 1;
+      fetchBrowseResources();
+    });
+  }
+
+  const topicFilter = $("libTopicFilter");
+  if (topicFilter) {
+    topicFilter.addEventListener("change", (e) => {
+      libraryState.topic = e.target.value;
+      libraryState.page = 1;
+      fetchBrowseResources();
+    });
+  }
+
+  const diffFilter = $("libFilterDifficulty");
+  if (diffFilter) {
+    diffFilter.addEventListener("change", (e) => {
+      libraryState.difficulty = e.target.value;
+      libraryState.page = 1;
+      fetchBrowseResources();
+    });
+  }
+
+  const typeFilter = $("libFilterType");
+  if (typeFilter) {
+    typeFilter.addEventListener("change", (e) => {
+      libraryState.contentType = e.target.value;
+      libraryState.page = 1;
+      fetchBrowseResources();
+    });
+  }
+
+  const sortSelect = $("libSortSelect");
+  if (sortSelect) {
+    sortSelect.addEventListener("change", (e) => {
+      libraryState.sortBy = e.target.value;
+      libraryState.page = 1;
+      fetchBrowseResources();
+    });
+  }
+
+  const resetBtn = $("libResetFiltersBtn");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      if (topicFilter) topicFilter.value = "";
+      if (diffFilter) diffFilter.value = "";
+      if (typeFilter) typeFilter.value = "";
+      if (sortSelect) sortSelect.value = "newest";
+      libraryState.searchQuery = "";
+      libraryState.topic = "";
+      libraryState.difficulty = "";
+      libraryState.contentType = "";
+      libraryState.sortBy = "newest";
+      libraryState.page = 1;
+      fetchBrowseResources();
+    });
+  }
+
+  // 3. Pagination
+  const prevBtn = $("libPrevPageBtn");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (libraryState.page > 1) {
+        libraryState.page--;
+        fetchBrowseResources();
+      }
+    });
+  }
+
+  const nextBtn = $("libNextPageBtn");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (libraryState.page < libraryState.totalPages) {
+        libraryState.page++;
+        fetchBrowseResources();
+      }
+    });
+  }
+
+  // 4. Create Resource Button
+  const createBtn = $("libCreateResourceBtn");
+  if (createBtn) {
+    createBtn.addEventListener("click", () => {
+      openResourceEditorModal();
+    });
+  }
+
+  // 5. Editor Modal Controls
+  const closeEditorBtn = $("libCloseEditorBtn");
+  const cancelEditBtn = $("libCancelEditBtn");
+  const editorOverlay = $("libEditorOverlay");
+  [closeEditorBtn, cancelEditBtn, editorOverlay].forEach(btn => {
+    if (btn) btn.addEventListener("click", closeResourceEditorModal);
+  });
+
+  const visSelect = $("libFormVisibility");
+  if (visSelect) {
+    visSelect.addEventListener("change", (e) => {
+      const groupWrap = $("libFormGroupWrap");
+      if (groupWrap) groupWrap.style.display = e.target.value === "group" ? "block" : "none";
+    });
+  }
+
+  const polishBtn = $("libAiPolishDraftBtn");
+  if (polishBtn) {
+    polishBtn.addEventListener("click", runEditorAiPolish);
+  }
+
+  const previewBtn = $("libTogglePreviewBtn");
+  if (previewBtn) {
+    previewBtn.addEventListener("click", () => {
+      const contentEl = $("libFormContent");
+      const previewEl = $("libPreviewPane");
+      if (!contentEl || !previewEl) return;
+      if (previewEl.style.display === "none") {
+        previewEl.innerHTML = renderSafeMarkdown(contentEl.value || "");
+        previewEl.style.display = "block";
+        contentEl.style.display = "none";
+        previewBtn.textContent = "Edit Mode";
+      } else {
+        previewEl.style.display = "none";
+        contentEl.style.display = "block";
+        previewBtn.textContent = "Preview Markdown";
+      }
+    });
+  }
+
+  const saveDraftBtn = $("libSaveDraftBtn");
+  if (saveDraftBtn) {
+    saveDraftBtn.addEventListener("click", () => submitResourceForm("draft"));
+  }
+
+  const publishBtn = $("libSubmitPublishBtn");
+  if (publishBtn) {
+    publishBtn.addEventListener("click", () => submitResourceForm("published"));
+  }
+
+  // 6. Detail Modal Controls
+  const closeDetailBtn = $("libCloseDetailBtn");
+  const detailOverlay = $("libDetailOverlay");
+  [closeDetailBtn, detailOverlay].forEach(btn => {
+    if (btn) btn.addEventListener("click", closeResourceDetailModal);
+  });
+
+  const helpfulBtn = $("libHelpfulBtn");
+  if (helpfulBtn) {
+    helpfulBtn.addEventListener("click", () => {
+      if (libraryState.activeResource) toggleHelpfulReaction(libraryState.activeResource._id || libraryState.activeResource.id);
+    });
+  }
+
+  const bookmarkBtn = $("libBookmarkBtn");
+  if (bookmarkBtn) {
+    bookmarkBtn.addEventListener("click", () => {
+      if (libraryState.activeResource) toggleBookmark(libraryState.activeResource._id || libraryState.activeResource.id);
+    });
+  }
+
+  const editResBtn = $("libEditResourceBtn");
+  if (editResBtn) {
+    editResBtn.addEventListener("click", () => {
+      if (libraryState.activeResource) {
+        closeResourceDetailModal();
+        openResourceEditorModal(libraryState.activeResource);
+      }
+    });
+  }
+
+  const copyCodeBtn = $("libCopyCodeBtn");
+  if (copyCodeBtn) {
+    copyCodeBtn.addEventListener("click", () => {
+      const codePre = $("libDetailCodePre");
+      if (codePre && navigator.clipboard) {
+        navigator.clipboard.writeText(codePre.textContent).then(() => {
+          showToast("Code snippet copied to clipboard!", "success");
+        }).catch(() => {
+          showToast("Failed to copy code", "error");
+        });
+      }
+    });
+  }
+
+  const visualizerBtn = $("libDetailVisualizerBtn");
+  if (visualizerBtn) {
+    visualizerBtn.addEventListener("click", () => {
+      if (!libraryState.activeResource) return;
+      const topic = libraryState.activeResource.topic || "";
+      closeResourceDetailModal();
+      showPage("visualizer");
+    });
+  }
+
+  // AI Assistant in Detail
+  const aiAssistantBtn = $("libAiAssistantBtn");
+  const aiDropdownMenu = $("libAiDropdownMenu");
+  if (aiAssistantBtn && aiDropdownMenu) {
+    aiAssistantBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      aiDropdownMenu.style.display = aiDropdownMenu.style.display === "block" ? "none" : "block";
+    });
+    document.addEventListener("click", () => {
+      if (aiDropdownMenu) aiDropdownMenu.style.display = "none";
+    });
+  }
+
+  const aiSummarizeBtn = $("libAiSummarizeBtn");
+  if (aiSummarizeBtn) {
+    aiSummarizeBtn.addEventListener("click", () => runAiAssistant("summarize"));
+  }
+
+  const aiExplainBtn = $("libAiExplainBtn");
+  if (aiExplainBtn) {
+    aiExplainBtn.addEventListener("click", () => runAiAssistant("explain"));
+  }
+
+  const aiRevisionBtn = $("libAiRevisionBtn");
+  if (aiRevisionBtn) {
+    aiRevisionBtn.addEventListener("click", () => runAiAssistant("revision-points"));
+  }
+
+  const closeAiBanner = $("libCloseAiBanner");
+  if (closeAiBanner) {
+    closeAiBanner.addEventListener("click", () => {
+      const banner = $("libAiResponseBanner");
+      if (banner) banner.style.display = "none";
+    });
+  }
+
+  // Suggestion & Report Triggers
+  const suggestBtn = $("libSuggestEditBtn");
+  if (suggestBtn) {
+    suggestBtn.addEventListener("click", () => {
+      if (libraryState.activeResource) openSuggestModal(libraryState.activeResource);
+    });
+  }
+
+  const reportBtn = $("libReportBtn");
+  if (reportBtn) {
+    reportBtn.addEventListener("click", () => {
+      if (libraryState.activeResource) openReportModal(libraryState.activeResource._id || libraryState.activeResource.id);
+    });
+  }
+
+  // Suggestion Modal actions
+  const closeSuggestBtn = $("libCloseSuggestBtn");
+  const cancelSuggestBtn = $("libCancelSuggestBtn");
+  const suggestOverlay = $("libSuggestOverlay");
+  [closeSuggestBtn, cancelSuggestBtn, suggestOverlay].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => {
+      const m = $("libSuggestModal");
+      if (m) m.classList.remove("active");
+    });
+  });
+
+  const submitSuggestBtn = $("libSubmitSuggestBtn");
+  if (submitSuggestBtn) {
+    submitSuggestBtn.addEventListener("click", submitSuggestion);
+  }
+
+  // Report Modal actions
+  const closeReportBtn = $("libCloseReportBtn");
+  const cancelReportBtn = $("libCancelReportBtn");
+  const reportOverlay = $("libReportOverlay");
+  [closeReportBtn, cancelReportBtn, reportOverlay].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => {
+      const m = $("libReportModal");
+      if (m) m.classList.remove("active");
+    });
+  });
+
+  const submitReportBtn = $("libSubmitReportBtn");
+  if (submitReportBtn) {
+    submitReportBtn.addEventListener("click", submitReport);
+  }
+
+  // Collections panel buttons
+  const newColBtn = $("libNewCollectionBtn");
+  const cancelColBtn = $("libCancelCollectionBtn");
+  const colFormCard = $("libNewCollectionFormCard");
+  if (newColBtn && colFormCard) {
+    newColBtn.addEventListener("click", () => {
+      colFormCard.style.display = "block";
+    });
+  }
+  if (cancelColBtn && colFormCard) {
+    cancelColBtn.addEventListener("click", () => {
+      colFormCard.style.display = "none";
+    });
+  }
+
+  const saveColBtn = $("libSaveCollectionBtn");
+  if (saveColBtn) {
+    saveColBtn.addEventListener("click", submitNewCollection);
+  }
+
+  const refreshSugBtn = $("libRefreshSuggestionsBtn");
+  if (refreshSugBtn) {
+    refreshSugBtn.addEventListener("click", loadSuggestionsPanel);
+  }
+
+  const refreshRepBtn = $("libRefreshReportsBtn");
+  if (refreshRepBtn) {
+    refreshRepBtn.addEventListener("click", loadModerationPanel);
+  }
+
+  // Initial load
+  loadActiveLibraryPanel();
+}
+
+function switchLibraryPanel(panel) {
+  libraryState.activePanel = panel;
+
+  document.querySelectorAll(".lib-subnav-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.panel === panel);
+  });
+
+  const panels = {
+    browse: $("libBrowsePanel"),
+    saved: $("libSavedPanel"),
+    contributions: $("libContributionsPanel"),
+    collections: $("libCollectionsPanel"),
+    suggestions: $("libSuggestionsPanel"),
+    moderation: $("libModerationPanel")
+  };
+
+  Object.entries(panels).forEach(([pKey, pEl]) => {
+    if (pEl) pEl.style.display = (pKey === panel) ? "block" : "none";
+  });
+
+  loadActiveLibraryPanel();
+}
+
+function loadActiveLibraryPanel() {
+  switch (libraryState.activePanel) {
+    case "browse":
+      fetchBrowseResources();
+      break;
+    case "saved":
+      loadSavedPanel();
+      break;
+    case "contributions":
+      loadContributionsPanel();
+      break;
+    case "collections":
+      loadCollectionsPanel();
+      break;
+    case "suggestions":
+      loadSuggestionsPanel();
+      break;
+    case "moderation":
+      loadModerationPanel();
+      break;
+  }
+}
+
+async function fetchBrowseResources() {
+  const grid = $("libResourceGrid");
+  const countEl = $("libResultsCount");
+  if (!grid) return;
+
+  grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-spinner fa-spin lib-empty-icon"></i><div class="lib-empty-title">Loading Community Resources...</div></div>';
+
+  try {
+    const params = new URLSearchParams();
+    if (libraryState.searchQuery) params.set("search", libraryState.searchQuery);
+    if (libraryState.topic) params.set("topic", libraryState.topic);
+    if (libraryState.difficulty) params.set("difficulty", libraryState.difficulty);
+    if (libraryState.contentType) params.set("contentType", libraryState.contentType);
+    if (libraryState.sortBy) params.set("sortBy", libraryState.sortBy);
+    params.set("page", String(libraryState.page));
+    params.set("limit", String(libraryState.limit));
+
+    const res = await apiRequest('/api/library/resources?' + params.toString());
+    const resources = res.resources || [];
+    libraryState.resources = resources;
+    libraryState.total = res.total || resources.length;
+    libraryState.totalPages = res.totalPages || Math.max(1, Math.ceil(libraryState.total / libraryState.limit));
+
+    if (countEl) countEl.textContent = `Showing ${resources.length} of ${libraryState.total} notes`;
+
+    renderResourceCards(grid, resources);
+    updatePaginationUI();
+  } catch (err) {
+    grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-exclamation-triangle lib-empty-icon" style="color:#ef4444;"></i><div class="lib-empty-title">Could not load resources</div><div class="lib-empty-desc">' + (err.message || "") + '</div></div>';
+  }
+}
+
+function renderResourceCards(container, resources) {
+  if (!resources || resources.length === 0) {
+    container.innerHTML = `
+      <div class="lib-empty-state" style="grid-column: 1 / -1;">
+        <i class="fa fa-book-open lib-empty-icon"></i>
+        <div class="lib-empty-title">No educational notes found</div>
+        <div class="lib-empty-desc">
+          ${libraryState.searchQuery ? "No resources match your search criteria. Try modifying your keywords." : "Be the first to contribute a concept note, code snippet, or algorithm summary to the library!"}
+        </div>
+        <button class="btn btn-primary" onclick="openResourceEditorModal()">
+          <i class="fa fa-plus"></i> Create Note
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+  container.innerHTML = resources.map(item => {
+    const rId = item._id || item.id;
+    const authorName = item.author?.name || item.authorName || "DSA Scholar";
+    const authorInitial = escapeFn((authorName[0] || "D").toUpperCase());
+    const title = escapeFn(item.title || "Untitled Note");
+    const summary = escapeFn(item.description || (item.content ? item.content.slice(0, 160) + "..." : "No summary available."));
+    const topic = escapeFn(item.topic || "general");
+    const contentType = escapeFn(item.contentType || "concept-note");
+    const difficulty = escapeFn(item.difficulty || "Medium");
+    const diffClass = difficulty.toLowerCase();
+    const visibility = escapeFn(item.visibility || "community");
+    const helpfulCount = typeof item.helpfulCount === "number" ? item.helpfulCount : (item.stats?.reactionsCount || 0);
+    const bookmarkCount = typeof item.bookmarkCount === "number" ? item.bookmarkCount : (item.stats?.bookmarksCount || 0);
+    const isDraft = item.status === "draft";
+
+    const tagsHtml = Array.isArray(item.tags) && item.tags.length > 0
+      ? item.tags.slice(0, 3).map(t => `<span class="lib-tag-pill">#${escapeFn(t)}</span>`).join("")
+      : "";
+
+    return `
+      <div class="lib-resource-card" data-id="${rId}" onclick="openResourceDetailModal('${rId}')">
+        <div class="lib-card-top">
+          <div class="lib-card-badges">
+            <span class="badge-lib-type">${contentType.replace(/-/g, " ")}</span>
+            <span class="badge-lib-topic">${topic.replace(/-/g, " ")}</span>
+            <span class="badge-lib-level ${diffClass}">${difficulty}</span>
+            <span class="badge-lib-visibility">${visibility}</span>
+            ${isDraft ? '<span class="badge-lib-status-draft">Draft</span>' : ''}
+          </div>
+          <h3 class="lib-card-title">${title}</h3>
+          <p class="lib-card-summary">${summary}</p>
+          <div class="lib-card-tags">${tagsHtml}</div>
+        </div>
+
+        <div class="lib-card-footer">
+          <div class="lib-author-info">
+            <div class="lib-author-avatar">${authorInitial}</div>
+            <span class="lib-author-name">${escapeFn(authorName)}</span>
+          </div>
+          <div class="lib-card-stats">
+            <span class="lib-stat-badge ${helpfulCount > 0 ? 'helpful active' : ''}" title="Helpful votes">
+              <i class="fa fa-thumbs-up"></i> ${helpfulCount}
+            </span>
+            <span class="lib-stat-badge ${bookmarkCount > 0 ? 'bookmarked active' : ''}" title="Saved bookmarks">
+              <i class="fa fa-bookmark"></i> ${bookmarkCount}
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function updatePaginationUI() {
+  const prevBtn = $("libPrevPageBtn");
+  const nextBtn = $("libNextPageBtn");
+  const indicator = $("libPageIndicator");
+
+  if (prevBtn) prevBtn.disabled = libraryState.page <= 1;
+  if (nextBtn) nextBtn.disabled = libraryState.page >= libraryState.totalPages;
+  if (indicator) indicator.textContent = `Page ${libraryState.page} of ${libraryState.totalPages}`;
+}
+
+async function openResourceDetailModal(resourceId) {
+  try {
+    const res = await apiRequest('/api/library/resources/' + resourceId);
+    const item = res.resource;
+    if (!item) throw new Error("Resource not found");
+
+    libraryState.activeResource = item;
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+    const rId = item._id || item.id;
+
+    // Badges & Meta
+    const typeBadge = $("libDetailTypeBadge");
+    if (typeBadge) typeBadge.textContent = (item.contentType || "concept-note").replace(/-/g, " ").toUpperCase();
+
+    const topicBadge = $("libDetailTopicBadge");
+    if (topicBadge) topicBadge.textContent = item.topic || "General";
+
+    const diffBadge = $("libDetailDiffBadge");
+    if (diffBadge) {
+      diffBadge.textContent = item.difficulty || "Medium";
+      diffBadge.className = `badge-lib-level ${(item.difficulty || "medium").toLowerCase()}`;
+    }
+
+    const visBadge = $("libDetailVisBadge");
+    if (visBadge) visBadge.textContent = item.visibility || "community";
+
+    const titleEl = $("libDetailTitle");
+    if (titleEl) titleEl.textContent = item.title || "Untitled";
+
+    const descEl = $("libDetailDesc");
+    if (descEl) descEl.textContent = item.description || "";
+
+    const authorName = item.author?.name || item.authorName || "DSA Scholar";
+    const authorEl = $("libDetailAuthor");
+    if (authorEl) authorEl.textContent = authorName;
+
+    const avatarEl = $("libDetailAvatar");
+    if (avatarEl) avatarEl.textContent = (authorName[0] || "D").toUpperCase();
+
+    const datesEl = $("libDetailDates");
+    if (datesEl) {
+      const d = item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "Recently";
+      datesEl.textContent = `Created on ${d} ${item.status === 'draft' ? '(Draft)' : ''}`;
+    }
+
+    // Body content
+    const bodyEl = $("libDetailBody");
+    if (bodyEl) {
+      bodyEl.innerHTML = renderSafeMarkdown(item.content || item.body || "");
+    }
+
+    // Code snippet
+    const codeSec = $("libDetailCodeSection");
+    const codePre = $("libDetailCodePre");
+    const codeLang = $("libDetailCodeLang");
+    const codeText = typeof item.codeSnippet === "object" ? item.codeSnippet?.code : item.codeSnippet;
+    const codeLanguage = typeof item.codeSnippet === "object" ? item.codeSnippet?.language : item.codeLanguage;
+
+    if (codeText && codeText.trim()) {
+      if (codeSec) codeSec.style.display = "block";
+      if (codePre) codePre.textContent = codeText;
+      if (codeLang) codeLang.textContent = (codeLanguage || "code").toUpperCase();
+    } else {
+      if (codeSec) codeSec.style.display = "none";
+    }
+
+    // Complexity
+    const compRow = $("libDetailComplexityRow");
+    const timeChip = $("libDetailTimeChip");
+    const spaceChip = $("libDetailSpaceChip");
+    const timeVal = item.complexity?.time || item.timeComplexity || "";
+    const spaceVal = item.complexity?.space || item.spaceComplexity || "";
+
+    if (timeVal || spaceVal) {
+      if (compRow) compRow.style.display = "flex";
+      if (timeChip) timeChip.textContent = timeVal ? `Time: ${timeVal}` : "Time: O(1)";
+      if (spaceChip) spaceChip.textContent = spaceVal ? `Space: ${spaceVal}` : "Space: O(1)";
+    } else {
+      if (compRow) compRow.style.display = "none";
+    }
+
+    // Linked problem
+    const probPill = $("libDetailProblemLink");
+    const probText = $("libDetailProblemText");
+    if (item.problemSlug) {
+      if (probPill) probPill.style.display = "inline-flex";
+      if (probText) probText.textContent = item.problemSlug;
+    } else {
+      if (probPill) probPill.style.display = "none";
+    }
+
+    // Reaction & Bookmark Buttons
+    const helpfulCount = typeof item.helpfulCount === "number" ? item.helpfulCount : 0;
+    const helpfulCountEl = $("libHelpfulCount");
+    if (helpfulCountEl) helpfulCountEl.textContent = String(helpfulCount);
+
+    const helpfulBtn = $("libHelpfulBtn");
+    if (helpfulBtn) {
+      helpfulBtn.classList.toggle("active-helpful", Boolean(item.hasReacted));
+    }
+
+    const bookmarkBtn = $("libBookmarkBtn");
+    const bookmarkLabel = $("libBookmarkLabel");
+    if (bookmarkBtn) {
+      const isSaved = Boolean(item.isBookmarked);
+      bookmarkBtn.classList.toggle("active-bookmark", isSaved);
+      if (bookmarkLabel) bookmarkLabel.textContent = isSaved ? "Saved" : "Save";
+    }
+
+    // Edit permission check
+    const currentUid = typeof viewerProfile !== "undefined" && viewerProfile?.id ? viewerProfile.id : (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : null);
+    const isAuthor = currentUid && (item.author?.id === currentUid || item.authorId === currentUid);
+    const isUserAdmin = typeof isAdmin !== "undefined" && isAdmin;
+
+    const editBtn = $("libEditResourceBtn");
+    if (editBtn) editBtn.style.display = (isAuthor || isUserAdmin) ? "inline-flex" : "none";
+
+    const reportBtn = $("libReportBtn");
+    if (reportBtn) reportBtn.style.display = isAuthor ? "none" : "inline-flex";
+
+    // Close AI banner if opened
+    const aiBanner = $("libAiResponseBanner");
+    if (aiBanner) aiBanner.style.display = "none";
+
+    // Show modal
+    const modal = $("libDetailModal");
+    if (modal) modal.classList.add("active");
+  } catch (err) {
+    showToast(err.message || "Failed to load resource details", "error");
+  }
+}
+
+function closeResourceDetailModal() {
+  const modal = $("libDetailModal");
+  if (modal) modal.classList.remove("active");
+}
+
+function openResourceEditorModal(res = null) {
+  const modal = $("libEditorModal");
+  if (!modal) return;
+
+  const titleEl = $("libEditorModalTitle");
+  if (titleEl) titleEl.textContent = res ? "Edit Educational Resource" : "Create Learning Resource";
+
+  const idInput = $("libFormResourceId");
+  const titleInput = $("libFormTitle");
+  const descInput = $("libFormDesc");
+  const topicInput = $("libFormTopic");
+  const diffInput = $("libFormDifficulty");
+  const typeInput = $("libFormType");
+  const subtopicInput = $("libFormSubtopic");
+  const visInput = $("libFormVisibility");
+  const tagsInput = $("libFormTags");
+  const probInput = $("libFormProblemSlug");
+  const contentInput = $("libFormContent");
+  const langInput = $("libFormCodeLang");
+  const timeInput = $("libFormTime");
+  const spaceInput = $("libFormSpace");
+  const codeInput = $("libFormCodeSnippet");
+
+  if (idInput) idInput.value = res ? (res._id || res.id) : "";
+  if (titleInput) titleInput.value = res?.title || "";
+  if (descInput) descInput.value = res?.description || "";
+  if (topicInput) topicInput.value = res?.topic || "Arrays";
+  if (diffInput) diffInput.value = res?.difficulty || "Medium";
+  if (typeInput) typeInput.value = res?.contentType || "concept-note";
+  if (subtopicInput) subtopicInput.value = res?.subtopic || "";
+  if (visInput) visInput.value = res?.visibility || "community";
+  if (tagsInput) tagsInput.value = (res?.tags || []).join(", ");
+  if (probInput) probInput.value = res?.problemSlug || "";
+  if (contentInput) contentInput.value = res?.content || res?.body || "";
+  if (langInput) langInput.value = res?.codeSnippet?.language || res?.codeLanguage || "python";
+  if (timeInput) timeInput.value = res?.complexity?.time || res?.timeComplexity || "";
+  if (spaceInput) spaceInput.value = res?.complexity?.space || res?.spaceComplexity || "";
+  if (codeInput) codeInput.value = res?.codeSnippet?.code || res?.codeSnippet || "";
+
+  // Reset preview mode
+  const previewEl = $("libPreviewPane");
+  const previewBtn = $("libTogglePreviewBtn");
+  if (previewEl) previewEl.style.display = "none";
+  if (contentInput) contentInput.style.display = "block";
+  if (previewBtn) previewBtn.textContent = "Preview Markdown";
+
+  modal.classList.add("active");
+}
+
+function closeResourceEditorModal() {
+  const modal = $("libEditorModal");
+  if (modal) modal.classList.remove("active");
+}
+
+async function submitResourceForm(status = "published") {
+  const rId = $("libFormResourceId")?.value?.trim();
+  const title = $("libFormTitle")?.value?.trim();
+  const description = $("libFormDesc")?.value?.trim();
+  const topic = $("libFormTopic")?.value || "Arrays";
+  const difficulty = $("libFormDifficulty")?.value || "Medium";
+  const contentType = $("libFormType")?.value || "concept-note";
+  const subtopic = $("libFormSubtopic")?.value?.trim() || "";
+  const visibility = $("libFormVisibility")?.value || "community";
+  const tagsStr = $("libFormTags")?.value || "";
+  const problemSlug = $("libFormProblemSlug")?.value?.trim() || "";
+  const content = $("libFormContent")?.value?.trim() || "";
+  const codeLang = $("libFormCodeLang")?.value || "python";
+  const timeComplexity = $("libFormTime")?.value?.trim() || "";
+  const spaceComplexity = $("libFormSpace")?.value?.trim() || "";
+  const codeSnippet = $("libFormCodeSnippet")?.value || "";
+
+  if (!title || title.length < 3) {
+    showToast("Title must be at least 3 characters", "error");
+    return;
+  }
+
+  if (!content && !description) {
+    showToast("Please provide content or a description for the resource", "error");
+    return;
+  }
+
+  const tags = tagsStr.split(",").map(t => t.trim()).filter(Boolean);
+
+  const payload = {
+    title,
+    description,
+    contentType,
+    topic,
+    subtopic,
+    difficulty,
+    visibility,
+    tags,
+    problemSlug,
+    content: content || description,
+    status,
+    complexity: {
+      time: timeComplexity,
+      space: spaceComplexity
+    },
+    codeSnippet: {
+      code: codeSnippet,
+      language: codeLang
+    }
+  };
+
+  try {
+    if (rId) {
+      await apiRequest('/api/library/resources/' + rId, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
+      showToast("Resource updated successfully!", "success");
+    } else {
+      await apiRequest('/api/library/resources', {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      showToast(status === "published" ? "Resource published to library!" : "Draft saved!", "success");
+    }
+
+    closeResourceEditorModal();
+    loadActiveLibraryPanel();
+  } catch (err) {
+    showToast(err.message || "Failed to save resource", "error");
+  }
+}
+
+async function runEditorAiPolish() {
+  const contentEl = $("libFormContent");
+  const titleEl = $("libFormTitle");
+  if (!contentEl || (!contentEl.value && !titleEl?.value)) {
+    showToast("Enter draft content before polishing", "error");
+    return;
+  }
+
+  const polishBtn = $("libAiPolishDraftBtn");
+  if (polishBtn) {
+    polishBtn.disabled = true;
+    polishBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Polishing...';
+  }
+
+  try {
+    const res = await apiRequest('/api/library/ai/improve-draft', {
+      method: "POST",
+      body: JSON.stringify({
+        title: titleEl?.value || "DSA Note",
+        draftText: contentEl.value
+      })
+    });
+    if (res.improvedText) {
+      contentEl.value = res.improvedText;
+      showToast("Draft polished with educational clarity!", "success");
+    }
+  } catch (err) {
+    showToast(err.message || "Could not polish draft", "error");
+  } finally {
+    if (polishBtn) {
+      polishBtn.disabled = false;
+      polishBtn.innerHTML = 'Polish Draft with AI';
+    }
+  }
+}
+
+async function toggleHelpfulReaction(resourceId) {
+  try {
+    const res = await apiRequest('/api/library/resources/' + resourceId + '/reactions', {
+      method: "POST",
+      body: JSON.stringify({ reactionType: "helpful" })
+    });
+
+    const isReacted = res.action === "added";
+    const count = res.count || 0;
+
+    const countEl = $("libHelpfulCount");
+    if (countEl) countEl.textContent = String(count);
+
+    const btn = $("libHelpfulBtn");
+    if (btn) btn.classList.toggle("active-helpful", isReacted);
+
+    showToast(isReacted ? "Marked as helpful!" : "Reaction removed", "info");
+  } catch (err) {
+    showToast(err.message || "Could not update reaction", "error");
+  }
+}
+
+async function toggleBookmark(resourceId) {
+  try {
+    const res = await apiRequest('/api/library/resources/' + resourceId + '/bookmark', {
+      method: "POST"
+    });
+
+    const isSaved = res.action === "added";
+    const btn = $("libBookmarkBtn");
+    const label = $("libBookmarkLabel");
+
+    if (btn) btn.classList.toggle("active-bookmark", isSaved);
+    if (label) label.textContent = isSaved ? "Saved" : "Save";
+
+    showToast(isSaved ? "Saved to your bookmarks!" : "Removed from bookmarks", "info");
+    if (libraryState.activePanel === "saved") {
+      loadSavedPanel();
+    }
+  } catch (err) {
+    showToast(err.message || "Could not update bookmark", "error");
+  }
+}
+
+async function runAiAssistant(mode) {
+  if (!libraryState.activeResource) return;
+  const rId = libraryState.activeResource._id || libraryState.activeResource.id;
+
+  const banner = $("libAiResponseBanner");
+  const bannerBody = $("libAiBannerBody");
+  if (!banner || !bannerBody) return;
+
+  banner.style.display = "block";
+  bannerBody.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Generating educational AI response...';
+
+  try {
+    const endpoints = {
+      summarize: '/api/library/ai/summarize',
+      explain: '/api/library/ai/explain',
+      'revision-points': '/api/library/ai/revision-points'
+    };
+
+    const res = await apiRequest(endpoints[mode], {
+      method: "POST",
+      body: JSON.stringify({
+        resourceId: rId,
+        title: libraryState.activeResource.title,
+        content: libraryState.activeResource.content,
+        topic: libraryState.activeResource.topic
+      })
+    });
+
+    let html = "";
+    if (mode === "summarize" && res.summary) {
+      html = `<p><strong>Summary:</strong> ${escapeHTML(res.summary)}</p>`;
+      if (Array.isArray(res.bulletPoints)) {
+        html += '<ul>' + res.bulletPoints.map(p => `<li>${escapeHTML(p)}</li>`).join('') + '</ul>';
+      }
+      if (res.keyTakeaway) {
+        html += `<p><strong>Key Takeaway:</strong> ${escapeHTML(res.keyTakeaway)}</p>`;
+      }
+    } else if (mode === "explain" && res.intuition) {
+      html = `<p><strong>Intuition:</strong> ${escapeHTML(res.intuition)}</p>`;
+      if (res.whyItWorks) html += `<p><strong>Why it works:</strong> ${escapeHTML(res.whyItWorks)}</p>`;
+      if (Array.isArray(res.commonPitfalls)) {
+        html += '<p><strong>Common Pitfalls:</strong></p><ul>' + res.commonPitfalls.map(p => `<li>${escapeHTML(p)}</li>`).join('') + '</ul>';
+      }
+    } else if (mode === "revision-points" && Array.isArray(res.points)) {
+      html = '<ul>' + res.points.map(p => `<li>${escapeHTML(p)}</li>`).join('') + '</ul>';
+    } else {
+      html = renderSafeMarkdown(res.summary || res.intuition || JSON.stringify(res));
+    }
+
+    bannerBody.innerHTML = html;
+  } catch (err) {
+    bannerBody.innerHTML = '<span style="color:#ef4444;">AI Assistant Error: ' + (err.message || "") + '</span>';
+  }
+}
+
+// Suggestions Modal
+function openSuggestModal(res) {
+  const modal = $("libSuggestModal");
+  if (!modal) return;
+
+  const idInput = $("libSuggestResourceId");
+  const titleInput = $("libSuggestTitle");
+  const contentInput = $("libSuggestContent");
+  const reasonInput = $("libSuggestReason");
+
+  if (idInput) idInput.value = res._id || res.id;
+  if (titleInput) titleInput.value = res.title || "";
+  if (contentInput) contentInput.value = res.content || res.body || "";
+  if (reasonInput) reasonInput.value = "";
+
+  modal.classList.add("active");
+}
+
+async function submitSuggestion() {
+  const rId = $("libSuggestResourceId")?.value;
+  const proposedContent = $("libSuggestContent")?.value?.trim();
+  const comment = $("libSuggestReason")?.value?.trim() || "";
+
+  if (!rId || !proposedContent) {
+    showToast("Please enter proposed edits", "error");
+    return;
+  }
+
+  try {
+    await apiRequest('/api/library/resources/' + rId + '/suggestions', {
+      method: "POST",
+      body: JSON.stringify({ proposedContent, comment })
+    });
+    showToast("Proposed edit submitted for review!", "success");
+    const m = $("libSuggestModal");
+    if (m) m.classList.remove("active");
+  } catch (err) {
+    showToast(err.message || "Could not submit suggestion", "error");
+  }
+}
+
+// Report Modal
+function openReportModal(rId) {
+  const modal = $("libReportModal");
+  if (!modal) return;
+
+  const idInput = $("libReportResourceId");
+  const detailsInput = $("libReportDetails");
+
+  if (idInput) idInput.value = rId;
+  if (detailsInput) detailsInput.value = "";
+
+  modal.classList.add("active");
+}
+
+async function submitReport() {
+  const rId = $("libReportResourceId")?.value;
+  const reason = $("libReportReason")?.value || "spam";
+  const details = $("libReportDetails")?.value?.trim() || "";
+
+  if (!rId) return;
+
+  try {
+    await apiRequest('/api/library/resources/' + rId + '/report', {
+      method: "POST",
+      body: JSON.stringify({ reason, details })
+    });
+    showToast("Report submitted to moderation team. Thank you!", "info");
+    const m = $("libReportModal");
+    if (m) m.classList.remove("active");
+  } catch (err) {
+    showToast(err.message || "Could not submit report", "error");
+  }
+}
+
+// Saved / Bookmarks Panel
+async function loadSavedPanel() {
+  const grid = $("libSavedGrid");
+  if (!grid) return;
+  grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-spinner fa-spin lib-empty-icon"></i><div class="lib-empty-title">Loading Saved Notes...</div></div>';
+
+  try {
+    const res = await apiRequest('/api/library/bookmarks');
+    const resources = res.resources || [];
+    renderResourceCards(grid, resources);
+  } catch (err) {
+    grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-exclamation-triangle lib-empty-icon" style="color:#ef4444;"></i><div class="lib-empty-title">Could not load saved notes</div><div class="lib-empty-desc">' + (err.message || "") + '</div></div>';
+  }
+}
+
+// Contributions Panel
+async function loadContributionsPanel() {
+  const grid = $("libContributionsGrid");
+  if (!grid) return;
+  grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-spinner fa-spin lib-empty-icon"></i><div class="lib-empty-title">Loading Your Contributions...</div></div>';
+
+  try {
+    const currentUid = typeof viewerProfile !== "undefined" && viewerProfile?.id ? viewerProfile.id : (typeof currentUser !== "undefined" && currentUser?.uid ? currentUser.uid : null);
+    const res = await apiRequest('/api/library/resources?authorId=' + (currentUid || ''));
+    const resources = res.resources || [];
+    renderResourceCards(grid, resources);
+  } catch (err) {
+    grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-exclamation-triangle lib-empty-icon" style="color:#ef4444;"></i><div class="lib-empty-title">Could not load contributions</div><div class="lib-empty-desc">' + (err.message || "") + '</div></div>';
+  }
+}
+
+// Collections Panel
+async function loadCollectionsPanel() {
+  const grid = $("libCollectionsGrid");
+  if (!grid) return;
+  grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-spinner fa-spin lib-empty-icon"></i><div class="lib-empty-title">Loading Collections...</div></div>';
+
+  try {
+    const res = await apiRequest('/api/library/collections');
+    const cols = res.collections || [];
+
+    if (cols.length === 0) {
+      grid.innerHTML = `
+        <div class="lib-empty-state" style="grid-column: 1 / -1;">
+          <i class="fa fa-folder-open lib-empty-icon"></i>
+          <div class="lib-empty-title">No Collections Yet</div>
+          <div class="lib-empty-desc">Create organized collections to group notes into customized learning roadmaps.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+    grid.innerHTML = cols.map(c => `
+      <div class="lib-collection-card">
+        <div>
+          <div class="lib-col-header">
+            <i class="fa fa-folder-open lib-col-icon"></i>
+            <h4 class="lib-col-title">${escapeFn(c.title)}</h4>
+          </div>
+          <p class="lib-col-desc">${escapeFn(c.description || "Personal collection")}</p>
+        </div>
+        <div class="lib-col-footer">
+          <span class="lib-col-count">${(c.resourceIds || []).length} resources</span>
+          <button class="btn btn-sm btn-secondary" onclick="deleteCollection('${c._id || c.id}')"><i class="fa fa-trash"></i></button>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    grid.innerHTML = '<div class="lib-empty-state"><i class="fa fa-exclamation-triangle lib-empty-icon" style="color:#ef4444;"></i><div class="lib-empty-title">Could not load collections</div><div class="lib-empty-desc">' + (err.message || "") + '</div></div>';
+  }
+}
+
+async function submitNewCollection() {
+  const nameInput = $("libCollectionNameInput");
+  const descInput = $("libCollectionDescInput");
+  const title = nameInput?.value?.trim();
+  const description = descInput?.value?.trim() || "";
+
+  if (!title) {
+    showToast("Collection name is required", "error");
+    return;
+  }
+
+  try {
+    await apiRequest('/api/library/collections', {
+      method: "POST",
+      body: JSON.stringify({ title, description })
+    });
+    showToast("Collection created!", "success");
+    if (nameInput) nameInput.value = "";
+    if (descInput) descInput.value = "";
+    const card = $("libNewCollectionFormCard");
+    if (card) card.style.display = "none";
+    loadCollectionsPanel();
+  } catch (err) {
+    showToast(err.message || "Failed to create collection", "error");
+  }
+}
+
+async function deleteCollection(colId) {
+  if (!confirm("Delete this collection?")) return;
+  try {
+    await apiRequest('/api/library/collections/' + colId, { method: "DELETE" });
+    showToast("Collection deleted", "info");
+    loadCollectionsPanel();
+  } catch (err) {
+    showToast(err.message || "Could not delete collection", "error");
+  }
+}
+
+// Suggestions Panel
+async function loadSuggestionsPanel() {
+  const list = $("libSuggestionsList");
+  if (!list) return;
+  list.innerHTML = '<div style="text-align:center; padding:2rem;"><i class="fa fa-spinner fa-spin"></i> Loading proposed edits...</div>';
+
+  try {
+    const res = await apiRequest('/api/library/suggestions');
+    const suggestions = res.suggestions || [];
+
+    if (suggestions.length === 0) {
+      list.innerHTML = `
+        <div class="lib-empty-state">
+          <i class="fa fa-code-fork lib-empty-icon"></i>
+          <div class="lib-empty-title">No Pending Suggestions</div>
+          <div class="lib-empty-desc">No edit suggestions have been proposed for your notes.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+    list.innerHTML = suggestions.map(s => `
+      <div class="lib-suggestion-card">
+        <div class="lib-suggestion-header">
+          <span class="lib-sug-proposer">${escapeFn(s.suggestedBy?.name || "Contributor")}</span>
+          <span class="badge-lib-level ${s.status === 'accepted' ? 'easy' : (s.status === 'rejected' ? 'hard' : 'beginner')}">${escapeFn(s.status)}</span>
+        </div>
+        <p class="lib-sug-comment"><strong>Comment:</strong> ${escapeFn(s.comment || "Proposed edit")}</p>
+        <div class="lib-sug-diff">${escapeFn(s.proposedContent || s.proposedBody || "")}</div>
+        ${s.status === 'pending' ? `
+          <div class="lib-sug-actions">
+            <button class="btn btn-sm btn-primary" onclick="reviewEditSuggestion('${s._id || s.id}', 'accept')"><i class="fa fa-check"></i> Accept</button>
+            <button class="btn btn-sm btn-secondary" onclick="reviewEditSuggestion('${s._id || s.id}', 'reject')"><i class="fa fa-times"></i> Reject</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join("");
+  } catch (err) {
+    list.innerHTML = '<div style="color:#ef4444; padding:1.5rem;">Failed to load suggestions: ' + (err.message || "") + '</div>';
+  }
+}
+
+async function reviewEditSuggestion(sugId, decision) {
+  try {
+    await apiRequest('/api/library/suggestions/' + sugId + '/review', {
+      method: "POST",
+      body: JSON.stringify({ decision })
+    });
+    showToast(`Suggestion ${decision}ed!`, "success");
+    loadSuggestionsPanel();
+  } catch (err) {
+    showToast(err.message || "Failed to review suggestion", "error");
+  }
+}
+
+// Moderation Panel
+async function loadModerationPanel() {
+  const list = $("libModerationList");
+  if (!list) return;
+  list.innerHTML = '<div style="text-align:center; padding:2rem;"><i class="fa fa-spinner fa-spin"></i> Loading moderation reports...</div>';
+
+  try {
+    const res = await apiRequest('/api/library/moderation/reports');
+    const reports = res.reports || [];
+
+    if (reports.length === 0) {
+      list.innerHTML = `
+        <div class="lib-empty-state">
+          <i class="fa fa-shield lib-empty-icon" style="color:#10b981;"></i>
+          <div class="lib-empty-title">Moderation Queue Clear</div>
+          <div class="lib-empty-desc">All flagged content has been reviewed and resolved.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const escapeFn = typeof escapeHTML === "function" ? escapeHTML : (v => String(v || ""));
+
+    list.innerHTML = reports.map(r => `
+      <div class="lib-mod-card">
+        <div class="lib-mod-header">
+          <span class="lib-mod-reason">${escapeFn(r.reason)}</span>
+          <span class="badge-lib-level ${r.status === 'resolved' ? 'easy' : 'hard'}">${escapeFn(r.status)}</span>
+        </div>
+        <p class="lib-mod-details"><strong>Details:</strong> ${escapeFn(r.details || "No details provided.")}</p>
+        ${r.status === 'pending' ? `
+          <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+            <button class="btn btn-sm btn-primary" onclick="resolveModerationReport('${r._id || r.id}', 'hide')"><i class="fa fa-eye-slash"></i> Hide Resource</button>
+            <button class="btn btn-sm btn-secondary" onclick="resolveModerationReport('${r._id || r.id}', 'dismiss')"><i class="fa fa-check"></i> Dismiss Report</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join("");
+  } catch (err) {
+    list.innerHTML = '<div style="color:#ef4444; padding:1.5rem;">Failed to load moderation reports: ' + (err.message || "") + '</div>';
+  }
+}
+
+async function resolveModerationReport(reportId, action) {
+  try {
+    await apiRequest('/api/library/moderation/reports/' + reportId + '/resolve', {
+      method: "POST",
+      body: JSON.stringify({ action })
+    });
+    showToast(`Report resolved (${action})`, "success");
+    loadModerationPanel();
+  } catch (err) {
+    showToast(err.message || "Failed to resolve report", "error");
+  }
+}
+
+// Cross-Module: Open Library Editor from Mentor
+function openLibraryEditorFromMentor() {
+  const prob = currentMentorProblem || {};
+  const code = $("mentorCodeInput")?.value || "";
+
+  showPage("library");
+  openResourceEditorModal({
+    title: prob.title ? `Notes: ${prob.title}` : "DSA Problem Notes",
+    contentType: "problem-note",
+    topic: "Arrays",
+    difficulty: (prob.difficulty || "Medium"),
+    visibility: "community",
+    problemSlug: prob.slug || "",
+    codeSnippet: {
+      code,
+      language: prob.language || "python"
+    },
+    description: `Takeaways and complexity analysis for ${prob.title || 'this problem'}.`,
+    content: `## Intuition\n\nSummarize core insights and boundary conditions.\n\n## Complexity\n- Time Complexity: O(n)\n- Space Complexity: O(1)\n`
+  });
+
+  showToast("Pre-filled problem details into Community Library!", "info");
+}
+
+// Global exposures
+window.openResourceDetailModal = openResourceDetailModal;
+window.openResourceEditorModal = openResourceEditorModal;
+window.closeResourceDetailModal = closeResourceDetailModal;
+window.closeResourceEditorModal = closeResourceEditorModal;
+window.deleteCollection = deleteCollection;
+window.reviewEditSuggestion = reviewEditSuggestion;
+window.resolveModerationReport = resolveModerationReport;
 
 initializeAiCodeMentor();
 initializeApp();
